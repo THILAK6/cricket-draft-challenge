@@ -9,9 +9,10 @@ import type { Challenge, MatchFormat, PitchType, PlayerWithStats, ScoringBreakdo
  * 4. Batting depth (15 pts): Capability to score runs down to positions 7-9
  */
 export function calculateDeterministicScore(
-  squad: PlayerWithStats[],
+  squad: (PlayerWithStats | null)[],
   challenge: Challenge
 ): Omit<ScoringBreakdown, "llm_adjustment" | "final_score" | "verdict_summary"> {
+  const nonNullSquad = squad.filter((p): p is PlayerWithStats => p !== null);
   const { pitch_type } = challenge.venue;
   const format = challenge.format || "T20";
   const isTest = format === "TEST";
@@ -24,16 +25,16 @@ export function calculateDeterministicScore(
   let roleScore = 0;
 
   // Keeper check (4.0 pts)
-  const hasKeeper = squad.some((p) => p.primary_role === "WK");
+  const hasKeeper = nonNullSquad.some((p) => p.primary_role === "WK");
   if (hasKeeper) roleScore += 4.0;
 
   // Bowling options (4.5 to 5.0 pts)
-  const bowlingOptions = squad.filter(
+  const bowlingOptions = nonNullSquad.filter(
     (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
   );
   if (isTest) {
     // Tests: 4 frontline bowlers + 1 backup option is standard international construction
-    const frontlineBowlers = squad.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR");
+    const frontlineBowlers = nonNullSquad.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR");
     if (frontlineBowlers.length >= 5) roleScore += 5.0;
     else if (frontlineBowlers.length === 4 && bowlingOptions.length >= 5) roleScore += 4.5;
     else if (bowlingOptions.length >= 4) roleScore += 3.5;
@@ -50,6 +51,7 @@ export function calculateDeterministicScore(
   let openerPoints = 0;
   for (let i = 0; i < Math.min(2, squad.length); i++) {
     const p = squad[i];
+    if (!p) continue;
     if (p.primary_role === "BOWL") {
       // Severe tactical penalty for opening with a tailender
       roleScore -= 4.0;
@@ -68,6 +70,7 @@ export function calculateDeterministicScore(
   let middleOrderCount = 0;
   for (let i = 2; i < Math.min(5, squad.length); i++) {
     const p = squad[i];
+    if (!p) continue;
     if (p.primary_role === "BOWL") {
       roleScore -= 3.0; // Penalty for pure bowler in middle order
     } else if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
@@ -80,6 +83,7 @@ export function calculateDeterministicScore(
   let hasFinisher = false;
   for (let i = 4; i < Math.min(7, squad.length); i++) {
     const p = squad[i];
+    if (!p) continue;
     let isFinisher = false;
     if (isT20) {
       isFinisher =
@@ -106,24 +110,24 @@ export function calculateDeterministicScore(
 
   if (hasFinisher) {
     roleScore += 2.5;
-  } else if (squad.length >= 7) {
+  } else if (nonNullSquad.length >= 7) {
     // Deficit penalty for missing lower-middle order counter-attack
     roleScore -= (isTest ? 2.5 : 3.5);
   }
 
   // Attack Diversity (Pace + Spin Synergy):
-  const pacers = squad.filter((p) => p.bowling_category === "PACE");
-  const spinners = squad.filter((p) => p.bowling_category === "SPIN");
+  const pacers = nonNullSquad.filter((p) => p.bowling_category === "PACE");
+  const spinners = nonNullSquad.filter((p) => p.bowling_category === "SPIN");
   if (pacers.length >= 2 && spinners.length >= 1) {
     roleScore += 2.0; // Multi-dimensional attack synergy
-  } else if (squad.length >= 8 && (pacers.length === 0 || spinners.length === 0)) {
+  } else if (nonNullSquad.length >= 8 && (pacers.length === 0 || spinners.length === 0)) {
     // One-dimensional attack warning
     roleScore -= 2.0;
   }
 
   // Death / Control Bowling Capability:
   if (isT20) {
-    const deathCapable = squad.filter(
+    const deathCapable = nonNullSquad.filter(
       (p) =>
         (p.primary_role === "BOWL" || p.primary_role === "AR") &&
         p.stats.bowl_overs >= 10 &&
@@ -132,15 +136,15 @@ export function calculateDeterministicScore(
     );
     if (deathCapable.length >= 1) {
       roleScore += 1.5;
-    } else if (squad.length >= 9) {
-      const anyDecentEconomy = squad.some(
+    } else if (nonNullSquad.length >= 9) {
+      const anyDecentEconomy = nonNullSquad.some(
         (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_economy <= 8.2
       );
       if (!anyDecentEconomy) roleScore -= 2.0;
     }
   } else if (isOdi) {
     // ODI: Needs bowlers capable of restricting middle/death overs (econ <= 5.4)
-    const odiControlBowlers = squad.filter(
+    const odiControlBowlers = nonNullSquad.filter(
       (p) =>
         (p.primary_role === "BOWL" || p.primary_role === "AR") &&
         p.stats.bowl_overs >= 20 &&
@@ -149,15 +153,15 @@ export function calculateDeterministicScore(
     );
     if (odiControlBowlers.length >= 1) {
       roleScore += 1.5;
-    } else if (squad.length >= 9) {
-      const anyDecentEconomy = squad.some(
+    } else if (nonNullSquad.length >= 9) {
+      const anyDecentEconomy = nonNullSquad.some(
         (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_economy <= 5.9
       );
       if (!anyDecentEconomy) roleScore -= 2.0;
     }
   } else {
     // TEST: Strike bowler with penetration (average <= 28.0 and strike rate <= 55)
-    const testStrikeBowlers = squad.filter(
+    const testStrikeBowlers = nonNullSquad.filter(
       (p) =>
         (p.primary_role === "BOWL" || p.primary_role === "AR") &&
         p.stats.bowl_overs >= 30 &&
@@ -167,8 +171,8 @@ export function calculateDeterministicScore(
     );
     if (testStrikeBowlers.length >= 1) {
       roleScore += 1.5;
-    } else if (squad.length >= 9) {
-      const anyDecentAverage = squad.some(
+    } else if (nonNullSquad.length >= 9) {
+      const anyDecentAverage = nonNullSquad.some(
         (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_average <= 34.0
       );
       if (!anyDecentAverage) roleScore -= 2.0;
@@ -176,7 +180,7 @@ export function calculateDeterministicScore(
   }
 
   // Left-Hand / Right-Hand Batting Variation in Top 6:
-  const top6 = squad.slice(0, 6);
+  const top6 = squad.slice(0, 6).filter((p): p is PlayerWithStats => p !== null);
   const hasLhbTop6 = top6.some((p) => p.batting_hand === "LHB");
   const hasRhbTop6 = top6.some((p) => p.batting_hand === "RHB");
   if (top6.length >= 4 && hasLhbTop6 && hasRhbTop6) {
@@ -184,7 +188,7 @@ export function calculateDeterministicScore(
   }
 
   // Anchor vs Aggressor Balance in Top 5:
-  const top5 = squad.slice(0, 5);
+  const top5 = squad.slice(0, 5).filter((p): p is PlayerWithStats => p !== null);
   let hasAnchor = false;
   let hasAggressor = false;
 
@@ -249,12 +253,12 @@ export function calculateDeterministicScore(
 
     case "HIGH_SCORING_FLAT": {
       const srThreshold = isT20 ? 135.0 : isOdi ? 92.0 : 55.0;
-      const highSrBatters = squad.filter((p) => p.stats.bat_strike_rate >= srThreshold);
+      const highSrBatters = nonNullSquad.filter((p) => p.stats.bat_strike_rate >= srThreshold);
       if (highSrBatters.length >= 4) pitchScore += 7;
       else if (highSrBatters.length >= 2) pitchScore += 4;
 
       const deathEconThreshold = isT20 ? 7.5 : isOdi ? 5.0 : 3.0;
-      const controlBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= deathEconThreshold);
+      const controlBowlers = nonNullSquad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= deathEconThreshold);
       if (controlBowlers.length >= 2) pitchScore += 3;
       break;
     }
@@ -262,7 +266,7 @@ export function calculateDeterministicScore(
     case "SLOW_LOW": {
       if (spinners.length >= 2) pitchScore += 5;
       const slowLowEcon = isT20 ? 7.2 : isOdi ? 4.9 : 2.8;
-      const accurateBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon);
+      const accurateBowlers = nonNullSquad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon);
       if (accurateBowlers.length >= 3) pitchScore += 5;
       break;
     }
@@ -295,12 +299,11 @@ export function calculateDeterministicScore(
   // -------------------------------------------------------------
   let qualityTotal = 0;
 
-  for (const p of squad) {
+  for (const p of nonNullSquad) {
     const matches = Math.max(1, p.stats.matches);
 
     if (isTest) {
       // Test Match Quality Calibration:
-      // In Tests, 40-50 tests is a veteran; batting average is paramount; bowling average decides wickets.
       const w = matches / (matches + 12);
       const expBonus = matches >= 60 ? 0.35 : matches >= 30 ? 0.2 : matches < 8 ? -0.3 : 0;
 
@@ -367,7 +370,7 @@ export function calculateDeterministicScore(
   // -------------------------------------------------------------
   // 4. Batting Depth Score (0 - 15 points)
   // -------------------------------------------------------------
-  const sortedBatters = [...squad].sort(
+  const sortedBatters = [...nonNullSquad].sort(
     (a, b) => b.stats.bat_average * b.stats.bat_strike_rate - a.stats.bat_average * a.stats.bat_strike_rate
   );
 

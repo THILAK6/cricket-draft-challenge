@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MatchSimulationResult } from "./simulator";
 
 // Match format and pitch types
 export type MatchFormat = "T20" | "ODI" | "TEST";
@@ -107,12 +108,14 @@ export interface DraftState {
   roomId: string;
   challenge: Challenge;
   pool: PlayerWithStats[];
-  userPicks: PlayerWithStats[];
-  aiPicks: PlayerWithStats[];
+  userPicks: (PlayerWithStats | null)[];
+  aiPicks: (PlayerWithStats | null)[];
   currentTurn: "USER" | "AI";
   round: number;
   maxRounds: number;
   status: "WAITING" | "DRAFTING" | "SOLO_PICK" | "COMPLETED";
   lastActionTimestamp: number;
+  simulation?: MatchSimulationResult;
+  results?: any;
 }
 

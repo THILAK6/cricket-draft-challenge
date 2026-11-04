@@ -16,28 +16,29 @@ export interface FeasibilityResult {
  * Validates whether an individual 11-player squad satisfies all cricket rules
  * and challenge-specific constraints.
  */
-export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): SquadValidationResult {
+export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Challenge): SquadValidationResult {
   const violations: string[] = [];
+  const nonNullSquad = squad.filter((p): p is PlayerWithStats => p !== null);
 
   // 1. Cricket Fundamental Rules
-  if (squad.length !== 11) {
-    violations.push(`Squad must contain exactly 11 players (currently ${squad.length}).`);
+  if (nonNullSquad.length !== 11) {
+    violations.push(`Squad must contain exactly 11 players (currently ${nonNullSquad.length}).`);
   }
 
   // Duplicate player check
-  const playerIds = new Set(squad.map((p) => p.id));
-  if (playerIds.size !== squad.length) {
+  const playerIds = new Set(nonNullSquad.map((p) => p.id));
+  if (playerIds.size !== nonNullSquad.length) {
     violations.push("Squad contains duplicate players.");
   }
 
   // Wicketkeeper rule: At least 1 WK
-  const keepers = squad.filter((p) => p.primary_role === "WK");
+  const keepers = nonNullSquad.filter((p) => p.primary_role === "WK");
   if (keepers.length < 1) {
     violations.push("Squad must have at least 1 designated wicketkeeper.");
   }
 
   // Bowling rule: At least 5 bowling options (BOWL or AR, or >= 2 overs per match)
-  const bowlingOptions = squad.filter(
+  const bowlingOptions = nonNullSquad.filter(
     (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
   );
   if (bowlingOptions.length < 5) {
@@ -49,7 +50,7 @@ export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): S
     switch (constraint.type) {
       case "max_per_country": {
         const countryCounts = new Map<string, number>();
-        for (const p of squad) {
+        for (const p of nonNullSquad) {
           countryCounts.set(p.country, (countryCounts.get(p.country) || 0) + 1);
         }
 
@@ -67,13 +68,13 @@ export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): S
       case "min_category": {
         let count = 0;
         if (constraint.category === "PACE") {
-          count = squad.filter((p) => p.bowling_category === "PACE").length;
+          count = nonNullSquad.filter((p) => p.bowling_category === "PACE").length;
         } else if (constraint.category === "SPIN") {
-          count = squad.filter((p) => p.bowling_category === "SPIN").length;
+          count = nonNullSquad.filter((p) => p.bowling_category === "SPIN").length;
         } else if (constraint.category === "WK") {
-          count = squad.filter((p) => p.primary_role === "WK").length;
+          count = nonNullSquad.filter((p) => p.primary_role === "WK").length;
         } else if (constraint.category === "AR") {
-          count = squad.filter((p) => p.primary_role === "AR").length;
+          count = nonNullSquad.filter((p) => p.primary_role === "AR").length;
         }
 
         if (count < constraint.count) {
@@ -86,7 +87,7 @@ export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): S
 
       case "batting_hand_order": {
         // Check if squad has enough players with requested hand to cover specified positions
-        const matchingHandPlayers = squad.filter((p) => p.batting_hand === constraint.hand);
+        const matchingHandPlayers = nonNullSquad.filter((p) => p.batting_hand === constraint.hand);
         const requiredCount = constraint.positions.length;
         if (matchingHandPlayers.length < requiredCount) {
           violations.push(
@@ -97,7 +98,7 @@ export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): S
       }
 
       case "min_bowlers_economy_under": {
-        const qualifyingBowlers = squad.filter(
+        const qualifyingBowlers = nonNullSquad.filter(
           (p) =>
             (p.primary_role === "BOWL" || p.primary_role === "AR") &&
             p.stats.bowl_economy > 0 &&
@@ -112,7 +113,7 @@ export function validateSquad(squad: PlayerWithStats[], challenge: Challenge): S
       }
 
       case "min_strike_rate_top_order": {
-        const highSrBatters = squad.filter(
+        const highSrBatters = nonNullSquad.filter(
           (p) => p.stats.bat_strike_rate >= constraint.threshold
         );
         if (highSrBatters.length < 2) {
@@ -325,23 +326,38 @@ export interface PickLegalityResult {
  */
 export function canPickPlayer(
   player: PlayerWithStats,
-  currentSquad: PlayerWithStats[],
-  challenge: Challenge
+  currentSquad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  targetSlotIndex?: number
 ): PickLegalityResult {
+  const filledPlayers = currentSquad.filter((p): p is PlayerWithStats => p !== null);
+
   // 1. Full squad check
-  if (currentSquad.length >= 11) {
+  const isReplacing =
+    typeof targetSlotIndex === "number" &&
+    targetSlotIndex >= 0 &&
+    targetSlotIndex < currentSquad.length &&
+    currentSquad[targetSlotIndex] !== null;
+
+  if (filledPlayers.length >= 11 && !isReplacing) {
     return { allowed: false, reason: "Squad already full (11 players)" };
   }
 
   // 2. Duplicate player check
-  if (currentSquad.some((p) => p.id === player.id)) {
+  const isDuplicate = currentSquad.some(
+    (p, idx) => p !== null && p.id === player.id && idx !== targetSlotIndex
+  );
+  if (isDuplicate) {
     return { allowed: false, reason: "Player already in your squad" };
   }
 
   // 3. Country Limits (Hard Cap)
   const countryCounts = new Map<string, number>();
-  for (const p of currentSquad) {
-    countryCounts.set(p.country, (countryCounts.get(p.country) || 0) + 1);
+  for (let i = 0; i < currentSquad.length; i++) {
+    const p = currentSquad[i];
+    if (p && i !== targetSlotIndex) {
+      countryCounts.set(p.country, (countryCounts.get(p.country) || 0) + 1);
+    }
   }
   const curCountryCount = countryCounts.get(player.country) || 0;
 
@@ -357,13 +373,24 @@ export function canPickPlayer(
     }
   }
 
-  const currentPickIndex = currentSquad.length; // 0-based
-  const remainingSlotsAfterThisPick = 11 - (currentSquad.length + 1);
+  // Determine slot index
+  let slotIndex: number;
+  if (typeof targetSlotIndex === "number" && targetSlotIndex >= 0 && targetSlotIndex < 11) {
+    slotIndex = targetSlotIndex;
+  } else {
+    const nullIdx = currentSquad.findIndex((p) => p === null);
+    if (nullIdx !== -1) {
+      slotIndex = nullIdx;
+    } else {
+      slotIndex = currentSquad.length;
+    }
+  }
+
+  const targetSlot = slotIndex + 1; // 1-based slot index (1 to 11)
 
   // 4. Batting Hand Order (Slot-specific constraint)
   for (const constraint of challenge.constraints) {
     if (constraint.type === "batting_hand_order") {
-      const targetSlot = currentPickIndex + 1; // 1-based slot index
       if (constraint.positions.includes(targetSlot)) {
         if (player.batting_hand !== constraint.hand) {
           return {
@@ -375,6 +402,12 @@ export function canPickPlayer(
     }
   }
 
+  // Remaining empty slots after this pick
+  const remainingSlotsAfterThisPick = Math.max(
+    0,
+    11 - (filledPlayers.length + (isReplacing ? 0 : 1))
+  );
+
   // 5. Critical Slot Guards (Pigeonhole principle on minimum required roles)
   const isWK = player.primary_role === "WK";
   const isBowler =
@@ -383,8 +416,10 @@ export function canPickPlayer(
     player.stats.bowl_overs >= 2.0;
 
   // 5a. Wicketkeeper Guard
-  const currentKeepers = currentSquad.filter((p) => p.primary_role === "WK").length;
-  const keepersWithThisPick = currentKeepers + (isWK ? 1 : 0);
+  const otherKeepers = currentSquad.filter(
+    (p, idx) => p !== null && idx !== targetSlotIndex && p.primary_role === "WK"
+  ).length;
+  const keepersWithThisPick = otherKeepers + (isWK ? 1 : 0);
   const neededKeepers = Math.max(0, 1 - keepersWithThisPick);
   if (remainingSlotsAfterThisPick < neededKeepers) {
     return {
@@ -394,18 +429,20 @@ export function canPickPlayer(
   }
 
   // 5b. Bowling Options Guard (At least 5 bowling options required)
-  const currentBowling = currentSquad.filter(
-    (p) =>
+  const otherBowling = currentSquad.filter((p, idx) => {
+    if (!p || idx === targetSlotIndex) return false;
+    return (
       p.primary_role === "BOWL" ||
       p.primary_role === "AR" ||
       p.stats.bowl_overs >= 2.0
-  ).length;
-  const bowlingWithThisPick = currentBowling + (isBowler ? 1 : 0);
+    );
+  }).length;
+  const bowlingWithThisPick = otherBowling + (isBowler ? 1 : 0);
   const neededBowlers = Math.max(0, 5 - bowlingWithThisPick);
   if (remainingSlotsAfterThisPick < neededBowlers) {
     return {
       allowed: false,
-      reason: `Must pick a bowler (${5 - currentBowling} more needed for remaining slots)`,
+      reason: `Must pick a bowler (${5 - otherBowling} more needed for remaining slots)`,
     };
   }
 
@@ -418,18 +455,21 @@ export function canPickPlayer(
       if (constraint.category === "WK" && player.primary_role === "WK") candidateMatches = true;
       if (constraint.category === "AR" && player.primary_role === "AR") candidateMatches = true;
 
-      let currentCatCount = 0;
-      if (constraint.category === "PACE") currentCatCount = currentSquad.filter((p) => p.bowling_category === "PACE").length;
-      if (constraint.category === "SPIN") currentCatCount = currentSquad.filter((p) => p.bowling_category === "SPIN").length;
-      if (constraint.category === "WK") currentCatCount = currentSquad.filter((p) => p.primary_role === "WK").length;
-      if (constraint.category === "AR") currentCatCount = currentSquad.filter((p) => p.primary_role === "AR").length;
+      const otherCatCount = currentSquad.filter((p, idx) => {
+        if (!p || idx === targetSlotIndex) return false;
+        if (constraint.category === "PACE") return p.bowling_category === "PACE";
+        if (constraint.category === "SPIN") return p.bowling_category === "SPIN";
+        if (constraint.category === "WK") return p.primary_role === "WK";
+        if (constraint.category === "AR") return p.primary_role === "AR";
+        return false;
+      }).length;
 
-      const catWithThisPick = currentCatCount + (candidateMatches ? 1 : 0);
+      const catWithThisPick = otherCatCount + (candidateMatches ? 1 : 0);
       const neededCat = Math.max(0, constraint.count - catWithThisPick);
       if (remainingSlotsAfterThisPick < neededCat) {
         return {
           allowed: false,
-          reason: `Must pick a ${constraint.category} player (${constraint.count - currentCatCount} needed for remaining slots)`,
+          reason: `Must pick a ${constraint.category} player (${constraint.count - otherCatCount} needed for remaining slots)`,
         };
       }
     }

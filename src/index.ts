@@ -147,11 +147,11 @@ app.post("/api/draft/start", async (c) => {
       roomId,
       challenge,
       pool,
-      userPicks: [],
-      aiPicks: [],
+      userPicks: Array(11).fill(null),
+      aiPicks: Array(11).fill(null),
       currentTurn: "USER",
       round: 1,
-      maxRounds: 6, // 6 rounds of alternate draft picks, remaining 5 chosen solo
+      maxRounds: 11,
       status: "DRAFTING",
       lastActionTimestamp: Date.now(),
     };

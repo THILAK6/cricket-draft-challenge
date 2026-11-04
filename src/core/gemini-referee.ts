@@ -15,13 +15,16 @@ export interface RefereeEvaluationResult {
 }
 
 export async function evaluateGroundConditionsWithGemini(
-  userSquad: PlayerWithStats[],
-  aiSquad: PlayerWithStats[],
+  userSquad: (PlayerWithStats | null)[],
+  aiSquad: (PlayerWithStats | null)[],
   challenge: Challenge,
   apiKey?: string
 ): Promise<RefereeEvaluationResult> {
-  const userBreakdown = calculateDeterministicScore(userSquad, challenge);
-  const aiBreakdown = calculateDeterministicScore(aiSquad, challenge);
+  const nonNullUser = userSquad.filter((p): p is PlayerWithStats => p !== null);
+  const nonNullAi = aiSquad.filter((p): p is PlayerWithStats => p !== null);
+
+  const userBreakdown = calculateDeterministicScore(nonNullUser, challenge);
+  const aiBreakdown = calculateDeterministicScore(nonNullAi, challenge);
 
   const fallbackWinner =
     userBreakdown.deterministic_total > aiBreakdown.deterministic_total
@@ -68,10 +71,11 @@ export async function evaluateGroundConditionsWithGemini(
     "Bowler (Slot 11)",
   ];
 
-  function formatSquadLineup(squad: PlayerWithStats[]) {
+  function formatSquadLineup(squad: (PlayerWithStats | null)[]) {
     return squad
       .map((p, i) => {
         const slot = slotNames[i] || `Position ${i + 1}`;
+        if (!p) return `${i + 1}. [${slot}] (Vacant Slot)`;
         const caps = `${p.stats.matches} caps`;
         const batInfo = `Avg ${p.stats.bat_average}, SR ${p.stats.bat_strike_rate}`;
         const bowlInfo =
@@ -149,7 +153,7 @@ Return JSON in this exact structure:
 }`;
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

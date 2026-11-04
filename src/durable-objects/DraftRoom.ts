@@ -2,6 +2,7 @@ import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from ".
 import { validateSquad, canPickPlayer } from "../core/validator";
 import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
 import { evaluateGroundConditionsWithGemini } from "../core/gemini-referee";
+import { simulateCricketMatch } from "../core/simulator";
 
 export class DraftRoom implements DurableObject {
   private state: DurableObjectState;
@@ -28,10 +29,14 @@ export class DraftRoom implements DurableObject {
     // Load persisted state if not in memory
     if (!this.draftState) {
       this.draftState = (await this.state.storage.get<DraftState>("draftState")) ?? null;
+      if (this.draftState) {
+        this.normalizeSquads(this.draftState);
+      }
     }
 
     if (url.pathname.endsWith("/init") && request.method === "POST") {
       const body = await request.json<DraftState>();
+      this.normalizeSquads(body);
       this.draftState = body;
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "INIT", state: this.draftState });
@@ -46,7 +51,7 @@ export class DraftRoom implements DurableObject {
     }
 
     if (url.pathname.endsWith("/pick") && request.method === "POST") {
-      if (!this.draftState || this.draftState.status !== "DRAFTING") {
+      if (!this.draftState || (this.draftState.status !== "DRAFTING" && this.draftState.status !== "SOLO_PICK")) {
         return Response.json({ error: "Draft not in drafting state" }, { status: 400 });
       }
 
@@ -61,13 +66,23 @@ export class DraftRoom implements DurableObject {
         return Response.json({ error: userPickResult.error }, { status: 400 });
       }
 
+      const userFilled = this.draftState.userPicks.filter(Boolean).length;
+      const aiFilled = this.draftState.aiPicks.filter(Boolean).length;
+
       // Check if draft complete
-      if (this.draftState.userPicks.length >= 11 && this.draftState.aiPicks.length >= 11) {
+      if (userFilled >= 11 && aiFilled >= 11) {
         await this.finishDraft();
       } else {
-        // Trigger AI Pick
-        this.executeAiPick();
-        if (this.draftState.userPicks.length >= 11 && this.draftState.aiPicks.length >= 11) {
+        // Trigger AI Pick if AI still needs players
+        if (aiFilled < 11) {
+          this.executeAiPick();
+        } else {
+          this.draftState.currentTurn = "USER";
+        }
+
+        const userFilledAfter = this.draftState.userPicks.filter(Boolean).length;
+        const aiFilledAfter = this.draftState.aiPicks.filter(Boolean).length;
+        if (userFilledAfter >= 11 && aiFilledAfter >= 11) {
           await this.finishDraft();
         }
       }
@@ -83,37 +98,8 @@ export class DraftRoom implements DurableObject {
         return Response.json({ error: "Draft room not initialized" }, { status: 400 });
       }
 
-      const apiKey = this.env?.GEMINI_API_KEY;
-      const evaluation = await evaluateGroundConditionsWithGemini(
-        this.draftState.userPicks,
-        this.draftState.aiPicks,
-        this.draftState.challenge,
-        apiKey
-      );
-
-      const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
-      const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
-
-      const results = {
-        userScore: evaluation.user_score,
-        aiScore: evaluation.ai_score,
-        userAdjustment: evaluation.user_adjustment,
-        aiAdjustment: evaluation.ai_adjustment,
-        winner: evaluation.winner,
-        decisiveDifference: evaluation.decisive_difference,
-        whyWinnerWon: evaluation.why_winner_won,
-        whyLoserLost: evaluation.why_loser_lost,
-        groundConditionsAnalysis: evaluation.ground_conditions_analysis,
-        verdictSummary: evaluation.verdict_summary,
-        userBreakdown,
-        aiBreakdown,
-      };
-
-      (this.draftState as any).results = results;
-      await this.state.storage.put("draftState", this.draftState);
-      this.broadcast({ type: "COMPLETED", results });
-
-      return Response.json({ success: true, results });
+      await this.finishDraft();
+      return Response.json({ success: true, results: (this.draftState as any).results });
     }
 
     if (url.pathname.endsWith("/remove") && request.method === "POST") {
@@ -121,15 +107,22 @@ export class DraftRoom implements DurableObject {
         return Response.json({ error: "Draft room not initialized" }, { status: 400 });
       }
 
-      const { playerId } = await request.json<{ playerId: string }>();
+      const { playerId, slotIndex } = await request.json<{ playerId?: string; slotIndex?: number }>();
 
-      const pIdx = this.draftState.userPicks.findIndex((p) => p.id === playerId);
-      if (pIdx === -1) {
-        return Response.json({ error: "Player not found in your squad" }, { status: 400 });
+      let targetIdx = -1;
+      if (typeof slotIndex === "number" && slotIndex >= 0 && slotIndex < 11) {
+        targetIdx = slotIndex;
+      } else if (playerId) {
+        targetIdx = this.draftState.userPicks.findIndex((p) => p !== null && p.id === playerId);
+      }
+
+      if (targetIdx === -1 || !this.draftState.userPicks[targetIdx]) {
+        return Response.json({ error: "Player not found in chosen slot" }, { status: 400 });
       }
 
       // Return player to available pool
-      const [removed] = this.draftState.userPicks.splice(pIdx, 1);
+      const removed = this.draftState.userPicks[targetIdx]!;
+      this.draftState.userPicks[targetIdx] = null;
       this.draftState.pool.unshift(removed);
 
       // Revert from completed state if necessary
@@ -154,18 +147,14 @@ export class DraftRoom implements DurableObject {
 
       const { fromIndex, toIndex } = await request.json<{ fromIndex: number; toIndex: number }>();
 
-      if (
-        fromIndex < 0 ||
-        fromIndex >= this.draftState.userPicks.length ||
-        toIndex < 0 ||
-        toIndex >= this.draftState.userPicks.length
-      ) {
-        return Response.json({ error: "Invalid reorder indices" }, { status: 400 });
+      if (fromIndex < 0 || fromIndex >= 11 || toIndex < 0 || toIndex >= 11) {
+        return Response.json({ error: "Invalid slot indices (must be 0-10)" }, { status: 400 });
       }
 
-      // Move player from fromIndex to toIndex
-      const [moved] = this.draftState.userPicks.splice(fromIndex, 1);
-      this.draftState.userPicks.splice(toIndex, 0, moved);
+      // Swap positions
+      const temp = this.draftState.userPicks[fromIndex];
+      this.draftState.userPicks[fromIndex] = this.draftState.userPicks[toIndex];
+      this.draftState.userPicks[toIndex] = temp;
 
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "UPDATE", state: this.draftState });
@@ -174,6 +163,23 @@ export class DraftRoom implements DurableObject {
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  private normalizeSquads(state: DraftState) {
+    if (!Array.isArray(state.userPicks) || state.userPicks.length !== 11) {
+      const existing = (state.userPicks || []).filter(Boolean);
+      state.userPicks = Array(11).fill(null);
+      for (let i = 0; i < Math.min(11, existing.length); i++) {
+        state.userPicks[i] = existing[i];
+      }
+    }
+    if (!Array.isArray(state.aiPicks) || state.aiPicks.length !== 11) {
+      const existing = (state.aiPicks || []).filter(Boolean);
+      state.aiPicks = Array(11).fill(null);
+      for (let i = 0; i < Math.min(11, existing.length); i++) {
+        state.aiPicks[i] = existing[i];
+      }
+    }
   }
 
   private handleWebSocket(ws: WebSocket) {
@@ -192,11 +198,17 @@ export class DraftRoom implements DurableObject {
       try {
         const data = JSON.parse(msg.data as string);
         if (data.type === "PICK" && this.draftState?.currentTurn === "USER") {
-          this.executePick(data.playerId, "USER");
-          if (this.draftState.userPicks.length >= 11 && this.draftState.aiPicks.length >= 11) {
-            this.finishDraft();
-          } else {
+          this.executePick(data.playerId, "USER", data.targetIndex);
+          const userFilled = this.draftState.userPicks.filter(Boolean).length;
+          const aiFilled = this.draftState.aiPicks.filter(Boolean).length;
+
+          if (userFilled >= 11 && aiFilled >= 11) {
+            await this.finishDraft();
+          } else if (aiFilled < 11) {
             this.executeAiPick();
+            if (this.draftState.userPicks.filter(Boolean).length >= 11 && this.draftState.aiPicks.filter(Boolean).length >= 11) {
+              await this.finishDraft();
+            }
           }
           await this.state.storage.put("draftState", this.draftState);
           this.broadcast({ type: "UPDATE", state: this.draftState });
@@ -218,7 +230,11 @@ export class DraftRoom implements DurableObject {
     }
   }
 
-  private executePick(playerId: string, actor: "USER" | "AI", targetIndex?: number): { success: boolean; error?: string } {
+  private executePick(
+    playerId: string,
+    actor: "USER" | "AI",
+    targetIndex?: number
+  ): { success: boolean; error?: string } {
     if (!this.draftState) return { success: false, error: "No state" };
 
     const pIdx = this.draftState.pool.findIndex((p) => p.id === playerId);
@@ -227,24 +243,39 @@ export class DraftRoom implements DurableObject {
     }
 
     const candidate = this.draftState.pool[pIdx];
-    const currentSquad = actor === "USER" ? this.draftState.userPicks : this.draftState.aiPicks;
+    const squad = actor === "USER" ? this.draftState.userPicks : this.draftState.aiPicks;
 
-    const check = canPickPlayer(candidate, currentSquad, this.draftState.challenge);
+    // Determine target slot
+    let slotIdx: number;
+    if (typeof targetIndex === "number" && targetIndex >= 0 && targetIndex < 11) {
+      slotIdx = targetIndex;
+    } else {
+      slotIdx = squad.findIndex((p) => p === null);
+      if (slotIdx === -1) {
+        return { success: false, error: "Squad is already full (11 players)" };
+      }
+    }
+
+    const check = canPickPlayer(candidate, squad, this.draftState.challenge, slotIdx);
     if (!check.allowed) {
       return { success: false, error: check.reason || "Illegal pick" };
     }
 
+    // Remove candidate from pool
     const [picked] = this.draftState.pool.splice(pIdx, 1);
 
+    // If target slot already had a player, return that player to pool
+    const existing = squad[slotIdx];
+    if (existing) {
+      this.draftState.pool.push(existing);
+    }
+
+    // Place player directly in target slot
+    squad[slotIdx] = picked;
+
     if (actor === "USER") {
-      if (typeof targetIndex === "number" && targetIndex >= 0 && targetIndex <= this.draftState.userPicks.length) {
-        this.draftState.userPicks.splice(targetIndex, 0, picked);
-      } else {
-        this.draftState.userPicks.push(picked);
-      }
       this.draftState.currentTurn = "AI";
     } else {
-      this.draftState.aiPicks.push(picked);
       this.draftState.currentTurn = "USER";
       this.draftState.round += 1;
     }
@@ -254,105 +285,172 @@ export class DraftRoom implements DurableObject {
   }
 
   /**
-   * Intelligently arrange squad into optimal batting positions (1 to 11):
-   * 1-2: Openers, 3-5: Anchors / Middle, 6-7: Finishers / ARs, 8-11: Bowlers (sorted by bat depth)
-   */
-  private optimizeBattingLineup(squad: PlayerWithStats[]): PlayerWithStats[] {
-    if (squad.length <= 1) return squad;
-
-    const remaining = [...squad];
-    const ordered: PlayerWithStats[] = [];
-
-    // 1. Pick Openers (Slots 1 & 2): top-order innings specialists
-    for (let i = 0; i < 2 && remaining.length > 0; i++) {
-      remaining.sort((a, b) => {
-        const aIsBowl = a.primary_role === "BOWL" ? -100 : 0;
-        const bIsBowl = b.primary_role === "BOWL" ? -100 : 0;
-        const aScore = aIsBowl + a.stats.top_order_innings * 2 + a.stats.bat_average;
-        const bScore = bIsBowl + b.stats.top_order_innings * 2 + b.stats.bat_average;
-        return bScore - aScore;
-      });
-      ordered.push(remaining.shift()!);
-    }
-
-    // 2. Pick Anchors / Middle Order (Slots 3, 4, 5): solid batters
-    for (let i = 0; i < 3 && remaining.length > 0; i++) {
-      remaining.sort((a, b) => {
-        const aIsBowl = a.primary_role === "BOWL" ? -100 : 0;
-        const bIsBowl = b.primary_role === "BOWL" ? -100 : 0;
-        const aScore = aIsBowl + a.stats.middle_order_innings * 1.5 + a.stats.bat_average * 1.2;
-        const bScore = bIsBowl + b.stats.middle_order_innings * 1.5 + b.stats.bat_average * 1.2;
-        return bScore - aScore;
-      });
-      ordered.push(remaining.shift()!);
-    }
-
-    // 3. Pick Finishers / All-Rounders (Slots 6 & 7): high SR, finisher innings, AR
-    for (let i = 0; i < 2 && remaining.length > 0; i++) {
-      remaining.sort((a, b) => {
-        const aIsBowl = a.primary_role === "BOWL" ? -50 : 0;
-        const bIsBowl = b.primary_role === "BOWL" ? -50 : 0;
-        const aScore = aIsBowl + (a.primary_role === "AR" ? 20 : 0) + a.stats.finisher_innings * 2 + (a.stats.bat_strike_rate / 130) * 15;
-        const bScore = bIsBowl + (b.primary_role === "AR" ? 20 : 0) + b.stats.finisher_innings * 2 + (b.stats.bat_strike_rate / 130) * 15;
-        return bScore - aScore;
-      });
-      ordered.push(remaining.shift()!);
-    }
-
-    // 4. Remaining players (Slots 8 to 11): Bowlers / Bowling ARs sorted by bat capability
-    remaining.sort((a, b) => {
-      const aBat = a.stats.bat_average * (a.stats.bat_strike_rate / 100);
-      const bBat = b.stats.bat_average * (b.stats.bat_strike_rate / 100);
-      return bBat - aBat;
-    });
-    ordered.push(...remaining);
-
-    return ordered;
-  }
-
-  /**
-   * AI Draft Logic: picks intelligently according to challenge conditions and missing slots.
+   * Slot-Aware, Pitch-Aware AI Draft Logic:
+   * AI NEVER picks Hardik as an opener (slots 0-1 reserved for top order).
+   * AI NEVER picks 5 spinners at Wankhede or Lord's (max 1 spinner on flat/seam tracks).
    */
   private executeAiPick() {
     if (!this.draftState || this.draftState.pool.length === 0) return;
 
     const squad = this.draftState.aiPicks;
     const challenge = this.draftState.challenge;
+    const pitchType = challenge.venue.pitch_type;
 
-    // Filter strictly to legal candidates
-    const legalCandidates = this.draftState.pool.filter(
-      (p) => canPickPlayer(p, squad, challenge).allowed
+    // Find all vacant slots
+    const emptyIndices: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      if (squad[i] === null) emptyIndices.push(i);
+    }
+
+    if (emptyIndices.length === 0) return;
+
+    const nonNullAi = squad.filter((p): p is PlayerWithStats => p !== null);
+    const hasKeeper = nonNullAi.some((p) => p.primary_role === "WK");
+    const spinnerCount = nonNullAi.filter((p) => p.bowling_category === "SPIN").length;
+    const pacerCount = nonNullAi.filter((p) => p.bowling_category === "PACE").length;
+    const bowlerCount = nonNullAi.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").length;
+
+    // Target slot prioritization:
+    let targetSlotIndex = emptyIndices[0];
+    if (emptyIndices.includes(0)) targetSlotIndex = 0;
+    else if (emptyIndices.includes(1)) targetSlotIndex = 1;
+    else if (emptyIndices.includes(2)) targetSlotIndex = 2;
+    else if (emptyIndices.some((idx) => idx >= 8) && bowlerCount < 4) {
+      targetSlotIndex = emptyIndices.find((idx) => idx >= 8)!;
+    } else if (emptyIndices.includes(5) || emptyIndices.includes(6)) {
+      targetSlotIndex = emptyIndices.find((idx) => idx === 5 || idx === 6)!;
+    }
+
+    // Find legal candidates for this target slot
+    let legal = this.draftState.pool.filter(
+      (p) => canPickPlayer(p, squad, challenge, targetSlotIndex).allowed
     );
 
-    const candidatesToScore = legalCandidates.length > 0 ? legalCandidates : this.draftState.pool;
+    if (legal.length === 0) {
+      // Try alternate empty slots
+      for (const slotIdx of emptyIndices) {
+        const alt = this.draftState.pool.filter(
+          (p) => canPickPlayer(p, squad, challenge, slotIdx).allowed
+        );
+        if (alt.length > 0) {
+          targetSlotIndex = slotIdx;
+          legal = alt;
+          break;
+        }
+      }
+    }
 
-    // Check needed roles
-    const needsKeeper = squad.length >= 8 && !squad.some((p) => p.primary_role === "WK");
-    const needsBowlers = squad.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").length < 4;
+    const poolToScore = legal.length > 0 ? legal : this.draftState.pool;
 
-    // Candidate ranking
-    const scoredCandidates = candidatesToScore.map((p) => {
-      let weight = p.stats.bat_average * 0.4 + (p.stats.bat_strike_rate / 130) * 20;
-      if (p.primary_role === "BOWL" || p.primary_role === "AR") {
-        weight += (7.5 / Math.max(5.5, p.stats.bowl_economy || 8)) * 30 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 15;
+    // Strict Pitch Quota Check:
+    // Flat / Seam tracks: Max 1 spinner in the entire XI!
+    const disallowMoreSpinners =
+      (pitchType === "HIGH_SCORING_FLAT" || pitchType === "GREEN_SEAMER") && spinnerCount >= 1;
+
+    const needsKeeperUrgent = !hasKeeper && emptyIndices.length <= 4;
+
+    const scored = poolToScore.map((p) => {
+      let score = 0;
+      const isPacer = p.bowling_category === "PACE";
+      const isSpinner = p.bowling_category === "SPIN";
+      const isWK = p.primary_role === "WK";
+      const isAR = p.primary_role === "AR";
+      const isBat = p.primary_role === "BAT";
+      const isBowl = p.primary_role === "BOWL";
+
+      // Positional role evaluation
+      if (targetSlotIndex === 0 || targetSlotIndex === 1) {
+        // OPENERS: Must be genuine openers (Kohli, Rohit, Warner, de Kock, Buttler, etc.)
+        if (isBowl) {
+          score -= 1000;
+        } else if (p.stats.top_order_innings >= 10 || (isBat && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35)) {
+          score += 100 + p.stats.bat_average * 1.5 + (p.stats.bat_strike_rate / 130) * 20 + p.stats.top_order_innings * 0.4;
+        } else if (isBat || isWK) {
+          score += 25 + p.stats.bat_average;
+        } else {
+          score -= 500; // Finishers/ARs (Hardik) penalized as openers
+        }
+      } else if (targetSlotIndex === 2) {
+        // TOP ORDER ANCHOR (No. 3)
+        if (isBowl) {
+          score -= 1000;
+        } else if (p.stats.bat_average >= 38.0 && (isBat || isWK)) {
+          score += 100 + p.stats.bat_average * 2.0 + (p.stats.matches / 10);
+        } else if (isBat || isWK) {
+          score += 50 + p.stats.bat_average * 1.2;
+        } else {
+          score -= 300;
+        }
+      } else if (targetSlotIndex === 3 || targetSlotIndex === 4) {
+        // MIDDLE ORDER (No. 4 & 5)
+        if (isBowl) {
+          score -= 800;
+        } else if (isBat || isWK || isAR) {
+          score += 80 + p.stats.bat_average * 1.2 + (p.stats.bat_strike_rate / 130) * 15;
+          if (p.stats.middle_order_innings >= 8) score += 20;
+        }
+      } else if (targetSlotIndex === 5 || targetSlotIndex === 6) {
+        // FINISHERS & ALL-ROUNDERS (No. 6 & 7 - Hardik, Stokes, Maxwell, Russell)
+        if (isAR) {
+          score += 90 + (p.stats.bat_strike_rate / 135) * 25 + p.stats.finisher_innings * 2;
+        } else if (p.stats.finisher_innings >= 5 || p.stats.bat_strike_rate >= 140) {
+          score += 75 + (p.stats.bat_strike_rate / 135) * 25 + p.stats.bat_average * 0.8;
+        } else if (isBat) {
+          score += 30 + (p.stats.bat_strike_rate / 130) * 15;
+        } else {
+          score -= 200;
+        }
+      } else if (targetSlotIndex === 7) {
+        // LOWER ORDER / BOWLING AR (No. 8)
+        if (isAR || (isBowl && p.stats.bat_average >= 14.0)) {
+          score += 90 + p.stats.bat_average * 1.5 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 20;
+        } else if (isBowl) {
+          score += 60;
+        } else {
+          score -= 100;
+        }
+      } else {
+        // FRONTLINE BOWLERS (Slots 8, 9, 10 - No. 9, 10, 11)
+        if (isBowl || isAR) {
+          score += 80 + (7.8 / Math.max(5.5, p.stats.bowl_economy || 8.0)) * 30 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 25;
+        } else {
+          score -= 1000; // Never pick pure batter at No. 11
+        }
       }
 
-      // Priority boosts
-      if (needsKeeper && p.primary_role === "WK") weight += 50;
-      if (needsBowlers && (p.primary_role === "BOWL" || p.primary_role === "AR")) weight += 30;
+      // Pitch Suitability Quotas:
+      if (disallowMoreSpinners && isSpinner) {
+        score -= 500; // Strictly prevent 5 spinners at Wankhede or Lord's
+      }
+      if (pitchType === "HIGH_SCORING_FLAT" && isPacer) {
+        score += 35; // Wankhede pace boost
+      }
+      if (pitchType === "GREEN_SEAMER" && isPacer) {
+        score += 40; // Lord's seam boost
+      }
+      if (pitchType === "DUSTBOWL" && isSpinner) {
+        score += 40; // Chepauk spin boost
+      }
 
-      // Pitch match bonus
-      if (challenge.venue.pitch_type === "DUSTBOWL" && p.bowling_category === "SPIN") weight += 20;
-      if (challenge.venue.pitch_type === "GREEN_SEAMER" && p.bowling_category === "PACE") weight += 20;
+      // Mandatory keeper guard
+      if (needsKeeperUrgent && isWK) {
+        score += 150;
+      }
 
-      return { player: p, weight };
+      return { player: p, score };
     });
 
-    scoredCandidates.sort((a, b) => b.weight - a.weight);
+    scored.sort((a, b) => b.score - a.score);
+    const chosen = scored[0].player;
 
-    // Pick top legal candidate
-    const topPick = scoredCandidates[0]?.player || candidatesToScore[0];
-    this.executePick(topPick.id, "AI");
+    const pIdx = this.draftState.pool.findIndex((p) => p.id === chosen.id);
+    if (pIdx !== -1) {
+      const [picked] = this.draftState.pool.splice(pIdx, 1);
+      squad[targetSlotIndex] = picked;
+      this.draftState.currentTurn = "USER";
+      this.draftState.round += 1;
+      this.draftState.lastActionTimestamp = Date.now();
+    }
   }
 
   private async finishDraft() {
@@ -360,14 +458,19 @@ export class DraftRoom implements DurableObject {
 
     this.draftState.status = "COMPLETED";
 
-    // Intelligently arrange AI squad into competitive batting order
-    this.draftState.aiPicks = this.optimizeBattingLineup(this.draftState.aiPicks);
+    // 1. Run realistic ball-by-ball match simulation
+    const simulation = simulateCricketMatch(
+      this.draftState.userPicks,
+      this.draftState.aiPicks,
+      this.draftState.challenge
+    );
+    this.draftState.simulation = simulation;
 
-    // Compute base deterministic scores
+    // 2. Compute deterministic scores
     const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
     const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
 
-    // Call Gemini for Ground Conditions & Historical Venue Suitability
+    // 3. Ground conditions & referee report
     const apiKey = this.env?.GEMINI_API_KEY;
     const evaluation = await evaluateGroundConditionsWithGemini(
       this.draftState.userPicks,
@@ -381,12 +484,13 @@ export class DraftRoom implements DurableObject {
       aiScore: evaluation.ai_score,
       userAdjustment: evaluation.user_adjustment,
       aiAdjustment: evaluation.ai_adjustment,
-      winner: evaluation.winner,
-      decisiveDifference: evaluation.decisive_difference,
-      whyWinnerWon: evaluation.why_winner_won,
-      whyLoserLost: evaluation.why_loser_lost,
-      groundConditionsAnalysis: evaluation.ground_conditions_analysis,
-      verdictSummary: evaluation.verdict_summary,
+      winner: simulation.winner !== "TIE" && simulation.winner !== "DRAW" ? simulation.winner : evaluation.winner,
+      decisiveDifference: simulation.decisiveDifference || evaluation.decisive_difference,
+      whyWinnerWon: simulation.whyWinnerWon?.length ? simulation.whyWinnerWon : evaluation.why_winner_won,
+      whyLoserLost: simulation.whyLoserLost?.length ? simulation.whyLoserLost : evaluation.why_loser_lost,
+      groundConditionsAnalysis: simulation.groundConditionsAnalysis || evaluation.ground_conditions_analysis,
+      verdictSummary: simulation.summary || evaluation.verdict_summary,
+      simulation,
       userBreakdown,
       aiBreakdown,
     };
