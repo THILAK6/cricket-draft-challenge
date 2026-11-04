@@ -1,0 +1,32 @@
+{
+  "name": "cricket-draft-challenge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered Cricket XI drafting game with deterministic constraint solver, real-time draft rooms, and hybrid scoring.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --noEmit",
+    "etl:download": "tsx src/etl/download-cricsheet.ts",
+    "etl:process": "tsx src/etl/process-cricsheet.ts",
+    "db:migrate:local": "wrangler d1 execute cricdraft-db --local --file=src/db/schema.sql",
+    "db:seed:local": "wrangler d1 execute cricdraft-db --local --file=data/seed.sql"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241230.0",
+    "@types/node": "^22.10.2",
+    "csv-parse": "^5.6.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.99.0"
+  }
+}
+
