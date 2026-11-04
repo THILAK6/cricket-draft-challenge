@@ -443,7 +443,6 @@
             <button class="cat-btn" data-category="SPIN">🌀 Spinners</button>
             <button class="cat-btn" data-category="PACE">⚡ Fast Bowlers</button>
             <button class="cat-btn" data-category="WK">🧤 Keepers</button>
-            <button class="cat-btn" data-category="LHB">Left-Handers</button>
           </div>
 
           <div id="pool-list" class="pool-list">
@@ -550,7 +549,6 @@
     // Helper: Check if a player belongs to a specific section category
     function matchCategory(p, cat) {
       if (cat === 'ALL') return true;
-      if (cat === 'LHB') return p.batting_hand === 'LHB';
       if (cat === 'WK') return p.primary_role === 'WK';
       if (cat === 'SPIN') return p.bowling_category === 'SPIN';
       if (cat === 'PACE') return p.bowling_category === 'PACE';
