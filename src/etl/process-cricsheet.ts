@@ -295,7 +295,6 @@ async function main() {
   console.log("[Process] Generating data/seed.sql...");
   const sqlLines: string[] = [
     "-- Auto-generated seed data from Cricsheet + ESPN Cricinfo enrichment",
-    "BEGIN TRANSACTION;",
   ];
 
   for (const { agg, meta } of enrichedList) {
@@ -319,7 +318,6 @@ async function main() {
     );
   }
 
-  sqlLines.push("COMMIT;");
 
   const seedPath = path.resolve(process.cwd(), "data/seed.sql");
   fs.writeFileSync(seedPath, sqlLines.join("\n"), "utf-8");
