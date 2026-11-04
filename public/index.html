@@ -412,7 +412,42 @@
       justify-content: space-between;
       gap: 0.4rem;
       min-height: 40px;
-      transition: all 0.12s ease;
+      transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+      user-select: none;
+    }
+    .slot-row.draggable {
+      cursor: grab;
+    }
+    .slot-row.draggable:active {
+      cursor: grabbing;
+    }
+    .slot-row.dragging {
+      opacity: 0.35;
+      transform: scale(0.98);
+      border-color: var(--gold) !important;
+      background: rgba(212, 175, 55, 0.08) !important;
+    }
+    .slot-row.drag-over {
+      border-color: var(--gold) !important;
+      background: rgba(212, 175, 55, 0.18) !important;
+      box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(212, 175, 55, 0.35);
+      transform: translateY(-1px);
+    }
+    .drag-handle {
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      cursor: grab;
+      display: inline-flex;
+      align-items: center;
+      opacity: 0.45;
+      transition: opacity 0.1s ease, color 0.1s ease;
+      user-select: none;
+      padding-right: 0.15rem;
+      flex-shrink: 0;
+    }
+    .slot-row:hover .drag-handle {
+      opacity: 1;
+      color: var(--gold);
     }
     .slot-row.empty {
       background: rgba(255, 255, 255, 0.015);
@@ -471,29 +506,31 @@
       font-variant-numeric: tabular-nums;
     }
 
-    .slot-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.2rem;
-    }
-    .btn-icon-tiny {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid var(--border);
-      color: #cbd5e1;
-      border-radius: 3px;
-      width: 22px;
-      height: 22px;
-      font-size: 0.68rem;
-      display: flex;
+    .btn-remove-tiny {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+      width: 20px;
+      height: 20px;
+      font-size: 0.7rem;
+      border-radius: 4px;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       transition: all 0.1s ease;
+      margin-left: auto;
+      flex-shrink: 0;
     }
-    .btn-icon-tiny:hover:not(:disabled) { background: rgba(255, 255, 255, 0.15); color: #fff; }
-    .btn-icon-tiny:disabled { opacity: 0.25; cursor: not-allowed; }
-    .btn-remove-tiny { color: #f87171; }
-    .btn-remove-tiny:hover { background: rgba(239, 68, 68, 0.2) !important; color: #fca5a5 !important; }
+    .btn-remove-tiny:hover {
+      background: rgba(225, 29, 72, 0.25) !important;
+      border-color: rgba(225, 29, 72, 0.5) !important;
+      color: #fca5a5 !important;
+      transform: scale(1.08);
+    }
+    .btn-remove-tiny:active {
+      transform: scale(0.92);
+    }
 
     /* Badges */
     .badge-caps-gold { font-size: 0.68rem; font-weight: 800; background: var(--gold-dim); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); padding: 0.08rem 0.32rem; border-radius: 3px; }
@@ -1362,12 +1399,66 @@
         const slotDef = SLOT_DEFINITIONS[i];
         const isTargeted = isUser && (currentTargetSlot === i);
         const row = document.createElement('div');
+        row.dataset.slotIndex = i.toString();
 
         if (p) {
           row.className = `slot-row ${isTargeted ? 'targeted' : ''}`;
           if (isUser) {
+            row.classList.add('draggable');
+            row.setAttribute('draggable', 'true');
+
+            // Click to select as active target
             row.onclick = (e) => {
               if (e.target.tagName !== 'BUTTON') selectTargetSlot(i);
+            };
+
+            // HTML5 Drag Events
+            row.ondragstart = (e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData('text/plain', i.toString());
+              window.draggedSlotIndex = i;
+              row.classList.add('dragging');
+            };
+
+            row.ondragend = () => {
+              row.classList.remove('dragging');
+              document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+              window.draggedSlotIndex = null;
+            };
+
+            // Touch Drag Support (Mobile)
+            row.ontouchstart = (e) => {
+              if (e.target.tagName === 'BUTTON') return;
+              window.touchDraggedSlotIndex = i;
+            };
+
+            row.ontouchmove = (e) => {
+              if (window.touchDraggedSlotIndex === null) return;
+              const touch = e.touches[0];
+              const overEl = document.elementFromPoint(touch.clientX, touch.clientY);
+              const targetRow = overEl ? overEl.closest('#user-slots-list .slot-row') : null;
+              document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+              if (targetRow && targetRow.dataset.slotIndex !== undefined) {
+                const overIdx = parseInt(targetRow.dataset.slotIndex, 10);
+                if (overIdx !== window.touchDraggedSlotIndex) {
+                  targetRow.classList.add('drag-over');
+                }
+              }
+            };
+
+            row.ontouchend = (e) => {
+              if (window.touchDraggedSlotIndex === null) return;
+              const touch = e.changedTouches[0];
+              const endEl = document.elementFromPoint(touch.clientX, touch.clientY);
+              const targetRow = endEl ? endEl.closest('#user-slots-list .slot-row') : null;
+              document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+              if (targetRow && targetRow.dataset.slotIndex !== undefined) {
+                const toIdx = parseInt(targetRow.dataset.slotIndex, 10);
+                if (!isNaN(toIdx) && toIdx !== window.touchDraggedSlotIndex) {
+                  reorderSlot(window.touchDraggedSlotIndex, toIdx);
+                }
+              }
+              window.touchDraggedSlotIndex = null;
             };
           }
 
@@ -1375,7 +1466,8 @@
           const caps = getCapsBadge(p.stats.matches);
 
           row.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.35rem; min-width: 0; flex: 1;">
+              ${isUser ? '<span class="drag-handle" title="Drag to reorder slot">⋮⋮</span>' : ''}
               <span class="slot-tag ${isTargeted ? 'slot-tag-active' : ''}">#${i+1} ${slotDef.shortRole}</span>
               <div class="slot-content">
                 <div class="slot-player-title">
@@ -1391,11 +1483,7 @@
             </div>
 
             ${isUser ? `
-              <div class="slot-actions">
-                <button class="btn-icon-tiny" onclick="reorderSlot(${i}, ${i-1})" ${i === 0 ? 'disabled' : ''} title="Move Up">▲</button>
-                <button class="btn-icon-tiny" onclick="reorderSlot(${i}, ${i+1})" ${i === 10 ? 'disabled' : ''} title="Move Down">▼</button>
-                <button class="btn-icon-tiny btn-remove-tiny" onclick="removePlayer(${i})" title="Return to pool">✕</button>
-              </div>
+              <button class="btn-remove-tiny" onclick="event.stopPropagation(); removePlayer(${i})" title="Remove from squad">✕</button>
             ` : ''}
           `;
         } else {
@@ -1405,15 +1493,43 @@
           }
 
           row.innerHTML = `
-            <span class="slot-tag ${isTargeted ? 'slot-tag-active' : ''}">#${i+1} ${slotDef.shortRole}</span>
-            <div class="slot-content">
-              <span style="font-size: 0.72rem; color: ${isTargeted ? 'var(--gold)' : 'var(--text-dim)'}; font-weight: 600;">
-                ${isTargeted ? '🎯 Active Target — Click player in pool' : (isUser ? 'Empty Slot — Click to target' : 'Vacant')}
-              </span>
+            <div style="display: flex; align-items: center; gap: 0.35rem; min-width: 0; flex: 1;">
+              ${isUser ? '<span class="drag-handle" style="opacity: 0.2;">⋮⋮</span>' : ''}
+              <span class="slot-tag ${isTargeted ? 'slot-tag-active' : ''}">#${i+1} ${slotDef.shortRole}</span>
+              <div class="slot-content">
+                <span style="font-size: 0.72rem; color: ${isTargeted ? 'var(--gold)' : 'var(--text-dim)'}; font-weight: 600;">
+                  ${isTargeted ? '🎯 Active Target — Click player in pool' : (isUser ? 'Empty Slot — Click to target' : 'Vacant')}
+                </span>
+              </div>
             </div>
             ${isTargeted ? '<span style="font-size: 0.65rem; font-weight: 800; color: var(--gold); text-transform: uppercase;">TARGET</span>' : ''}
           `;
         }
+
+        // Drop target support on all user rows (filled and empty)
+        if (isUser) {
+          row.ondragover = (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (window.draggedSlotIndex !== null && window.draggedSlotIndex !== i) {
+              row.classList.add('drag-over');
+            }
+          };
+
+          row.ondragleave = () => {
+            row.classList.remove('drag-over');
+          };
+
+          row.ondrop = (e) => {
+            e.preventDefault();
+            row.classList.remove('drag-over');
+            const fromIdx = window.draggedSlotIndex !== null ? window.draggedSlotIndex : parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (!isNaN(fromIdx) && fromIdx !== i) {
+              reorderSlot(fromIdx, i);
+            }
+          };
+        }
+
         el.appendChild(row);
       }
     }
