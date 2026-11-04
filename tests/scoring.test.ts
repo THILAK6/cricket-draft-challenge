@@ -161,5 +161,88 @@ describe("Scoring Engine - LLM Layer Guardrails", () => {
     expect(payload.team_composition.wicketkeepers).toContain("Player p5");
     expect(payload.referee_instructions).toContain("-10 and +10");
   });
+
+  it("penalizes teams with no finishers in slots 5-7 compared to teams with explosive finishers", () => {
+    const challenge: Challenge = {
+      id: "c-finisher",
+      title: "Finisher Test",
+      format: "T20",
+      venue: { name: "Wankhede", country: "IND", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "High scoring venue",
+      constraints: [],
+    };
+
+    // Squad with explosive finisher at pos 6 (Maxwell / Klaasen profile)
+    const squadWithFinisher: PlayerWithStats[] = [
+      createPlayer("p1", "IND", "BAT", "RHB", "NONE", 8, 140, 35),
+      createPlayer("p2", "AUS", "BAT", "LHB", "NONE", 8, 145, 33),
+      createPlayer("p3", "ENG", "BAT", "RHB", "NONE", 8, 138, 38),
+      createPlayer("p4", "RSA", "BAT", "RHB", "NONE", 8, 135, 34),
+      createPlayer("p5", "NZL", "WK", "RHB", "NONE", 8, 136, 32),
+      createPlayer("p6", "AUS", "AR", "RHB", "SPIN", 7.8, 155, 31), // Explosive Finisher
+      createPlayer("p7", "IND", "AR", "RHB", "PACE", 7.5, 145, 29), // Finisher AR
+      createPlayer("p8", "PAK", "AR", "RHB", "PACE", 7.6, 130, 22),
+      createPlayer("p9", "WI", "BOWL", "RHB", "PACE", 7.2, 100, 10),
+      createPlayer("p10", "SL", "BOWL", "RHB", "SPIN", 7.1, 95, 8),
+      createPlayer("p11", "AFG", "BOWL", "RHB", "SPIN", 6.8, 90, 7),
+    ];
+
+    // Squad with NO finishers (slow accumulators in middle order: SR 110, 0 finisher innings)
+    const squadNoFinisher: PlayerWithStats[] = [
+      createPlayer("p1", "IND", "BAT", "RHB", "NONE", 8, 140, 35),
+      createPlayer("p2", "AUS", "BAT", "LHB", "NONE", 8, 145, 33),
+      createPlayer("p3", "ENG", "BAT", "RHB", "NONE", 8, 138, 38),
+      createPlayer("p4", "RSA", "BAT", "RHB", "NONE", 8, 120, 28),
+      createPlayer("p5", "NZL", "WK", "RHB", "NONE", 8, 120, 28),
+      createPlayer("p6_slow", "BAN", "BAT", "RHB", "NONE", 8, 112, 26), // Slow accumulator
+      createPlayer("p7_slow", "ZIM", "BAT", "RHB", "NONE", 8, 110, 24), // Slow accumulator
+      createPlayer("p8", "PAK", "AR", "RHB", "PACE", 7.6, 120, 18),
+      createPlayer("p9", "WI", "BOWL", "RHB", "PACE", 7.2, 100, 10),
+      createPlayer("p10", "SL", "BOWL", "RHB", "SPIN", 7.1, 95, 8),
+      createPlayer("p11", "AFG", "BOWL", "RHB", "SPIN", 6.8, 90, 7),
+    ];
+
+    const withFinisherScore = calculateDeterministicScore(squadWithFinisher, challenge);
+    const noFinisherScore = calculateDeterministicScore(squadNoFinisher, challenge);
+
+    expect(withFinisherScore.role_balance_score).toBeGreaterThan(noFinisherScore.role_balance_score);
+  });
+
+  it("weighs matches played smartly: a 100-match veteran scores higher than a 6-match player with inflated stats", () => {
+    const challenge: Challenge = {
+      id: "c-exp",
+      title: "Experience Test",
+      format: "T20",
+      venue: { name: "MCG", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "Pressure test",
+      constraints: [],
+    };
+
+    // 100-match battle-tested veteran (Virat Kohli / Rohit Sharma profile)
+    const veteranSquad: PlayerWithStats[] = [];
+    for (let i = 1; i <= 11; i++) {
+      const p = createPlayer(`vet_${i}`, "IND", i === 5 ? "WK" : i >= 7 ? "BOWL" : "BAT", "RHB", i >= 7 ? "PACE" : "NONE");
+      p.stats.matches = 110;
+      p.stats.bat_average = 36.0;
+      p.stats.bat_strike_rate = 138.0;
+      veteranSquad.push(p);
+    }
+
+    // 6-match small-sample squad with inflated raw averages
+    const smallSampleSquad: PlayerWithStats[] = [];
+    for (let i = 1; i <= 11; i++) {
+      const p = createPlayer(`novice_${i}`, "IND", i === 5 ? "WK" : i >= 7 ? "BOWL" : "BAT", "RHB", i >= 7 ? "PACE" : "NONE");
+      p.stats.matches = 6;
+      p.stats.bat_average = 48.0; // High raw average, but only 6 matches
+      p.stats.bat_strike_rate = 152.0;
+      smallSampleSquad.push(p);
+    }
+
+    const veteranScore = calculateDeterministicScore(veteranSquad, challenge);
+    const noviceScore = calculateDeterministicScore(smallSampleSquad, challenge);
+
+    // Proven international pedigree beats small sample size
+    expect(veteranScore.player_quality_score).toBeGreaterThan(noviceScore.player_quality_score);
+  });
 });
 

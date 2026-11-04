@@ -15,7 +15,7 @@ export function calculateDeterministicScore(
   const { pitch_type } = challenge.venue;
 
   // -------------------------------------------------------------
-  // 1. Role Balance Score (0 - 25 points)
+  // 1. Role Balance & Batting Order Fit (0 - 25 points)
   // -------------------------------------------------------------
   let roleScore = 0;
 
@@ -23,29 +23,67 @@ export function calculateDeterministicScore(
   const hasKeeper = squad.some((p) => p.primary_role === "WK");
   if (hasKeeper) roleScore += 5;
 
-  // 5+ bowling options (8 pts)
+  // 5+ bowling options (7-8 pts)
   const bowlingOptions = squad.filter(
     (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
   );
   if (bowlingOptions.length >= 6) roleScore += 8;
-  else if (bowlingOptions.length === 5) roleScore += 6;
+  else if (bowlingOptions.length === 5) roleScore += 6.5;
   else roleScore += Math.max(0, bowlingOptions.length * 1.2);
 
-  // Top order openers (5 pts): at least 2 players who frequently open
-  const openers = squad.filter((p) => p.stats.top_order_innings >= 3 || p.primary_role === "BAT");
-  if (openers.length >= 2) roleScore += 5;
-  else if (openers.length === 1) roleScore += 2.5;
+  // Positional Batting Order Fit:
+  // Slots 1 & 2 (indices 0, 1): Expects top order batters
+  let openerPoints = 0;
+  for (let i = 0; i < Math.min(2, squad.length); i++) {
+    const p = squad[i];
+    if (p.primary_role === "BOWL") {
+      // Severe penalty for opening with a tailender
+      roleScore -= 4.0;
+    } else if (
+      p.stats.top_order_innings >= 6 ||
+      (p.primary_role === "BAT" && p.stats.top_order_innings >= p.stats.middle_order_innings)
+    ) {
+      openerPoints += 2.5;
+    } else {
+      openerPoints += 1.0;
+    }
+  }
+  roleScore += Math.min(5, openerPoints);
 
-  // Middle-order stability (4 pts)
-  const middleOrder = squad.filter((p) => p.stats.middle_order_innings >= 3 || p.primary_role === "BAT" || p.primary_role === "AR");
-  if (middleOrder.length >= 3) roleScore += 4;
-  else roleScore += 2;
+  // Middle Order Stability: Slots 3, 4, 5
+  let middleOrderCount = 0;
+  for (let i = 2; i < Math.min(5, squad.length); i++) {
+    const p = squad[i];
+    if (p.primary_role === "BOWL") {
+      roleScore -= 3.0; // Penalty for pure bowler in middle order
+    } else if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
+      middleOrderCount++;
+    }
+  }
+  roleScore += Math.min(4, middleOrderCount * 1.35);
 
-  // All-rounder presence / balance (3 pts)
-  const allrounders = squad.filter((p) => p.primary_role === "AR");
-  if (allrounders.length >= 1) roleScore += 3;
+  // Finisher in Slots 5, 6, 7 (User requirement: no finishers selected must affect result)
+  let hasFinisher = false;
+  for (let i = 4; i < Math.min(7, squad.length); i++) {
+    const p = squad[i];
+    const isFinisher =
+      p.stats.finisher_innings >= 6 ||
+      (p.primary_role === "AR" && p.stats.bat_strike_rate >= 135) ||
+      (p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200);
+    if (isFinisher) {
+      hasFinisher = true;
+      break;
+    }
+  }
 
-  const role_balance_score = Math.min(25, roleScore);
+  if (hasFinisher) {
+    roleScore += 3.5;
+  } else if (squad.length >= 7) {
+    // Deficit penalty for missing a finisher in death overs
+    roleScore -= 4.0;
+  }
+
+  const role_balance_score = Math.max(0, Math.min(25, Math.round(roleScore * 10) / 10));
 
   // -------------------------------------------------------------
   // 2. Pitch Suitability Score (0 - 25 points)
@@ -99,35 +137,39 @@ export function calculateDeterministicScore(
   const pitch_suitability_score = Math.max(0, Math.min(25, pitchScore));
 
   // -------------------------------------------------------------
-  // 3. Player Quality Score (0 - 35 points)
+  // 3. Player Quality Score with Bayesian Experience Weighting (0 - 35 points)
   // -------------------------------------------------------------
   let qualityTotal = 0;
-  let qualifiedBatters = 0;
-  let qualifiedBowlers = 0;
 
   for (const p of squad) {
+    const matches = Math.max(1, p.stats.matches);
+    // Bayesian credibility weight: regresses small-sample anomalies toward replacement baseline
+    const w = matches / (matches + 22);
+
     if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
-      // Batting quality: average + strike rate component
-      const avg = Math.min(50, p.stats.bat_average);
-      const sr = Math.min(160, p.stats.bat_strike_rate);
-      // Normalized: Avg of 35 and SR of 135 gives ~1.0
-      const batRating = (avg / 35.0) * 0.5 + (sr / 135.0) * 0.5;
-      qualityTotal += batRating * 2.8;
-      qualifiedBatters++;
+      // Regressed batting average and strike rate
+      const regAvg = w * Math.min(52, p.stats.bat_average) + (1 - w) * 20.0;
+      const regSr = w * Math.min(160, p.stats.bat_strike_rate) + (1 - w) * 115.0;
+
+      // Veteran longevity composure bonus
+      const expBonus = matches >= 100 ? 0.35 : matches >= 50 ? 0.2 : matches < 12 ? -0.3 : 0;
+      const batRating = (regAvg / 35.0) * 0.5 + (regSr / 135.0) * 0.5 + expBonus;
+      qualityTotal += batRating * 2.7;
     }
 
     if (p.primary_role === "BOWL" || p.primary_role === "AR") {
-      // Bowling quality: lower economy and more wickets
       const econ = p.stats.bowl_economy || 8.5;
-      const wpm = p.stats.matches > 0 ? p.stats.bowl_wickets / p.stats.matches : 0.8;
-      // Normalized: Econ of 7.5 and 1.2 wkts/match gives ~1.0
-      const bowlRating = (7.5 / Math.max(5.5, econ)) * 0.5 + Math.min(1.5, wpm / 1.0) * 0.5;
-      qualityTotal += bowlRating * 3.0;
-      qualifiedBowlers++;
+      const wpm = p.stats.bowl_wickets / matches;
+      const regEcon = w * Math.max(5.5, econ) + (1 - w) * 8.5;
+      const regWpm = w * Math.min(1.6, wpm) + (1 - w) * 0.6;
+
+      const expBonus = matches >= 80 ? 0.3 : matches >= 40 ? 0.15 : matches < 12 ? -0.25 : 0;
+      const bowlRating = (7.5 / regEcon) * 0.5 + (regWpm / 1.0) * 0.5 + expBonus;
+      qualityTotal += bowlRating * 2.8;
     }
   }
 
-  const player_quality_score = Math.max(10, Math.min(35, Math.round(qualityTotal * 0.6)));
+  const player_quality_score = Math.max(10, Math.min(35, Math.round(qualityTotal * 0.55)));
 
   // -------------------------------------------------------------
   // 4. Batting Depth Score (0 - 15 points)

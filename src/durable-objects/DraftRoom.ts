@@ -50,13 +50,13 @@ export class DraftRoom implements DurableObject {
         return Response.json({ error: "Draft not in drafting state" }, { status: 400 });
       }
 
-      const { playerId } = await request.json<{ playerId: string }>();
+      const { playerId, targetIndex } = await request.json<{ playerId: string; targetIndex?: number }>();
 
       if (this.draftState.currentTurn !== "USER") {
         return Response.json({ error: "Not user turn" }, { status: 403 });
       }
 
-      const userPickResult = this.executePick(playerId, "USER");
+      const userPickResult = this.executePick(playerId, "USER", targetIndex);
       if (!userPickResult.success) {
         return Response.json({ error: userPickResult.error }, { status: 400 });
       }
@@ -147,6 +147,32 @@ export class DraftRoom implements DurableObject {
       return Response.json({ success: true, state: this.draftState });
     }
 
+    if (url.pathname.endsWith("/reorder") && request.method === "POST") {
+      if (!this.draftState) {
+        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
+      }
+
+      const { fromIndex, toIndex } = await request.json<{ fromIndex: number; toIndex: number }>();
+
+      if (
+        fromIndex < 0 ||
+        fromIndex >= this.draftState.userPicks.length ||
+        toIndex < 0 ||
+        toIndex >= this.draftState.userPicks.length
+      ) {
+        return Response.json({ error: "Invalid reorder indices" }, { status: 400 });
+      }
+
+      // Move player from fromIndex to toIndex
+      const [moved] = this.draftState.userPicks.splice(fromIndex, 1);
+      this.draftState.userPicks.splice(toIndex, 0, moved);
+
+      await this.state.storage.put("draftState", this.draftState);
+      this.broadcast({ type: "UPDATE", state: this.draftState });
+
+      return Response.json({ success: true, state: this.draftState });
+    }
+
     return new Response("Not found", { status: 404 });
   }
 
@@ -192,7 +218,7 @@ export class DraftRoom implements DurableObject {
     }
   }
 
-  private executePick(playerId: string, actor: "USER" | "AI"): { success: boolean; error?: string } {
+  private executePick(playerId: string, actor: "USER" | "AI", targetIndex?: number): { success: boolean; error?: string } {
     if (!this.draftState) return { success: false, error: "No state" };
 
     const pIdx = this.draftState.pool.findIndex((p) => p.id === playerId);
@@ -211,7 +237,11 @@ export class DraftRoom implements DurableObject {
     const [picked] = this.draftState.pool.splice(pIdx, 1);
 
     if (actor === "USER") {
-      this.draftState.userPicks.push(picked);
+      if (typeof targetIndex === "number" && targetIndex >= 0 && targetIndex <= this.draftState.userPicks.length) {
+        this.draftState.userPicks.splice(targetIndex, 0, picked);
+      } else {
+        this.draftState.userPicks.push(picked);
+      }
       this.draftState.currentTurn = "AI";
     } else {
       this.draftState.aiPicks.push(picked);
@@ -221,6 +251,63 @@ export class DraftRoom implements DurableObject {
 
     this.draftState.lastActionTimestamp = Date.now();
     return { success: true };
+  }
+
+  /**
+   * Intelligently arrange squad into optimal batting positions (1 to 11):
+   * 1-2: Openers, 3-5: Anchors / Middle, 6-7: Finishers / ARs, 8-11: Bowlers (sorted by bat depth)
+   */
+  private optimizeBattingLineup(squad: PlayerWithStats[]): PlayerWithStats[] {
+    if (squad.length <= 1) return squad;
+
+    const remaining = [...squad];
+    const ordered: PlayerWithStats[] = [];
+
+    // 1. Pick Openers (Slots 1 & 2): top-order innings specialists
+    for (let i = 0; i < 2 && remaining.length > 0; i++) {
+      remaining.sort((a, b) => {
+        const aIsBowl = a.primary_role === "BOWL" ? -100 : 0;
+        const bIsBowl = b.primary_role === "BOWL" ? -100 : 0;
+        const aScore = aIsBowl + a.stats.top_order_innings * 2 + a.stats.bat_average;
+        const bScore = bIsBowl + b.stats.top_order_innings * 2 + b.stats.bat_average;
+        return bScore - aScore;
+      });
+      ordered.push(remaining.shift()!);
+    }
+
+    // 2. Pick Anchors / Middle Order (Slots 3, 4, 5): solid batters
+    for (let i = 0; i < 3 && remaining.length > 0; i++) {
+      remaining.sort((a, b) => {
+        const aIsBowl = a.primary_role === "BOWL" ? -100 : 0;
+        const bIsBowl = b.primary_role === "BOWL" ? -100 : 0;
+        const aScore = aIsBowl + a.stats.middle_order_innings * 1.5 + a.stats.bat_average * 1.2;
+        const bScore = bIsBowl + b.stats.middle_order_innings * 1.5 + b.stats.bat_average * 1.2;
+        return bScore - aScore;
+      });
+      ordered.push(remaining.shift()!);
+    }
+
+    // 3. Pick Finishers / All-Rounders (Slots 6 & 7): high SR, finisher innings, AR
+    for (let i = 0; i < 2 && remaining.length > 0; i++) {
+      remaining.sort((a, b) => {
+        const aIsBowl = a.primary_role === "BOWL" ? -50 : 0;
+        const bIsBowl = b.primary_role === "BOWL" ? -50 : 0;
+        const aScore = aIsBowl + (a.primary_role === "AR" ? 20 : 0) + a.stats.finisher_innings * 2 + (a.stats.bat_strike_rate / 130) * 15;
+        const bScore = bIsBowl + (b.primary_role === "AR" ? 20 : 0) + b.stats.finisher_innings * 2 + (b.stats.bat_strike_rate / 130) * 15;
+        return bScore - aScore;
+      });
+      ordered.push(remaining.shift()!);
+    }
+
+    // 4. Remaining players (Slots 8 to 11): Bowlers / Bowling ARs sorted by bat capability
+    remaining.sort((a, b) => {
+      const aBat = a.stats.bat_average * (a.stats.bat_strike_rate / 100);
+      const bBat = b.stats.bat_average * (b.stats.bat_strike_rate / 100);
+      return bBat - aBat;
+    });
+    ordered.push(...remaining);
+
+    return ordered;
   }
 
   /**
@@ -272,6 +359,9 @@ export class DraftRoom implements DurableObject {
     if (!this.draftState) return;
 
     this.draftState.status = "COMPLETED";
+
+    // Intelligently arrange AI squad into competitive batting order
+    this.draftState.aiPicks = this.optimizeBattingLineup(this.draftState.aiPicks);
 
     // Compute base deterministic scores
     const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);

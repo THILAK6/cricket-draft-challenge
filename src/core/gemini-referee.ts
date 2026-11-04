@@ -54,6 +54,35 @@ export async function evaluateGroundConditionsWithGemini(
     };
   }
 
+  const slotNames = [
+    "Opener (Slot 1)",
+    "Opener (Slot 2)",
+    "Top Order Anchor (Slot 3)",
+    "Middle Order (Slot 4)",
+    "Middle Order (Slot 5)",
+    "Finisher / AR (Slot 6)",
+    "Finisher / AR (Slot 7)",
+    "Lower Order / Bowling AR (Slot 8)",
+    "Bowler (Slot 9)",
+    "Bowler (Slot 10)",
+    "Bowler (Slot 11)",
+  ];
+
+  function formatSquadLineup(squad: PlayerWithStats[]) {
+    return squad
+      .map((p, i) => {
+        const slot = slotNames[i] || `Position ${i + 1}`;
+        const caps = `${p.stats.matches} caps`;
+        const batInfo = `Avg ${p.stats.bat_average}, SR ${p.stats.bat_strike_rate}`;
+        const bowlInfo =
+          p.stats.bowl_overs > 0
+            ? ` | Bowl: ${p.stats.bowl_wickets} wkts, Econ ${p.stats.bowl_economy}`
+            : "";
+        return `${i + 1}. [${slot}] ${p.name} (${p.country}) - ${p.primary_role} (${caps}) | Bat: ${p.batting_hand} (${batInfo})${bowlInfo}`;
+      })
+      .join("\n");
+  }
+
   const prompt = `You are an elite ICC Hall-of-Fame cricket match referee, conditions analyst, and pitch curator.
 Evaluate a drafted match between "USER XI" and "AI XI".
 
@@ -64,27 +93,35 @@ MATCH CONTEXT:
 - Pitch Condition: ${challenge.venue.pitch_type}
 - Match Narrative: ${challenge.narrative_intro}
 
-USER XI:
-${userSquad.map((p, i) => `${i + 1}. ${p.name} (${p.country}) - ${p.primary_role}, Bat: ${p.batting_hand}, Bowl: ${p.bowling_category} (${p.bowling_style || "N/A"})`).join("\n")}
+USER XI (BATTING ORDER 1 TO 11):
+${formatSquadLineup(userSquad)}
 
-AI XI:
-${aiSquad.map((p, i) => `${i + 1}. ${p.name} (${p.country}) - ${p.primary_role}, Bat: ${p.batting_hand}, Bowl: ${p.bowling_category} (${p.bowling_style || "N/A"})`).join("\n")}
+AI XI (BATTING ORDER 1 TO 11):
+${formatSquadLineup(aiSquad)}
 
 STATISTICAL BASELINES:
 - User Team Baseline: ${userBreakdown.deterministic_total} / 100
 - AI Team Baseline: ${aiBreakdown.deterministic_total} / 100
 
 CRITICAL EVALUATION MANDATE:
-1. GROUND & VENUE SUITABILITY (HISTORICAL CONDITIONS):
+1. BATTING ORDER & POSITIONAL FIT (SLOTS 1 TO 11):
+   - Evaluate the exact batting positions chosen by each team.
+   - Slots 1-2: Did they pick proven openers? Heavily penalize putting a tailender or pure bowler in the top order.
+   - Slots 3-4: Are there solid anchors capable of stabilizing the innings?
+   - Slots 5-7 (FINISHERS): Did they select genuine death-overs finishers with high strike rates (140+) or proven finishing experience? If a team selected NO FINISHERS in slots 5-7, punish them severely for stalling in overs 16-20.
+2. EXPERIENCE WEIGHTING (MATCHES PLAYED):
+   - Weigh proven international longevity: 100+ and 60+ cap veterans (e.g. Rohit, Kohli, Warner, Bumrah) possess battle-tested temperament under pressure.
+   - Treat small sample sizes (under 15 matches) with skepticism—a player with 6 matches and high average cannot outperform an established world champion.
+3. GROUND & VENUE SUITABILITY (HISTORICAL CONDITIONS):
    Evaluate how individual players from each team perform specifically in ${challenge.venue.country} on ${challenge.venue.pitch_type} tracks.
    - Ground familiarity: Consider local country conditions (e.g. Dale Steyn or Kagiso Rabada in South Africa with steep pace and bounce vs James Anderson who historically lacked impact in SA due to missing English swing).
    - Surface dynamics: Assess turning subcontinental dustbowls (e.g. Chennai, Mirpur) vs true bounce decks (Wankhede, Centurion, Perth).
    - Spin liability vs Pace advantage: Heavily punish teams that field excessive spin on green seamers, or lack spinners on crumbling dustbowls.
-2. TACTICAL FACTORS:
+4. TACTICAL FACTORS:
    - Identify what made the decisive difference between the two squads.
    - Detail exactly why the winning team won (2-3 concrete bullet points).
    - Detail exactly why the losing team lost (2-3 concrete bullet points).
-3. TACTICAL ADJUSTMENTS:
+5. TACTICAL ADJUSTMENTS:
    - Provide an integer adjustment between -10 and +10 for USER XI.
    - Provide an integer adjustment between -10 and +10 for AI XI.
    - Determine the winner ("USER" or "AI").
