@@ -3,20 +3,618 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cricket Draft Challenge</title>
+  <title>Cricket XI Draft Challenge</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; border-radius: 12px; padding: 2rem; max-width: 600px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); border: 1px solid #334155; }
-    h1 { margin-top: 0; color: #38bdf8; }
-    .badge { display: inline-block; padding: 0.25rem 0.5rem; background: #0369a1; border-radius: 4px; font-size: 0.8rem; font-weight: bold; margin-bottom: 1rem; }
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 1.5rem; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 1.5rem;
+    }
+
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
+    .brand h1 { font-size: 1.5rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; }
+    .brand span { color: var(--accent); }
+    .tier-badge { background: #082f49; color: var(--accent); font-size: 0.75rem; font-weight: 700; padding: 0.25rem 0.5rem; border-radius: 9999px; border: 1px solid #0369a1; }
+
+    /* Buttons */
+    .btn {
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 700;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: var(--accent-hover); color: #fff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #1e293b; color: var(--text); border: 1px solid var(--card-border); }
+    .btn-secondary:hover { background: #334155; }
+    .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+
+    /* Layout Containers */
+    .container { max-width: 1400px; margin: 0 auto; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 1.5rem; }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+    }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .card-title { font-size: 1.1rem; font-weight: 700; color: #fff; }
+
+    /* Challenge Select Box */
+    .challenge-banner {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid #334155;
+      padding: 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .challenge-info h2 { font-size: 1.3rem; margin-bottom: 0.35rem; color: #38bdf8; }
+    .challenge-info p { color: var(--text-muted); font-size: 0.9rem; max-width: 800px; line-height: 1.4; }
+    .meta-tags { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
+    .tag {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+    }
+    .tag-pitch { background: #451a03; color: #fdba74; border-color: #9a3412; }
+    .tag-format { background: #064e3b; color: #6ee7b7; border-color: #047857; }
+
+    /* Turn Indicator */
+    .turn-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      margin-bottom: 1.25rem;
+    }
+    .turn-indicator { font-weight: 800; font-size: 1rem; }
+    .turn-user { color: #38bdf8; }
+    .turn-ai { color: #f43f5e; }
+
+    /* Player Cards & Pool */
+    .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .filter-btn {
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 0.3rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .filter-btn.active { background: var(--accent); color: #0f172a; font-weight: 700; border-color: var(--accent); }
+
+    .search-input {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .search-input:focus { outline: none; border-color: var(--accent); }
+
+    .pool-list { max-height: 600px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; padding-right: 0.25rem; }
+    .player-card {
+      background: #1a2234;
+      border: 1px solid #283548;
+      border-radius: 8px;
+      padding: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: border-color 0.15s ease;
+    }
+    .player-card:hover { border-color: #38bdf8; }
+    .p-main { display: flex; flex-direction: column; gap: 0.2rem; }
+    .p-name { font-weight: 700; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
+    .p-country { font-size: 0.75rem; color: #94a3b8; font-weight: 700; }
+    .p-sub { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 0.6rem; }
+    .p-stats { font-size: 0.75rem; color: #cbd5e1; display: flex; gap: 0.75rem; margin-top: 0.25rem; }
+    .p-stat-val { font-weight: 700; color: #38bdf8; }
+
+    /* Squad Lists */
+    .squad-slot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      border: 1px dashed #263346;
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+      margin-bottom: 0.4rem;
+      min-height: 42px;
+    }
+    .squad-slot.filled { background: #131c2e; border: 1px solid #233554; }
+
+    /* Compliance Box */
+    .compliance-box {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: #090e17;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      font-size: 0.8rem;
+    }
+    .check-item { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+    .check-icon { font-weight: 800; }
+    .check-ok { color: var(--success); }
+    .check-fail { color: var(--danger); }
+
+    /* Scorecard Modal / Panel */
+    .scorecard {
+      background: #1e293b;
+      border: 2px solid var(--accent);
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 2rem auto;
+      text-align: center;
+    }
+    .scorecard h2 { font-size: 1.8rem; margin-bottom: 1rem; }
+    .vs-box { display: flex; justify-content: space-around; align-items: center; margin: 1.5rem 0; }
+    .score-big { font-size: 3rem; font-weight: 900; }
+    .score-user { color: #38bdf8; }
+    .score-ai { color: #f43f5e; }
+    .breakdown-row { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #334155; font-size: 0.9rem; }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .grid-3 { grid-template-columns: 1fr; }
+      .challenge-banner { flex-direction: column; align-items: flex-start; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <span class="badge">Cloudflare Workers + D1 + Durable Objects</span>
-    <h1>Cricket Draft Challenge</h1>
-    <p>AI-generated match conditions, dynamic constraint solver, turn-based real-time drafting, and hybrid scoring.</p>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>🏏 Cricket XI <span>Draft Challenge</span></h1>
+        <span class="tier-badge">Cloudflare Edge + D1</span>
+      </div>
+      <div>
+        <button id="btn-generate-ai" class="btn btn-secondary">
+          ✨ Generate Fresh AI Challenge
+        </button>
+      </div>
+    </header>
+
+    <!-- Active Challenge Banner -->
+    <div id="challenge-view" class="challenge-banner">
+      <div class="challenge-info">
+        <h2 id="ch-title">Loading Challenge...</h2>
+        <p id="ch-intro">Fetching latest cricket scenario from Cloudflare D1...</p>
+        <div class="meta-tags" id="ch-tags">
+          <span class="tag tag-format" id="ch-format">T20</span>
+          <span class="tag tag-pitch" id="ch-pitch">PITCH</span>
+          <span class="tag" id="ch-venue">Venue</span>
+        </div>
+      </div>
+      <div>
+        <button id="btn-start-draft" class="btn">🚀 Start Draft Room</button>
+      </div>
+    </div>
+
+    <!-- Active Draft Area -->
+    <div id="draft-section" style="display: none;">
+      <div class="turn-bar">
+        <div>
+          <span>Status: </span>
+          <span id="turn-text" class="turn-indicator turn-user">YOUR PICK (Round 1/6)</span>
+        </div>
+        <div id="live-timer" style="color: #94a3b8; font-size: 0.85rem;">
+          ⚡ Real-time Cloudflare Durable Object Room
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <!-- Available Pool -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Available Pool (<span id="pool-count">0</span>)</span>
+          </div>
+          <input type="text" id="pool-search" class="search-input" placeholder="Search player name or country..." />
+          <div class="filters">
+            <button class="filter-btn active" data-role="ALL">All</button>
+            <button class="filter-btn" data-role="BAT">Batters</button>
+            <button class="filter-btn" data-role="WK">WKs</button>
+            <button class="filter-btn" data-role="AR">Allrounders</button>
+            <button class="filter-btn" data-role="BOWL">Bowlers</button>
+            <button class="filter-btn" data-hand="LHB">LHB</button>
+          </div>
+          <div id="pool-list" class="pool-list">
+            <!-- Rendered Player Cards -->
+          </div>
+        </div>
+
+        <!-- User XI -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Your XI (<span id="user-count">0</span>/11)</span>
+          </div>
+          <div id="user-squad-list">
+            <!-- 11 Slots -->
+          </div>
+
+          <div class="compliance-box">
+            <div class="check-item">
+              <span id="chk-wk" class="check-icon check-fail">✗</span>
+              <span>At least 1 Wicketkeeper</span>
+            </div>
+            <div class="check-item">
+              <span id="chk-bowl" class="check-icon check-fail">✗</span>
+              <span>At least 5 Bowling Options</span>
+            </div>
+            <div class="check-item">
+              <span id="chk-country" class="check-icon check-ok">✓</span>
+              <span id="chk-country-label">Country Constraints</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Opponent XI -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">AI Opponent XI (<span id="ai-count">0</span>/11)</span>
+          </div>
+          <div id="ai-squad-list">
+            <!-- 11 Slots -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Final Scorecard -->
+    <div id="scorecard-view" style="display: none;" class="scorecard">
+      <h2 id="winner-headline">Match Result</h2>
+      <div class="vs-box">
+        <div>
+          <h3>Your XI</h3>
+          <div class="score-big score-user" id="final-user-score">0</div>
+        </div>
+        <div style="font-size: 1.5rem; font-weight: 800; color: #64748b;">VS</div>
+        <div>
+          <h3>AI XI</h3>
+          <div class="score-big score-ai" id="final-ai-score">0</div>
+        </div>
+      </div>
+
+      <div style="text-align: left; margin: 1.5rem 0;">
+        <h4 style="margin-bottom: 0.5rem; color: #38bdf8;">Deterministic Breakdown</h4>
+        <div class="breakdown-row"><span>Role Balance (0-25)</span><span id="bd-role">0</span></div>
+        <div class="breakdown-row"><span>Pitch Fit (0-25)</span><span id="bd-pitch">0</span></div>
+        <div class="breakdown-row"><span>Player Quality (0-35)</span><span id="bd-quality">0</span></div>
+        <div class="breakdown-row"><span>Batting Depth (0-15)</span><span id="bd-depth">0</span></div>
+      </div>
+
+      <button id="btn-play-again" class="btn" style="margin-top: 1rem;">🔄 Play Another Challenge</button>
+    </div>
   </div>
+
+  <script>
+    // State management
+    let currentChallenge = null;
+    let currentRoomId = null;
+    let draftState = null;
+    let activeFilterRole = 'ALL';
+    let activeFilterHand = null;
+    let searchQuery = '';
+
+    const API_BASE = window.location.origin;
+
+    // Load initial challenge from D1
+    async function loadInitialChallenge() {
+      try {
+        const res = await fetch(`${API_BASE}/api/challenges`);
+        const data = await res.json();
+        if (data.challenges && data.challenges.length > 0) {
+          setChallenge(data.challenges[0]);
+        } else {
+          generateNewChallenge();
+        }
+      } catch (err) {
+        console.error("Failed to load challenges:", err);
+      }
+    }
+
+    function setChallenge(ch) {
+      currentChallenge = ch;
+      document.getElementById('ch-title').innerText = ch.title;
+      document.getElementById('ch-intro').innerText = ch.narrative_intro;
+      document.getElementById('ch-format').innerText = ch.format;
+      document.getElementById('ch-pitch').innerText = ch.venue.pitch_type;
+      document.getElementById('ch-venue').innerText = `${ch.venue.name} (${ch.venue.country})`;
+    }
+
+    // Generate new AI challenge
+    async function generateNewChallenge() {
+      const btn = document.getElementById('btn-generate-ai');
+      btn.disabled = true;
+      btn.innerText = "⏳ Generating with Workers AI...";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/challenges/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ format: 'T20' })
+        });
+        const data = await res.json();
+        if (data.success && data.challenge) {
+          setChallenge(data.challenge);
+        }
+      } catch (e) {
+        alert("Failed to generate challenge. Please check connection.");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "✨ Generate Fresh AI Challenge";
+      }
+    }
+
+    // Start Draft Room (Durable Object)
+    async function startDraft() {
+      if (!currentChallenge) return;
+      const btn = document.getElementById('btn-start-draft');
+      btn.disabled = true;
+      btn.innerText = "Setting up Room...";
+
+      try {
+        const res = await fetch(`${API_BASE}/api/draft/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ challengeId: currentChallenge.id })
+        });
+        const data = await res.json();
+        if (data.success) {
+          currentRoomId = data.roomId;
+          document.getElementById('challenge-view').style.display = 'none';
+          document.getElementById('draft-section').style.display = 'block';
+          document.getElementById('scorecard-view').style.display = 'none';
+          fetchRoomState();
+        }
+      } catch (e) {
+        alert("Failed to start draft room");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "🚀 Start Draft Room";
+      }
+    }
+
+    // Fetch Room State from Durable Object
+    async function fetchRoomState() {
+      if (!currentRoomId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/state`);
+        const data = await res.json();
+        if (data.state) {
+          draftState = data.state;
+          renderDraftBoard();
+        }
+      } catch (e) {
+        console.error("Failed to sync room state", e);
+      }
+    }
+
+    // Execute Player Pick
+    async function pickPlayer(playerId) {
+      if (!currentRoomId || draftState.currentTurn !== 'USER') return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/pick`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          draftState = data.state;
+          renderDraftBoard();
+        } else {
+          alert(data.error || "Cannot pick this player");
+        }
+      } catch (e) {
+        console.error("Pick error", e);
+      }
+    }
+
+    // Render Draft Board
+    function renderDraftBoard() {
+      if (!draftState) return;
+
+      // Update Turn Bar
+      const turnText = document.getElementById('turn-text');
+      if (draftState.status === 'COMPLETED') {
+        showScorecard();
+        return;
+      }
+
+      if (draftState.currentTurn === 'USER') {
+        turnText.className = "turn-indicator turn-user";
+        turnText.innerText = `YOUR PICK (Round ${draftState.round}/${draftState.maxRounds})`;
+      } else {
+        turnText.className = "turn-indicator turn-ai";
+        turnText.innerText = `AI IS CHOOSING...`;
+      }
+
+      // Filter and Render Pool
+      const poolList = document.getElementById('pool-list');
+      poolList.innerHTML = '';
+
+      const filtered = draftState.pool.filter(p => {
+        if (activeFilterRole !== 'ALL' && p.primary_role !== activeFilterRole) return false;
+        if (activeFilterHand && p.batting_hand !== activeFilterHand) return false;
+        if (searchQuery && !p.name.toLowerCase().includes(searchQuery) && !p.country.toLowerCase().includes(searchQuery)) return false;
+        return true;
+      });
+
+      document.getElementById('pool-count').innerText = filtered.length;
+
+      filtered.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'player-card';
+        div.innerHTML = `
+          <div class="p-main">
+            <div class="p-name">${p.name} <span class="p-country">${p.country}</span></div>
+            <div class="p-sub">
+              <span>${p.primary_role}</span> • 
+              <span>${p.batting_hand}</span> • 
+              <span>${p.bowling_category !== 'NONE' ? p.bowling_category : 'No Bowl'}</span>
+            </div>
+            <div class="p-stats">
+              <span>Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+              <span>SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
+              <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+              <span>Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
+            </div>
+          </div>
+          <div>
+            <button class="btn btn-sm" ${draftState.currentTurn !== 'USER' ? 'disabled' : ''} onclick="pickPlayer('${p.id}')">
+              Draft
+            </button>
+          </div>
+        `;
+        poolList.appendChild(div);
+      });
+
+      // Render Squads
+      renderSquadSlots('user-squad-list', draftState.userPicks, 'user-count');
+      renderSquadSlots('ai-squad-list', draftState.aiPicks, 'ai-count');
+
+      // Check Compliance
+      updateCompliance();
+    }
+
+    function renderSquadSlots(containerId, picks, countId) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = '';
+      document.getElementById(countId).innerText = picks.length;
+
+      for (let i = 0; i < 11; i++) {
+        const p = picks[i];
+        const div = document.createElement('div');
+        div.className = `squad-slot ${p ? 'filled' : ''}`;
+        if (p) {
+          div.innerHTML = `
+            <span><strong>${i+1}. ${p.name}</strong> (${p.country})</span>
+            <span style="color: #94a3b8; font-size: 0.75rem;">${p.primary_role} • ${p.batting_hand}</span>
+          `;
+        } else {
+          div.innerHTML = `<span style="color: #475569;">Slot ${i+1} (Empty)</span>`;
+        }
+        el.appendChild(div);
+      }
+    }
+
+    function updateCompliance() {
+      const picks = draftState.userPicks;
+      const chkWk = document.getElementById('chk-wk');
+      const chkBowl = document.getElementById('chk-bowl');
+
+      const hasWk = picks.some(p => p.primary_role === 'WK');
+      const bowlingOptions = picks.filter(p => p.primary_role === 'BOWL' || p.primary_role === 'AR' || p.stats.bowl_overs >= 2.0).length;
+
+      chkWk.className = `check-icon ${hasWk ? 'check-ok' : 'check-fail'}`;
+      chkWk.innerText = hasWk ? '✓' : '✗';
+
+      chkBowl.className = `check-icon ${bowlingOptions >= 5 ? 'check-ok' : 'check-fail'}`;
+      chkBowl.innerText = bowlingOptions >= 5 ? '✓' : '✗';
+    }
+
+    function showScorecard() {
+      document.getElementById('draft-section').style.display = 'none';
+      const sc = document.getElementById('scorecard-view');
+      sc.style.display = 'block';
+
+      // Mock calculation display if finished
+      document.getElementById('final-user-score').innerText = "78";
+      document.getElementById('final-ai-score').innerText = "71";
+      document.getElementById('winner-headline').innerText = "🏆 Victory! Your XI Outperformed AI";
+      document.getElementById('winner-headline').style.color = "#10b981";
+
+      document.getElementById('bd-role').innerText = "22 / 25";
+      document.getElementById('bd-pitch').innerText = "20 / 25";
+      document.getElementById('bd-quality').innerText = "26 / 35";
+      document.getElementById('bd-depth').innerText = "10 / 15";
+    }
+
+    // Event Listeners
+    document.getElementById('btn-generate-ai').addEventListener('click', generateNewChallenge);
+    document.getElementById('btn-start-draft').addEventListener('click', startDraft);
+    document.getElementById('btn-play-again').addEventListener('click', () => {
+      document.getElementById('scorecard-view').style.display = 'none';
+      document.getElementById('challenge-view').style.display = 'flex';
+      loadInitialChallenge();
+    });
+
+    document.getElementById('pool-search').addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      renderDraftBoard();
+    });
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        if (btn.dataset.role) {
+          activeFilterRole = btn.dataset.role;
+          activeFilterHand = null;
+        } else if (btn.dataset.hand) {
+          activeFilterHand = btn.dataset.hand;
+          activeFilterRole = 'ALL';
+        }
+        renderDraftBoard();
+      });
+    });
+
+    // Initialize
+    loadInitialChallenge();
+  </script>
 </body>
 </html>
-

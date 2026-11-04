@@ -263,3 +263,4 @@ export async function saveChallenge(db: D1Database, challenge: Challenge) {
     )
     .run();
 }
+
