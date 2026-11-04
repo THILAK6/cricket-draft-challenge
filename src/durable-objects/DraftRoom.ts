@@ -1,14 +1,17 @@
 import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from "../core/types";
 import { validateSquad, canPickPlayer } from "../core/validator";
 import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
+import { evaluateGroundConditionsWithGemini } from "../core/gemini-referee";
 
 export class DraftRoom implements DurableObject {
   private state: DurableObjectState;
+  private env: any;
   private draftState: DraftState | null = null;
   private sockets: Set<WebSocket> = new Set();
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env: any) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -60,16 +63,54 @@ export class DraftRoom implements DurableObject {
 
       // Check if draft complete
       if (this.draftState.userPicks.length >= 11 && this.draftState.aiPicks.length >= 11) {
-        this.finishDraft();
+        await this.finishDraft();
       } else {
         // Trigger AI Pick
         this.executeAiPick();
+        if (this.draftState.userPicks.length >= 11 && this.draftState.aiPicks.length >= 11) {
+          await this.finishDraft();
+        }
       }
 
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "UPDATE", state: this.draftState });
 
       return Response.json({ success: true, state: this.draftState });
+    }
+
+    if (url.pathname.endsWith("/referee") && request.method === "POST") {
+      if (!this.draftState) {
+        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
+      }
+
+      const apiKey = this.env?.GEMINI_API_KEY;
+      const evaluation = await evaluateGroundConditionsWithGemini(
+        this.draftState.userPicks,
+        this.draftState.aiPicks,
+        this.draftState.challenge,
+        apiKey
+      );
+
+      const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
+      const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
+
+      const results = {
+        userScore: evaluation.user_score,
+        aiScore: evaluation.ai_score,
+        userAdjustment: evaluation.user_adjustment,
+        aiAdjustment: evaluation.ai_adjustment,
+        winner: evaluation.winner,
+        groundConditionsAnalysis: evaluation.ground_conditions_analysis,
+        verdictSummary: evaluation.verdict_summary,
+        userBreakdown,
+        aiBreakdown,
+      };
+
+      (this.draftState as any).results = results;
+      await this.state.storage.put("draftState", this.draftState);
+      this.broadcast({ type: "COMPLETED", results });
+
+      return Response.json({ success: true, results });
     }
 
     if (url.pathname.endsWith("/remove") && request.method === "POST") {
@@ -224,28 +265,42 @@ export class DraftRoom implements DurableObject {
     this.executePick(topPick.id, "AI");
   }
 
-  private finishDraft() {
+  private async finishDraft() {
     if (!this.draftState) return;
 
     this.draftState.status = "COMPLETED";
 
-    // Compute scores
+    // Compute base deterministic scores
     const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
     const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
 
-    // Default neutral LLM adjustment until referee Worker call responds
-    const userFinal = applyBoundedAdjustment(userBreakdown.deterministic_total, 0, "Initial assessment");
-    const aiFinal = applyBoundedAdjustment(aiBreakdown.deterministic_total, 0, "Initial assessment");
+    // Call Gemini for Ground Conditions & Historical Venue Suitability
+    const apiKey = this.env?.GEMINI_API_KEY;
+    const evaluation = await evaluateGroundConditionsWithGemini(
+      this.draftState.userPicks,
+      this.draftState.aiPicks,
+      this.draftState.challenge,
+      apiKey
+    );
 
+    const completedResults = {
+      userScore: evaluation.user_score,
+      aiScore: evaluation.ai_score,
+      userAdjustment: evaluation.user_adjustment,
+      aiAdjustment: evaluation.ai_adjustment,
+      winner: evaluation.winner,
+      groundConditionsAnalysis: evaluation.ground_conditions_analysis,
+      verdictSummary: evaluation.verdict_summary,
+      userBreakdown,
+      aiBreakdown,
+    };
+
+    (this.draftState as any).results = completedResults;
+
+    await this.state.storage.put("draftState", this.draftState);
     this.broadcast({
       type: "COMPLETED",
-      results: {
-        userScore: userFinal.final_score,
-        aiScore: aiFinal.final_score,
-        userBreakdown,
-        aiBreakdown,
-        winner: userFinal.final_score > aiFinal.final_score ? "USER" : userFinal.final_score < aiFinal.final_score ? "AI" : "TIE",
-      },
+      results: completedResults,
     });
   }
 }

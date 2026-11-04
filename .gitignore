@@ -18,6 +18,7 @@ data/exports/
 # Environment variables
 .env
 .env.*
+.dev.vars
 !.env.example
 
 # Logs & temp

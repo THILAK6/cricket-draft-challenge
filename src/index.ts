@@ -10,6 +10,7 @@ export interface Env {
   DB: D1Database;
   DRAFT_ROOM: DurableObjectNamespace;
   AI?: any;
+  GEMINI_API_KEY?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();

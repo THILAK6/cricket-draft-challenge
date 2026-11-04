@@ -459,6 +459,7 @@
             <button class="cat-btn active" data-category="ALL">All Pool</button>
             <button class="cat-btn" data-category="OPENER">🏏 Openers</button>
             <button class="cat-btn" data-category="MIDDLE">🛡️ Middle Order</button>
+            <button class="cat-btn" data-category="ALL_ROUNDER">🌟 All-Rounders</button>
             <button class="cat-btn" data-category="SPIN">🌀 Spinners</button>
             <button class="cat-btn" data-category="PACE">⚡ Fast Bowlers</button>
             <button class="cat-btn" data-category="WK">🧤 Keepers</button>
@@ -514,12 +515,29 @@
         </div>
       </div>
 
+      <!-- Gemini Ground Conditions Referee Box -->
+      <div id="ground-referee-box" style="text-align: left; background: #0f172a; border: 1px solid #38bdf8; border-radius: 8px; padding: 1rem; margin: 1.5rem 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <h4 style="color: #38bdf8; margin: 0; font-size: 0.95rem;">🌍 Ground Conditions & Venue Nuance (Gemini Referee)</h4>
+          <span id="referee-badge" style="background: #1e293b; color: #94a3b8; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700;">AI Conditions Analysis</span>
+        </div>
+        <p id="referee-conditions-text" style="color: #e2e8f0; font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.75rem;"></p>
+        <div style="background: rgba(30, 41, 59, 0.6); padding: 0.6rem; border-radius: 6px; border-left: 3px solid #38bdf8;">
+          <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Match Verdict & Key Matchups</div>
+          <p id="referee-verdict-text" style="color: #f8fafc; font-size: 0.82rem; margin: 0.35rem 0 0 0; line-height: 1.45;"></p>
+        </div>
+      </div>
+
       <div style="text-align: left; margin: 1.5rem 0;">
-        <h4 style="margin-bottom: 0.5rem; color: #38bdf8;">Deterministic Breakdown</h4>
+        <h4 style="margin-bottom: 0.5rem; color: #38bdf8;">Deterministic Baseline Breakdown</h4>
         <div class="breakdown-row"><span>Role Balance (0-25)</span><span id="bd-role">0</span></div>
         <div class="breakdown-row"><span>Pitch Fit (0-25)</span><span id="bd-pitch">0</span></div>
         <div class="breakdown-row"><span>Player Quality (0-35)</span><span id="bd-quality">0</span></div>
         <div class="breakdown-row"><span>Batting Depth (0-15)</span><span id="bd-depth">0</span></div>
+        <div class="breakdown-row" style="border-top: 1px solid #334155; margin-top: 0.5rem; padding-top: 0.5rem;">
+          <span style="color: #a7f3d0; font-weight: 700;">Conditions & Referee Delta</span>
+          <span id="bd-adj" style="color: #a7f3d0; font-weight: 700;">+0 pts</span>
+        </div>
       </div>
 
       <button id="btn-play-again" class="btn" style="margin-top: 1rem;">🔄 Play Another Challenge</button>
@@ -569,17 +587,30 @@
     function matchCategory(p, cat) {
       if (cat === 'ALL') return true;
       if (cat === 'WK') return p.primary_role === 'WK';
-      if (cat === 'SPIN') return p.bowling_category === 'SPIN';
-      if (cat === 'PACE') return p.bowling_category === 'PACE';
+      if (cat === 'ALL_ROUNDER') return p.primary_role === 'AR';
 
-      // Openers: frequent top-order innings (slots 1-2)
-      if (cat === 'OPENER') {
-        return p.stats.top_order_innings >= 4 || (p.primary_role === 'BAT' && p.stats.top_order_innings >= p.stats.middle_order_innings);
+      // Genuine Spinners: must be a frontline bowler with SPIN style (excludes part-time batters like Rohit, Babar)
+      if (cat === 'SPIN') {
+        return p.primary_role === 'BOWL' && p.bowling_category === 'SPIN';
       }
 
-      // Middle Order: frequent slots 3-6
+      // Genuine Fast Bowlers: frontline pace bowler
+      if (cat === 'PACE') {
+        return p.primary_role === 'BOWL' && p.bowling_category === 'PACE';
+      }
+
+      // Openers: Top order specialists (1-2) with >= 12% top order innings or >= 15 innings (includes Rohit & Kohli)
+      if (cat === 'OPENER') {
+        if (p.primary_role === 'BOWL') return false;
+        const totalInns = Math.max(1, p.stats.bat_innings);
+        return (p.stats.top_order_innings >= 6 && (p.stats.top_order_innings / totalInns) >= 0.12) || p.stats.top_order_innings >= 15;
+      }
+
+      // Middle Order: Slots 3-6 with >= 15% middle order innings or >= 15 innings (includes Kohli & Rohit)
       if (cat === 'MIDDLE') {
-        return p.stats.middle_order_innings >= 4 || (p.primary_role === 'BAT' && p.stats.middle_order_innings > p.stats.top_order_innings) || (p.primary_role === 'AR' && p.stats.middle_order_innings >= 3);
+        if (p.primary_role === 'BOWL') return false;
+        const totalInns = Math.max(1, p.stats.bat_innings);
+        return (p.stats.middle_order_innings >= 6 && (p.stats.middle_order_innings / totalInns) >= 0.15) || p.stats.middle_order_innings >= 15;
       }
 
       return true;
@@ -1095,15 +1126,37 @@
       const sc = document.getElementById('scorecard-view');
       sc.style.display = 'block';
 
-      document.getElementById('final-user-score').innerText = "78";
-      document.getElementById('final-ai-score').innerText = "71";
-      document.getElementById('winner-headline').innerText = "🏆 Victory! Your XI Outperformed AI";
-      document.getElementById('winner-headline').style.color = "#10b981";
+      const results = draftState && draftState.results;
+      if (results) {
+        document.getElementById('final-user-score').innerText = results.userScore;
+        document.getElementById('final-ai-score').innerText = results.aiScore;
 
-      document.getElementById('bd-role').innerText = "22 / 25";
-      document.getElementById('bd-pitch').innerText = "20 / 25";
-      document.getElementById('bd-quality').innerText = "26 / 35";
-      document.getElementById('bd-depth').innerText = "10 / 15";
+        const headline = document.getElementById('winner-headline');
+        if (results.winner === 'USER') {
+          headline.innerText = "🏆 Victory! Your XI Conquered the Conditions";
+          headline.style.color = "#10b981";
+        } else if (results.winner === 'TIE') {
+          headline.innerText = "🤝 Match Tied! Deadlock on the Pitch";
+          headline.style.color = "#38bdf8";
+        } else {
+          headline.innerText = "💥 Defeat! AI XI Exploited Ground Conditions Better";
+          headline.style.color = "#ef4444";
+        }
+
+        const ub = results.userBreakdown;
+        if (ub) {
+          document.getElementById('bd-role').innerText = `${ub.role_balance_score} / 25`;
+          document.getElementById('bd-pitch').innerText = `${ub.pitch_suitability_score} / 25`;
+          document.getElementById('bd-quality').innerText = `${ub.player_quality_score} / 35`;
+          document.getElementById('bd-depth').innerText = `${ub.batting_depth_score} / 15`;
+        }
+
+        const adj = results.userAdjustment !== undefined ? results.userAdjustment : 0;
+        document.getElementById('bd-adj').innerText = `${adj >= 0 ? '+' : ''}${adj} pts`;
+
+        document.getElementById('referee-conditions-text').innerText = results.groundConditionsAnalysis || "Ground conditions evaluated.";
+        document.getElementById('referee-verdict-text').innerText = results.verdictSummary || "Match concluded.";
+      }
     }
 
     // Event Listeners
