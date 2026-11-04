@@ -332,3 +332,91 @@ describe("Scoring Engine - LLM Layer Guardrails", () => {
   });
 });
 
+describe("Scoring Engine - Multi-Format Realism (ODI & TEST)", () => {
+  it("evaluates TEST match conditions: green seamer swing attack with elite bowling averages at Lord's", () => {
+    const lordsTestChallenge: Challenge = {
+      id: "ch_test_lords",
+      title: "The Ashes at Lord's - Day 1 Seam Battle",
+      format: "TEST",
+      venue: { name: "Lord's, London", country: "ENG", pitch_type: "GREEN_SEAMER" },
+      narrative_intro: "Day 1 seam and swing under heavy English clouds.",
+      constraints: [],
+    };
+
+    // Elite Test Squad: High batting averages (48+), 3-4 seamers with low bowling average (Anderson / Broad / McGrath profile)
+    const eliteTestSquad: PlayerWithStats[] = [
+      createPlayer("t1", "ENG", "BAT", "LHB", "NONE", 3.0, 52, 48),  // Opener Avg 48
+      createPlayer("t2", "ENG", "BAT", "RHB", "NONE", 3.0, 50, 46),  // Opener Avg 46
+      createPlayer("t3", "IND", "BAT", "RHB", "NONE", 3.0, 58, 52),  // #3 Anchor Avg 52 (Kohli/Root)
+      createPlayer("t4", "AUS", "BAT", "RHB", "NONE", 3.0, 55, 55),  // #4 Smith Avg 55
+      createPlayer("t5", "ENG", "WK", "RHB", "NONE", 3.0, 54, 38),   // #5 Keeper
+      createPlayer("t6", "ENG", "AR", "LHB", "PACE", 3.1, 62, 36),   // #6 Stokes counter-attack
+      createPlayer("t7", "IND", "AR", "LHB", "SPIN", 2.8, 52, 34),   // #7 Jadeja Avg 34 + Spin
+      createPlayer("t8", "ENG", "BOWL", "RHB", "PACE", 2.6, 25, 14), // #8 Seamer Avg 22
+      createPlayer("t9", "AUS", "BOWL", "RHB", "PACE", 2.7, 20, 12), // #9 Cummins Avg 21
+      createPlayer("t10", "ENG", "BOWL", "RHB", "PACE", 2.5, 18, 10),// #10 Anderson Avg 24
+      createPlayer("t11", "IND", "BOWL", "RHB", "SPIN", 2.7, 15, 8),  // #11 Ashwin Avg 23
+    ];
+    // Set format to TEST and test-like bowling averages
+    eliteTestSquad.forEach((p, idx) => {
+      p.stats.format = "TEST";
+      p.stats.matches = 75;
+      if (idx >= 7) {
+        p.stats.bowl_average = 23.5;
+        p.stats.bowl_wickets = 250;
+      }
+    });
+
+    // Sub-optimal Test Squad: T20 players with low Test averages and high bowling averages
+    const subOptimalTestSquad: PlayerWithStats[] = eliteTestSquad.map((p, idx) => {
+      const copy = { ...p, stats: { ...p.stats, matches: 15, bat_average: 24.0, bowl_average: 44.0 } };
+      return copy;
+    });
+
+    const eliteScore = calculateDeterministicScore(eliteTestSquad, lordsTestChallenge);
+    const subScore = calculateDeterministicScore(subOptimalTestSquad, lordsTestChallenge);
+
+    expect(eliteScore.player_quality_score).toBeGreaterThan(subScore.player_quality_score);
+    expect(eliteScore.deterministic_total).toBeGreaterThan(subScore.deterministic_total);
+  });
+
+  it("evaluates ODI conditions: anchors, strike rotators, and middle/death controllers at Wanderers", () => {
+    const wanderersOdiChallenge: Challenge = {
+      id: "ch_odi_wanderers",
+      title: "Wanderers 438 Tribute Match",
+      format: "ODI",
+      venue: { name: "Wanderers Stadium, Johannesburg", country: "RSA", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "High-scoring 50-over match where 340 is par.",
+      constraints: [],
+    };
+
+    const strongOdiSquad: PlayerWithStats[] = [
+      createPlayer("o1", "IND", "BAT", "RHB", "NONE", 5.0, 92, 49),   // Rohit profile: Avg 49, SR 92
+      createPlayer("o2", "AUS", "BAT", "LHB", "NONE", 5.2, 95, 45),   // Warner profile: Avg 45, SR 95
+      createPlayer("o3", "IND", "BAT", "RHB", "NONE", 5.0, 93, 58),   // Kohli profile: Avg 58, SR 93
+      createPlayer("o4", "NZL", "BAT", "RHB", "NONE", 5.0, 85, 47),   // Williamson profile: Avg 47
+      createPlayer("o5", "RSA", "WK", "RHB", "NONE", 5.2, 105, 44),   // Klaasen/de Kock profile
+      createPlayer("o6", "IND", "AR", "RHB", "PACE", 5.4, 112, 33),   // Hardik profile: Finisher SR 112
+      createPlayer("o7", "AUS", "AR", "RHB", "SPIN", 5.3, 120, 35),   // Maxwell profile: Finisher SR 120
+      createPlayer("o8", "RSA", "BOWL", "RHB", "PACE", 4.9, 50, 16),  // Rabada profile: Econ 4.9, RSA pace
+      createPlayer("o9", "AUS", "BOWL", "RHB", "PACE", 5.1, 40, 12),  // Starc profile: Econ 5.1
+      createPlayer("o10", "IND", "BOWL", "RHB", "PACE", 4.6, 30, 8),  // Bumrah profile: Econ 4.6
+      createPlayer("o11", "AFG", "BOWL", "RHB", "SPIN", 4.4, 25, 7),  // Rashid profile: Econ 4.4
+    ];
+    strongOdiSquad.forEach((p, idx) => {
+      p.stats.format = "ODI";
+      p.stats.matches = 120;
+      if (idx >= 7 || p.primary_role === "AR") {
+        p.stats.bowl_wickets = 160;
+        p.stats.bowl_overs = 850;
+      }
+    });
+
+    const score = calculateDeterministicScore(strongOdiSquad, wanderersOdiChallenge);
+    expect(score.role_balance_score).toBeGreaterThanOrEqual(18);
+    expect(score.pitch_suitability_score).toBeGreaterThanOrEqual(18);
+    expect(score.player_quality_score).toBeGreaterThanOrEqual(25);
+    expect(score.deterministic_total).toBeGreaterThanOrEqual(75);
+  });
+});
+

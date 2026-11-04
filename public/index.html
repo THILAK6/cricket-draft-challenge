@@ -147,9 +147,61 @@
       background: #ef4444;
       color: #fff;
     }
-    .btn-remove:hover {
-      background: #ef4444;
+
+    /* Format Switcher & Scenario Select */
+    .format-selector-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid #283548;
+      border-radius: 10px;
+      padding: 0.45rem 0.75rem;
+      flex-wrap: wrap;
+    }
+    .format-selector-label {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-right: 0.25rem;
+    }
+    .fmt-pill {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      padding: 0.4rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+    }
+    .fmt-pill:hover { background: #334155; color: #fff; }
+    .fmt-pill.active {
+      background: #0369a1;
+      border-color: #38bdf8;
       color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+    .challenge-dropdown-select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      font-size: 0.82rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      outline: none;
+      min-width: 260px;
+      max-width: 100%;
+    }
+    .challenge-dropdown-select:focus {
+      border-color: #38bdf8;
     }
 
     /* Layout Containers */
@@ -521,8 +573,22 @@
 
     <!-- Active Challenge Banner -->
     <div id="challenge-view" class="challenge-banner">
+      <!-- Format Switcher Row -->
+      <div class="format-selector-row">
+        <span class="format-selector-label">Format:</span>
+        <button class="fmt-pill active" data-format="T20">🏏 T20I (20 Overs)</button>
+        <button class="fmt-pill" data-format="ODI">🏆 ODI (50 Overs)</button>
+        <button class="fmt-pill" data-format="TEST">⚪ Test Match (5 Days)</button>
+      </div>
+
       <div class="banner-top">
         <div class="challenge-info">
+          <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+            <label for="challenge-dropdown" style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Select Scenario:</label>
+            <select id="challenge-dropdown" class="challenge-dropdown-select">
+              <option value="">Loading scenarios...</option>
+            </select>
+          </div>
           <h2 id="ch-title">Loading Challenge...</h2>
           <p id="ch-intro">Fetching latest cricket scenario from Cloudflare D1...</p>
           <div class="meta-tags" id="ch-tags">
@@ -531,8 +597,9 @@
             <span class="tag" id="ch-venue">Venue</span>
           </div>
         </div>
-        <div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-end;">
           <button id="btn-start-draft" class="btn">🚀 Start Draft Room</button>
+          <span style="font-size: 0.78rem; color: #94a3b8;">Format-calibrated player pool & referee</span>
         </div>
       </div>
 
@@ -822,28 +889,29 @@
       if (cat === 'WK') return p.primary_role === 'WK';
       if (cat === 'ALL_ROUNDER') return p.primary_role === 'AR';
 
-      // Genuine Spinners: must be a frontline bowler with SPIN style (excludes part-time batters like Rohit, Babar)
+      // Genuine Spinners: frontline bowler or bowling all-rounder with SPIN style
+      // Pure batters (Rohit, Kohli, Babar) have bowling_category === 'NONE' so they never match!
       if (cat === 'SPIN') {
-        return p.primary_role === 'BOWL' && p.bowling_category === 'SPIN';
+        return (p.primary_role === 'BOWL' || p.primary_role === 'AR') && p.bowling_category === 'SPIN';
       }
 
-      // Genuine Fast Bowlers: frontline pace bowler
+      // Genuine Fast Bowlers: frontline bowler or bowling all-rounder with PACE style
       if (cat === 'PACE') {
-        return p.primary_role === 'BOWL' && p.bowling_category === 'PACE';
+        return (p.primary_role === 'BOWL' || p.primary_role === 'AR') && p.bowling_category === 'PACE';
       }
 
-      // Openers: Top order specialists (1-2) with >= 12% top order innings or >= 15 innings (includes Rohit & Kohli)
+      // Openers: Top order specialists (1-2) with >= 4 top order innings or >= 10% of innings (includes Rohit & Kohli)
       if (cat === 'OPENER') {
         if (p.primary_role === 'BOWL') return false;
         const totalInns = Math.max(1, p.stats.bat_innings);
-        return (p.stats.top_order_innings >= 6 && (p.stats.top_order_innings / totalInns) >= 0.12) || p.stats.top_order_innings >= 15;
+        return (p.stats.top_order_innings >= 4 && (p.stats.top_order_innings / totalInns) >= 0.10) || p.stats.top_order_innings >= 10;
       }
 
-      // Middle Order: Slots 3-6 with >= 15% middle order innings or >= 15 innings (includes Kohli & Rohit)
+      // Middle Order: Slots 3-6 with >= 5 middle order innings or >= 12% of innings (includes Kohli & Rohit)
       if (cat === 'MIDDLE') {
         if (p.primary_role === 'BOWL') return false;
         const totalInns = Math.max(1, p.stats.bat_innings);
-        return (p.stats.middle_order_innings >= 6 && (p.stats.middle_order_innings / totalInns) >= 0.15) || p.stats.middle_order_innings >= 15;
+        return (p.stats.middle_order_innings >= 5 && (p.stats.middle_order_innings / totalInns) >= 0.12) || p.stats.middle_order_innings >= 12;
       }
 
       return true;
@@ -955,20 +1023,106 @@
       return { allowed: true };
     }
 
-    // Helper: Render role-specific stats with hover tooltips
+    // Helper: Render role-specific stats with hover tooltips calibrated per format
     function renderPlayerStats(p) {
-      const isBowler = p.primary_role === 'BOWL' || (p.stats.bowl_overs >= 30 && p.primary_role !== 'WK');
+      const isBowler = p.primary_role === 'BOWL';
       const isAllRounder = p.primary_role === 'AR';
       const isKeeper = p.primary_role === 'WK';
+      const fmt = (currentChallenge && currentChallenge.format) ? currentChallenge.format : currentFormat;
 
-      if (isBowler) {
-        const tooltip = `Style: ${p.bowling_style || p.bowling_category} | Overs: ${p.stats.bowl_overs} | Conceded: ${p.stats.bowl_runs_conceded} | Matches: ${p.stats.matches}`;
+      if (fmt === 'TEST') {
+        if (isBowler) {
+          const tooltip = `Test Bowling: ${p.stats.bowl_overs} overs | ${p.stats.bowl_wickets} wkts | Avg ${p.stats.bowl_average || '-'} | Econ ${p.stats.bowl_economy || '-'} | Style: ${p.bowling_style || p.bowling_category}`;
+          return `
+            <div class="stat-tooltip-container">
+              <div class="p-stats-bar">
+                <span>Bowl Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
+                <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+                <span>Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
+              </div>
+              <div class="tooltip-content">${tooltip}</div>
+            </div>
+          `;
+        }
+        if (isAllRounder) {
+          const tooltip = `Test All-Rounder: Bat ${p.stats.bat_runs} runs (Avg ${p.stats.bat_average}) | Bowl ${p.stats.bowl_wickets} wkts (Avg ${p.stats.bowl_average || '-'})`;
+          return `
+            <div class="stat-tooltip-container">
+              <div class="p-stats-bar">
+                <span>Bat Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+                <span>Bowl Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
+                <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+              </div>
+              <div class="tooltip-content">${tooltip}</div>
+            </div>
+          `;
+        }
+        // Test Batter / Keeper
+        const tooltip = `Test Batting: ${p.stats.matches} tests | ${p.stats.bat_innings} inns | ${p.stats.bat_runs} runs | ${p.stats.bat_balls} balls | Top-order: ${p.stats.top_order_innings} | Middle-order: ${p.stats.middle_order_innings}${isKeeper ? ' | Designated Keeper' : ''}`;
         return `
           <div class="stat-tooltip-container">
             <div class="p-stats-bar">
-              <span>Bowl Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
+              <span>Bat Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+              <span>Balls: <span class="p-stat-val">${p.stats.bat_balls}</span></span>
+              <span>Runs: <span class="p-stat-val">${p.stats.bat_runs}</span></span>
+              ${isKeeper ? '<span style="color: #6ee7b7; font-weight: 700;">🧤 WK</span>' : ''}
+            </div>
+            <div class="tooltip-content">${tooltip}</div>
+          </div>
+        `;
+      }
+
+      if (fmt === 'ODI') {
+        if (isBowler) {
+          const tooltip = `ODI Bowling: ${p.stats.bowl_overs} overs | ${p.stats.bowl_wickets} wkts | Econ ${p.stats.bowl_economy || '-'} | Avg ${p.stats.bowl_average || '-'} | Style: ${p.bowling_style || p.bowling_category}`;
+          return `
+            <div class="stat-tooltip-container">
+              <div class="p-stats-bar">
+                <span>Bowl Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
+                <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+                <span>Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
+              </div>
+              <div class="tooltip-content">${tooltip}</div>
+            </div>
+          `;
+        }
+        if (isAllRounder) {
+          const tooltip = `ODI All-Rounder: Bat ${p.stats.bat_runs} runs (Avg ${p.stats.bat_average}, SR ${p.stats.bat_strike_rate}) | Bowl ${p.stats.bowl_wickets} wkts (Econ ${p.stats.bowl_economy || '-'})`;
+          return `
+            <div class="stat-tooltip-container">
+              <div class="p-stats-bar">
+                <span>Bat Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+                <span>SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
+                <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+              </div>
+              <div class="tooltip-content">${tooltip}</div>
+            </div>
+          `;
+        }
+        // ODI Batter / Keeper
+        const tooltip = `ODI Batting: ${p.stats.matches} ODIs | ${p.stats.bat_innings} inns | ${p.stats.bat_runs} runs | SR ${p.stats.bat_strike_rate}${isKeeper ? ' | Designated Keeper' : ''}`;
+        return `
+          <div class="stat-tooltip-container">
+            <div class="p-stats-bar">
+              <span>Bat Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+              <span>SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
+              <span>Runs: <span class="p-stat-val">${p.stats.bat_runs}</span></span>
+              ${isKeeper ? '<span style="color: #6ee7b7; font-weight: 700;">🧤 WK</span>' : ''}
+            </div>
+            <div class="tooltip-content">${tooltip}</div>
+          </div>
+        `;
+      }
+
+      // Default: T20
+      if (isBowler) {
+        const tooltip = `T20 Bowling: ${p.stats.bowl_overs} overs | ${p.stats.bowl_wickets} wkts | Econ ${p.stats.bowl_economy || '-'} | Style: ${p.bowling_style || p.bowling_category}`;
+        return `
+          <div class="stat-tooltip-container">
+            <div class="p-stats-bar">
               <span>Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
               <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+              <span>Bowl Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
             </div>
             <div class="tooltip-content">${tooltip}</div>
           </div>
@@ -976,7 +1130,7 @@
       }
 
       if (isAllRounder) {
-        const tooltip = `Bat: ${p.stats.bat_runs} runs (${p.stats.bat_innings} inns, Avg ${p.stats.bat_average}) | Bowl: ${p.stats.bowl_overs} ov, ${p.stats.bowl_wickets} wkts (${p.bowling_style || p.bowling_category})`;
+        const tooltip = `T20 All-Rounder: Bat ${p.stats.bat_runs} runs (SR ${p.stats.bat_strike_rate}) | Bowl ${p.stats.bowl_wickets} wkts (Econ ${p.stats.bowl_economy || '-'})`;
         return `
           <div class="stat-tooltip-container">
             <div class="p-stats-bar">
@@ -989,8 +1143,8 @@
         `;
       }
 
-      // Default: Batter or Wicketkeeper
-      const tooltip = `Matches: ${p.stats.matches} | Innings: ${p.stats.bat_innings} | Runs: ${p.stats.bat_runs} | Top-order: ${p.stats.top_order_innings} | Middle-order: ${p.stats.middle_order_innings}${isKeeper ? ' | Designated Keeper' : ''}`;
+      // T20 Batter or Keeper
+      const tooltip = `T20 Batting: ${p.stats.matches} T20Is | ${p.stats.bat_runs} runs | Avg ${p.stats.bat_average} | SR ${p.stats.bat_strike_rate}${isKeeper ? ' | Designated Keeper' : ''}`;
       return `
         <div class="stat-tooltip-container">
           <div class="p-stats-bar">
@@ -1003,28 +1157,61 @@
       `;
     }
 
-    // Load initial challenge from D1
-    async function loadInitialChallenge() {
+    // Multi-Format Challenge State
+    let currentFormat = 'T20';
+    let formatChallenges = [];
+
+    // Load challenges for the selected format from D1
+    async function loadChallengesForFormat(format = 'T20') {
+      currentFormat = format;
       try {
-        const res = await fetch(`${API_BASE}/api/challenges`);
+        const res = await fetch(`${API_BASE}/api/challenges?format=${format}`);
         const data = await res.json();
-        if (data.challenges && data.challenges.length > 0) {
-          setChallenge(data.challenges[0]);
-        } else {
-          generateNewChallenge();
+        formatChallenges = data.challenges || [];
+        updateChallengeDropdown();
+        if (formatChallenges.length > 0) {
+          setChallenge(formatChallenges[0]);
         }
       } catch (err) {
-        console.error("Failed to load challenges:", err);
+        console.error("Failed to load format challenges:", err);
+      }
+    }
+
+    function updateChallengeDropdown() {
+      const select = document.getElementById('challenge-dropdown');
+      if (!select) return;
+      select.innerHTML = '';
+      if (formatChallenges.length === 0) {
+        const opt = document.createElement('option');
+        opt.innerText = "No scenarios found";
+        select.appendChild(opt);
+        return;
+      }
+      formatChallenges.forEach((ch) => {
+        const opt = document.createElement('option');
+        opt.value = ch.id;
+        opt.innerText = `${ch.title} — ${ch.venue.name}`;
+        select.appendChild(opt);
+      });
+      if (currentChallenge) {
+        select.value = currentChallenge.id;
       }
     }
 
     function setChallenge(ch) {
       currentChallenge = ch;
+      currentFormat = ch.format;
       document.getElementById('ch-title').innerText = ch.title;
       document.getElementById('ch-intro').innerText = ch.narrative_intro;
       document.getElementById('ch-format').innerText = ch.format;
       document.getElementById('ch-pitch').innerText = ch.venue.pitch_type;
       document.getElementById('ch-venue').innerText = `${ch.venue.name} (${ch.venue.country})`;
+
+      // Sync dropdown value if available
+      const select = document.getElementById('challenge-dropdown');
+      if (select && ch.id) {
+        select.value = ch.id;
+      }
 
       // Render Applied Constraints Badges in Challenge Banner
       const container = document.getElementById('ch-constraints-badges');
@@ -1055,20 +1242,22 @@
       });
     }
 
-    // Generate new AI challenge
+    // Generate new AI challenge for active format
     async function generateNewChallenge() {
       const btn = document.getElementById('btn-generate-ai');
       btn.disabled = true;
-      btn.innerText = "⏳ Generating with Workers AI...";
+      btn.innerText = `⏳ Generating ${currentFormat} Scenario...`;
 
       try {
         const res = await fetch(`${API_BASE}/api/challenges/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ format: 'T20' })
+          body: JSON.stringify({ format: currentFormat })
         });
         const data = await res.json();
         if (data.success && data.challenge) {
+          formatChallenges.unshift(data.challenge);
+          updateChallengeDropdown();
           setChallenge(data.challenge);
         }
       } catch (e) {
@@ -1090,7 +1279,7 @@
         const res = await fetch(`${API_BASE}/api/draft/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ challengeId: currentChallenge.id })
+          body: JSON.stringify({ challengeId: currentChallenge.id, format: currentChallenge.format })
         });
         const data = await res.json();
         if (data.success) {
@@ -1098,6 +1287,15 @@
           document.getElementById('challenge-view').style.display = 'none';
           document.getElementById('draft-section').style.display = 'block';
           document.getElementById('scorecard-view').style.display = 'none';
+          fetchRoomState();
+        }
+      } catch (e) {
+        alert("Failed to start draft room");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "🚀 Start Draft Room";
+      }
+    }
           fetchRoomState();
         }
       } catch (e) {
@@ -1544,8 +1742,30 @@
     document.getElementById('btn-play-again').addEventListener('click', () => {
       document.getElementById('scorecard-view').style.display = 'none';
       document.getElementById('challenge-view').style.display = 'flex';
-      loadInitialChallenge();
+      loadChallengesForFormat(currentFormat);
     });
+
+    // Format Selector Pills
+    document.querySelectorAll('.fmt-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.fmt-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const fmt = btn.dataset.format;
+        loadChallengesForFormat(fmt);
+      });
+    });
+
+    // Scenario Dropdown Selector
+    const chSelect = document.getElementById('challenge-dropdown');
+    if (chSelect) {
+      chSelect.addEventListener('change', (e) => {
+        const selectedId = e.target.value;
+        const matched = formatChallenges.find(c => c.id === selectedId);
+        if (matched) {
+          setChallenge(matched);
+        }
+      });
+    }
 
     document.getElementById('pool-search').addEventListener('input', (e) => {
       searchQuery = e.target.value.toLowerCase();
@@ -1562,8 +1782,8 @@
       });
     });
 
-    // Initialize
-    loadInitialChallenge();
+    // Initialize with default T20 format
+    loadChallengesForFormat('T20');
   </script>
 </body>
 </html>

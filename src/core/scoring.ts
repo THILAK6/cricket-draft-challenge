@@ -13,6 +13,10 @@ export function calculateDeterministicScore(
   challenge: Challenge
 ): Omit<ScoringBreakdown, "llm_adjustment" | "final_score" | "verdict_summary"> {
   const { pitch_type } = challenge.venue;
+  const format = challenge.format || "T20";
+  const isTest = format === "TEST";
+  const isOdi = format === "ODI";
+  const isT20 = format === "T20" || (!isTest && !isOdi);
 
   // -------------------------------------------------------------
   // 1. Role Balance & Batting Order Fit (0 - 25 points)
@@ -23,21 +27,31 @@ export function calculateDeterministicScore(
   const hasKeeper = squad.some((p) => p.primary_role === "WK");
   if (hasKeeper) roleScore += 4.0;
 
-  // 5+ bowling options (4.5 to 5.0 pts)
+  // Bowling options (4.5 to 5.0 pts)
   const bowlingOptions = squad.filter(
     (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
   );
-  if (bowlingOptions.length >= 6) roleScore += 5.0;
-  else if (bowlingOptions.length === 5) roleScore += 4.0;
-  else roleScore += Math.max(0, bowlingOptions.length * 0.8);
+  if (isTest) {
+    // Tests: 4 frontline bowlers + 1 backup option is standard international construction
+    const frontlineBowlers = squad.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR");
+    if (frontlineBowlers.length >= 5) roleScore += 5.0;
+    else if (frontlineBowlers.length === 4 && bowlingOptions.length >= 5) roleScore += 4.5;
+    else if (bowlingOptions.length >= 4) roleScore += 3.5;
+    else roleScore += Math.max(0, bowlingOptions.length * 0.8);
+  } else {
+    // T20 & ODI: Need 5-6 distinct bowling options to prevent over-exposure
+    if (bowlingOptions.length >= 6) roleScore += 5.0;
+    else if (bowlingOptions.length === 5) roleScore += 4.0;
+    else roleScore += Math.max(0, bowlingOptions.length * 0.8);
+  }
 
   // Positional Batting Order Fit:
-  // Slots 1 & 2 (indices 0, 1): Expects top order batters
+  // Slots 1 & 2 (indices 0, 1): Expects top order specialist batters
   let openerPoints = 0;
   for (let i = 0; i < Math.min(2, squad.length); i++) {
     const p = squad[i];
     if (p.primary_role === "BOWL") {
-      // Severe penalty for opening with a tailender
+      // Severe tactical penalty for opening with a tailender
       roleScore -= 4.0;
     } else if (
       p.stats.top_order_innings >= 6 ||
@@ -62,14 +76,28 @@ export function calculateDeterministicScore(
   }
   roleScore += Math.min(3.0, middleOrderCount * 1.0);
 
-  // Finisher in Slots 5, 6, 7 (User requirement: no finishers selected must affect result)
+  // Finisher / Lower-Middle Resilience: Slots 5, 6, 7
   let hasFinisher = false;
   for (let i = 4; i < Math.min(7, squad.length); i++) {
     const p = squad[i];
-    const isFinisher =
-      p.stats.finisher_innings >= 6 ||
-      (p.primary_role === "AR" && p.stats.bat_strike_rate >= 135) ||
-      (p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200);
+    let isFinisher = false;
+    if (isT20) {
+      isFinisher =
+        p.stats.finisher_innings >= 6 ||
+        (p.primary_role === "AR" && p.stats.bat_strike_rate >= 135) ||
+        (p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200);
+    } else if (isOdi) {
+      isFinisher =
+        p.stats.finisher_innings >= 6 ||
+        (p.primary_role === "AR" && p.stats.bat_strike_rate >= 95) ||
+        (p.stats.bat_strike_rate >= 105 && p.stats.bat_runs >= 300);
+    } else {
+      // Test match counter-attacking lower middle order (Gilchrist / Pant / Stokes role)
+      isFinisher =
+        p.stats.finisher_innings >= 6 ||
+        (p.primary_role === "AR" && p.stats.bat_average >= 28.0) ||
+        (p.stats.bat_average >= 32.0 && p.stats.bat_runs >= 400);
+    }
     if (isFinisher) {
       hasFinisher = true;
       break;
@@ -79,12 +107,11 @@ export function calculateDeterministicScore(
   if (hasFinisher) {
     roleScore += 2.5;
   } else if (squad.length >= 7) {
-    // Deficit penalty for missing a finisher in death overs
-    roleScore -= 3.5;
+    // Deficit penalty for missing lower-middle order counter-attack
+    roleScore -= (isTest ? 2.5 : 3.5);
   }
 
   // Attack Diversity (Pace + Spin Synergy):
-  // Modern cricket requires both pace and spin unless pitch is a freak surface.
   const pacers = squad.filter((p) => p.bowling_category === "PACE");
   const spinners = squad.filter((p) => p.bowling_category === "SPIN");
   if (pacers.length >= 2 && spinners.length >= 1) {
@@ -94,22 +121,58 @@ export function calculateDeterministicScore(
     roleScore -= 2.0;
   }
 
-  // Death Over Bowling Capability (Overs 16-20 specialist):
-  const deathCapable = squad.filter(
-    (p) =>
-      (p.primary_role === "BOWL" || p.primary_role === "AR") &&
-      p.stats.bowl_overs >= 10 &&
-      p.stats.bowl_economy > 0 &&
-      p.stats.bowl_economy <= 7.8
-  );
-  if (deathCapable.length >= 1) {
-    roleScore += 1.5; // Has proven death over bowler
-  } else if (squad.length >= 9) {
-    // No bowler capable of keeping economy under 8.2 at death
-    const anyDecentEconomy = squad.some(
-      (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_economy <= 8.2
+  // Death / Control Bowling Capability:
+  if (isT20) {
+    const deathCapable = squad.filter(
+      (p) =>
+        (p.primary_role === "BOWL" || p.primary_role === "AR") &&
+        p.stats.bowl_overs >= 10 &&
+        p.stats.bowl_economy > 0 &&
+        p.stats.bowl_economy <= 7.8
     );
-    if (!anyDecentEconomy) roleScore -= 2.0;
+    if (deathCapable.length >= 1) {
+      roleScore += 1.5;
+    } else if (squad.length >= 9) {
+      const anyDecentEconomy = squad.some(
+        (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_economy <= 8.2
+      );
+      if (!anyDecentEconomy) roleScore -= 2.0;
+    }
+  } else if (isOdi) {
+    // ODI: Needs bowlers capable of restricting middle/death overs (econ <= 5.4)
+    const odiControlBowlers = squad.filter(
+      (p) =>
+        (p.primary_role === "BOWL" || p.primary_role === "AR") &&
+        p.stats.bowl_overs >= 20 &&
+        p.stats.bowl_economy > 0 &&
+        p.stats.bowl_economy <= 5.4
+    );
+    if (odiControlBowlers.length >= 1) {
+      roleScore += 1.5;
+    } else if (squad.length >= 9) {
+      const anyDecentEconomy = squad.some(
+        (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_economy <= 5.9
+      );
+      if (!anyDecentEconomy) roleScore -= 2.0;
+    }
+  } else {
+    // TEST: Strike bowler with penetration (average <= 28.0 and strike rate <= 55)
+    const testStrikeBowlers = squad.filter(
+      (p) =>
+        (p.primary_role === "BOWL" || p.primary_role === "AR") &&
+        p.stats.bowl_overs >= 30 &&
+        p.stats.bowl_wickets >= 15 &&
+        p.stats.bowl_average > 0 &&
+        p.stats.bowl_average <= 28.5
+    );
+    if (testStrikeBowlers.length >= 1) {
+      roleScore += 1.5;
+    } else if (squad.length >= 9) {
+      const anyDecentAverage = squad.some(
+        (p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_average <= 34.0
+      );
+      if (!anyDecentAverage) roleScore -= 2.0;
+    }
   }
 
   // Left-Hand / Right-Hand Batting Variation in Top 6:
@@ -122,14 +185,35 @@ export function calculateDeterministicScore(
 
   // Anchor vs Aggressor Balance in Top 5:
   const top5 = squad.slice(0, 5);
-  const hasAnchor = top5.some(
-    (p) => p.stats.bat_average >= 30 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
-  );
-  const hasAggressor = top5.some(
-    (p) => p.stats.bat_strike_rate >= 135 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
-  );
+  let hasAnchor = false;
+  let hasAggressor = false;
+
+  if (isT20) {
+    hasAnchor = top5.some(
+      (p) => p.stats.bat_average >= 30 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
+    );
+    hasAggressor = top5.some(
+      (p) => p.stats.bat_strike_rate >= 135 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
+    );
+  } else if (isOdi) {
+    hasAnchor = top5.some(
+      (p) => p.stats.bat_average >= 38 && p.stats.bat_innings >= 12 && p.primary_role !== "BOWL"
+    );
+    hasAggressor = top5.some(
+      (p) => p.stats.bat_strike_rate >= 92 && p.stats.bat_innings >= 12 && p.primary_role !== "BOWL"
+    );
+  } else {
+    // TEST
+    hasAnchor = top5.some(
+      (p) => p.stats.bat_average >= 42 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
+    );
+    hasAggressor = top5.some(
+      (p) => p.stats.bat_average >= 38 && p.stats.bat_strike_rate >= 52 && p.stats.bat_innings >= 10 && p.primary_role !== "BOWL"
+    );
+  }
+
   if (top5.length >= 4 && hasAnchor && hasAggressor) {
-    roleScore += 1.0; // Ideal top-order construction: anchor anchors while stroke-makers attack
+    roleScore += 1.0;
   }
 
   const role_balance_score = Math.max(0, Math.min(25, Math.round(roleScore * 10) / 10));
@@ -142,69 +226,65 @@ export function calculateDeterministicScore(
 
   switch (pitch_type) {
     case "GREEN_SEAMER": {
-      // Rewards 3+ pacers with good economy
+      // Rewards 3+ pacers
       if (pacers.length >= 3) pitchScore += 8;
       else if (pacers.length === 2) pitchScore += 4;
       else pitchScore -= 5;
-      // High seamers economy bonus
-      const goodSeam = pacers.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= 7.8);
+
+      const seamBenchmarkEcon = isT20 ? 7.8 : isOdi ? 5.2 : 3.2;
+      const goodSeam = pacers.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= seamBenchmarkEcon);
       if (goodSeam.length >= 2) pitchScore += 2;
-      // Excessive spin penalty on green seamer
       if (spinners.length >= 3) pitchScore -= 4;
       break;
     }
 
     case "DUSTBOWL": {
-      // Rewards 2-3 quality spinners
       if (spinners.length >= 3) pitchScore += 10;
       else if (spinners.length === 2) pitchScore += 7;
       else if (spinners.length === 1) pitchScore += 2;
       else pitchScore -= 8;
-      // Excessive pacers on a crumbling turner leak runs
       if (pacers.length >= 4) pitchScore -= 3;
       break;
     }
 
     case "HIGH_SCORING_FLAT": {
-      // Rewards aggressive strike rates and death bowlers
-      const highSrBatters = squad.filter((p) => p.stats.bat_strike_rate >= 135.0);
+      const srThreshold = isT20 ? 135.0 : isOdi ? 92.0 : 55.0;
+      const highSrBatters = squad.filter((p) => p.stats.bat_strike_rate >= srThreshold);
       if (highSrBatters.length >= 4) pitchScore += 7;
       else if (highSrBatters.length >= 2) pitchScore += 4;
 
-      const deathBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= 7.5);
-      if (deathBowlers.length >= 2) pitchScore += 3;
+      const deathEconThreshold = isT20 ? 7.5 : isOdi ? 5.0 : 3.0;
+      const controlBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= deathEconThreshold);
+      if (controlBowlers.length >= 2) pitchScore += 3;
       break;
     }
 
     case "SLOW_LOW": {
-      // Rewards accumulators and wicket-to-wicket bowlers
       if (spinners.length >= 2) pitchScore += 5;
-      const accurateBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= 7.2);
+      const slowLowEcon = isT20 ? 7.2 : isOdi ? 4.9 : 2.8;
+      const accurateBowlers = squad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon);
       if (accurateBowlers.length >= 3) pitchScore += 5;
       break;
     }
   }
 
   // Country-Specific Venue Conditions (Host Territory Nuances):
-  // South Africa (RSA): Express pace and steep bounce (Wanderers / Centurion)
   if (hostCountry === "RSA") {
-    const expressPacers = pacers.filter((p) => p.stats.bowl_wickets >= 30 && p.stats.bowl_economy <= 8.0);
+    const pacerWktsThreshold = isTest ? 40 : 25;
+    const expressPacers = pacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
     if (expressPacers.length >= 2) pitchScore += 2.5; // Steyn/Rabada pace domination in highveld
     if (spinners.length >= 3) pitchScore -= 3.0; // Spinners struggle with altitude and lack of grip
-  }
-  // Subcontinent (IND, BAN, SL): Spin mastery and batting spin technique
-  else if (hostCountry === "IND" || hostCountry === "BAN" || hostCountry === "SL") {
-    const eliteSpinners = spinners.filter((p) => p.stats.bowl_wickets >= 25 && p.stats.bowl_economy <= 7.5);
+  } else if (hostCountry === "IND" || hostCountry === "BAN" || hostCountry === "SL") {
+    const spinWktsThreshold = isTest ? 40 : 25;
+    const eliteSpinners = spinners.filter((p) => p.stats.bowl_wickets >= spinWktsThreshold);
     if (eliteSpinners.length >= 2) pitchScore += 2.5; // Ashwin/Jadeja/Narine subcontinental mastery
-  }
-  // England (ENG): Seam movement & English swinging conditions
-  else if (hostCountry === "ENG") {
-    const swingBowlers = pacers.filter((p) => p.stats.bowl_economy <= 7.8);
+  } else if (hostCountry === "ENG") {
+    const swingEconThreshold = isT20 ? 7.8 : isOdi ? 5.2 : 3.2;
+    const swingBowlers = pacers.filter((p) => p.stats.bowl_economy <= swingEconThreshold);
     if (swingBowlers.length >= 2) pitchScore += 2.0; // Anderson/Woakes seam & swing mastery
-  }
-  // Australia (AUS): True bounce and large square boundaries
-  else if (hostCountry === "AUS") {
-    const paceBounce = pacers.filter((p) => p.stats.bowl_wickets >= 30);
+  } else if (hostCountry === "AUS") {
+    const pacerWktsThreshold = isTest ? 40 : 25;
+    const paceBounce = pacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
     if (paceBounce.length >= 2) pitchScore += 2.0; // Starc/Cummins true bounce mastery
   }
 
@@ -217,29 +297,68 @@ export function calculateDeterministicScore(
 
   for (const p of squad) {
     const matches = Math.max(1, p.stats.matches);
-    // Bayesian credibility weight: regresses small-sample anomalies toward replacement baseline
-    const w = matches / (matches + 22);
 
-    if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
-      // Regressed batting average and strike rate
-      const regAvg = w * Math.min(52, p.stats.bat_average) + (1 - w) * 20.0;
-      const regSr = w * Math.min(160, p.stats.bat_strike_rate) + (1 - w) * 115.0;
+    if (isTest) {
+      // Test Match Quality Calibration:
+      // In Tests, 40-50 tests is a veteran; batting average is paramount; bowling average decides wickets.
+      const w = matches / (matches + 12);
+      const expBonus = matches >= 60 ? 0.35 : matches >= 30 ? 0.2 : matches < 8 ? -0.3 : 0;
 
-      // Veteran longevity composure bonus
+      if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
+        const regAvg = w * Math.min(60, p.stats.bat_average) + (1 - w) * 22.0;
+        const regSr = w * Math.min(75, p.stats.bat_strike_rate) + (1 - w) * 45.0;
+        const batRating = (regAvg / 45.0) * 0.82 + (regSr / 55.0) * 0.18 + expBonus;
+        qualityTotal += batRating * 2.7;
+      }
+
+      if (p.primary_role === "BOWL" || p.primary_role === "AR") {
+        const bowlAvg = p.stats.bowl_average || 38.0;
+        const wpm = p.stats.bowl_wickets / matches;
+        const regBowlAvg = w * Math.max(18, bowlAvg) + (1 - w) * 36.0;
+        const regWpm = w * Math.min(5.0, wpm) + (1 - w) * 1.5;
+        const bowlRating = (28.0 / regBowlAvg) * 0.6 + (regWpm / 3.0) * 0.4 + expBonus;
+        qualityTotal += bowlRating * 2.8;
+      }
+    } else if (isOdi) {
+      // ODI Quality Calibration:
+      const w = matches / (matches + 25);
+      const expBonus = matches >= 100 ? 0.35 : matches >= 50 ? 0.2 : matches < 15 ? -0.25 : 0;
+
+      if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
+        const regAvg = w * Math.min(55, p.stats.bat_average) + (1 - w) * 22.0;
+        const regSr = w * Math.min(115, p.stats.bat_strike_rate) + (1 - w) * 78.0;
+        const batRating = (regAvg / 40.0) * 0.6 + (regSr / 90.0) * 0.4 + expBonus;
+        qualityTotal += batRating * 2.7;
+      }
+
+      if (p.primary_role === "BOWL" || p.primary_role === "AR") {
+        const econ = p.stats.bowl_economy || 6.2;
+        const wpm = p.stats.bowl_wickets / matches;
+        const regEcon = w * Math.max(4.0, econ) + (1 - w) * 6.2;
+        const regWpm = w * Math.min(2.5, wpm) + (1 - w) * 0.8;
+        const bowlRating = (5.2 / regEcon) * 0.5 + (regWpm / 1.3) * 0.5 + expBonus;
+        qualityTotal += bowlRating * 2.8;
+      }
+    } else {
+      // T20 Quality Calibration:
+      const w = matches / (matches + 22);
       const expBonus = matches >= 100 ? 0.35 : matches >= 50 ? 0.2 : matches < 12 ? -0.3 : 0;
-      const batRating = (regAvg / 35.0) * 0.5 + (regSr / 135.0) * 0.5 + expBonus;
-      qualityTotal += batRating * 2.7;
-    }
 
-    if (p.primary_role === "BOWL" || p.primary_role === "AR") {
-      const econ = p.stats.bowl_economy || 8.5;
-      const wpm = p.stats.bowl_wickets / matches;
-      const regEcon = w * Math.max(5.5, econ) + (1 - w) * 8.5;
-      const regWpm = w * Math.min(1.6, wpm) + (1 - w) * 0.6;
+      if (p.primary_role === "BAT" || p.primary_role === "WK" || p.primary_role === "AR") {
+        const regAvg = w * Math.min(52, p.stats.bat_average) + (1 - w) * 20.0;
+        const regSr = w * Math.min(160, p.stats.bat_strike_rate) + (1 - w) * 115.0;
+        const batRating = (regAvg / 35.0) * 0.5 + (regSr / 135.0) * 0.5 + expBonus;
+        qualityTotal += batRating * 2.7;
+      }
 
-      const expBonus = matches >= 80 ? 0.3 : matches >= 40 ? 0.15 : matches < 12 ? -0.25 : 0;
-      const bowlRating = (7.5 / regEcon) * 0.5 + (regWpm / 1.0) * 0.5 + expBonus;
-      qualityTotal += bowlRating * 2.8;
+      if (p.primary_role === "BOWL" || p.primary_role === "AR") {
+        const econ = p.stats.bowl_economy || 8.5;
+        const wpm = p.stats.bowl_wickets / matches;
+        const regEcon = w * Math.max(5.5, econ) + (1 - w) * 8.5;
+        const regWpm = w * Math.min(1.6, wpm) + (1 - w) * 0.6;
+        const bowlRating = (7.5 / regEcon) * 0.5 + (regWpm / 1.0) * 0.5 + expBonus;
+        qualityTotal += bowlRating * 2.8;
+      }
     }
   }
 
@@ -248,21 +367,29 @@ export function calculateDeterministicScore(
   // -------------------------------------------------------------
   // 4. Batting Depth Score (0 - 15 points)
   // -------------------------------------------------------------
-  // Sort players from highest batting capacity to lowest
   const sortedBatters = [...squad].sort(
     (a, b) => b.stats.bat_average * b.stats.bat_strike_rate - a.stats.bat_average * a.stats.bat_strike_rate
   );
 
-  // Examine lower order (positions 7, 8, 9)
   const lowerOrder = sortedBatters.slice(6, 9);
   let depthPoints = 0;
   for (const p of lowerOrder) {
-    if (p.stats.bat_runs >= 200 || p.stats.bat_average >= 18 || p.primary_role === "AR") {
-      depthPoints += 5;
-    } else if (p.stats.bat_runs >= 100 || p.stats.bat_average >= 12) {
-      depthPoints += 3;
+    if (isTest) {
+      if (p.stats.bat_runs >= 300 || p.stats.bat_average >= 22 || p.primary_role === "AR") {
+        depthPoints += 5;
+      } else if (p.stats.bat_runs >= 150 || p.stats.bat_average >= 15) {
+        depthPoints += 3;
+      } else {
+        depthPoints += 1;
+      }
     } else {
-      depthPoints += 1;
+      if (p.stats.bat_runs >= 200 || p.stats.bat_average >= 18 || p.primary_role === "AR") {
+        depthPoints += 5;
+      } else if (p.stats.bat_runs >= 100 || p.stats.bat_average >= 12) {
+        depthPoints += 3;
+      } else {
+        depthPoints += 1;
+      }
     }
   }
 

@@ -70,6 +70,85 @@ const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
       { type: "min_category", category: "SPIN", count: 2 },
     ],
   },
+  // ODI Scenarios
+  {
+    title: "World Cup 50-Over Crucible",
+    format: "ODI",
+    venue: {
+      name: "Narendra Modi Stadium, Ahmedabad",
+      country: "IND",
+      pitch_type: "SLOW_LOW",
+    },
+    narrative_intro:
+      "50 overs under scorching sun. Overs 11-40 strike rotation and reverse swing will decide the match. Patience and tactical field-placing are paramount.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
+      { type: "min_category", category: "PACE", count: 2 },
+      { type: "min_category", category: "SPIN", count: 1 },
+    ],
+  },
+  {
+    title: "Wanderers 438 Tribute Match",
+    format: "ODI",
+    venue: {
+      name: "Wanderers Stadium, Johannesburg",
+      country: "RSA",
+      pitch_type: "HIGH_SCORING_FLAT",
+    },
+    narrative_intro:
+      "High altitude and rock-hard pitch. Ball flies over boundaries; Dale Steyn style express pace needed to stem flow and break partnerships.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
+      { type: "min_category", category: "PACE", count: 3 },
+    ],
+  },
+  // TEST Scenarios
+  {
+    title: "The Ashes at Lord's - Day 1 Seam Battle",
+    format: "TEST",
+    venue: {
+      name: "Lord's Cricket Ground, London",
+      country: "ENG",
+      pitch_type: "GREEN_SEAMER",
+    },
+    narrative_intro:
+      "Red Dukes ball, emerald green pitch with Lord's slope. Swing bowlers like Anderson rule the morning session; top order must leave well.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { ENG: 3 } },
+      { type: "min_category", category: "PACE", count: 3 },
+      { type: "batting_hand_order", positions: [1, 2], hand: "LHB" },
+    ],
+  },
+  {
+    title: "Border-Gavaskar Trophy at The Gabba",
+    format: "TEST",
+    venue: {
+      name: "The Gabba, Brisbane",
+      country: "AUS",
+      pitch_type: "GREEN_SEAMER",
+    },
+    narrative_intro:
+      "Fast, bouncy deck with steep carry to the keeper. Taking 20 wickets with express pace is mandatory to triumph on this historic fortress.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
+      { type: "min_category", category: "PACE", count: 3 },
+    ],
+  },
+  {
+    title: "Eden Gardens Day 4 Spin Cauldron",
+    format: "TEST",
+    venue: {
+      name: "Eden Gardens, Kolkata",
+      country: "IND",
+      pitch_type: "DUSTBOWL",
+    },
+    narrative_intro:
+      "Puff of dust on every delivery. Ball is spitting off the cracks. Subcontinental spin wizards are lethal; batters need soft hands and sweep technique.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
+      { type: "min_category", category: "SPIN", count: 2 },
+    ],
+  },
 ];
 
 /**
@@ -234,7 +313,9 @@ IMPORTANT RULES:
 }
 
 function selectFallbackChallenge(format: MatchFormat): Challenge {
-  const template = FALLBACK_SCENARIOS[Math.floor(Math.random() * FALLBACK_SCENARIOS.length)];
+  const filtered = FALLBACK_SCENARIOS.filter((s) => s.format === format);
+  const candidates = filtered.length > 0 ? filtered : FALLBACK_SCENARIOS;
+  const template = candidates[Math.floor(Math.random() * candidates.length)];
   return {
     id: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     ...template,

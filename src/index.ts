@@ -23,11 +23,19 @@ app.get("/api/health", (c) => {
   return c.json({ status: "healthy", service: "cricket-draft-challenge" });
 });
 
-// List recent challenges
+// List recent challenges (optionally filtered by format: ?format=T20|ODI|TEST)
 app.get("/api/challenges", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, format, venue_name, venue_country, pitch_type, title, narrative_intro, constraints_json, created_at FROM challenges ORDER BY created_at DESC LIMIT 10"
-  ).all();
+  const format = c.req.query("format");
+  let query = "SELECT id, format, venue_name, venue_country, pitch_type, title, narrative_intro, constraints_json, created_at FROM challenges";
+  const params: any[] = [];
+  if (format) {
+    query += " WHERE format = ?";
+    params.push(format);
+  }
+  query += " ORDER BY created_at DESC LIMIT 20";
+
+  const stmt = c.env.DB.prepare(query);
+  const { results } = params.length > 0 ? await stmt.bind(...params).all() : await stmt.all();
 
   const formatted = (results || []).map((row: any) => ({
     id: row.id,
