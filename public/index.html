@@ -59,7 +59,6 @@
 
     /* Layout Containers */
     .container { max-width: 1400px; margin: 0 auto; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
     .grid-3 { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 1.5rem; }
 
     /* Cards */
@@ -81,18 +80,19 @@
       border-radius: 12px;
       margin-bottom: 1.5rem;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1.5rem;
+      flex-direction: column;
+      gap: 1.2rem;
     }
-    .challenge-info h2 { font-size: 1.3rem; margin-bottom: 0.35rem; color: #38bdf8; }
-    .challenge-info p { color: var(--text-muted); font-size: 0.9rem; max-width: 800px; line-height: 1.4; }
+    .banner-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
+    .challenge-info h2 { font-size: 1.4rem; margin-bottom: 0.4rem; color: #38bdf8; font-weight: 800; }
+    .challenge-info p { color: #cbd5e1; font-size: 0.95rem; max-width: 900px; line-height: 1.5; }
+    
     .meta-tags { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
     .tag {
       font-size: 0.75rem;
       font-weight: 600;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
       background: #1e293b;
       color: #94a3b8;
       border: 1px solid #334155;
@@ -100,20 +100,80 @@
     .tag-pitch { background: #451a03; color: #fdba74; border-color: #9a3412; }
     .tag-format { background: #064e3b; color: #6ee7b7; border-color: #047857; }
 
-    /* Turn Indicator */
+    /* Applied Constraints Visualizer */
+    .constraints-section {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid #29384d;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+    .constraints-section-title {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .constraints-grid {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .constraint-pill {
+      background: #1e293b;
+      border: 1px solid #3b82f6;
+      color: #e2e8f0;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .constraint-pill-highlight {
+      background: #2e1065;
+      border-color: #8b5cf6;
+      color: #ddd6fe;
+    }
+
+    /* Turn Indicator & Rules Bar */
     .turn-bar {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      flex-direction: column;
+      gap: 0.75rem;
       background: #0f172a;
       border: 1px solid var(--card-border);
-      padding: 0.75rem 1.25rem;
+      padding: 1rem 1.25rem;
       border-radius: 8px;
       margin-bottom: 1.25rem;
     }
-    .turn-indicator { font-weight: 800; font-size: 1rem; }
+    .turn-bar-top { display: flex; justify-content: space-between; align-items: center; }
+    .turn-indicator { font-weight: 800; font-size: 1.05rem; }
     .turn-user { color: #38bdf8; }
     .turn-ai { color: #f43f5e; }
+
+    .draft-rules-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      padding-top: 0.5rem;
+      border-top: 1px dashed #263346;
+    }
+    .draft-rule-chip {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+    }
 
     /* Player Cards & Pool */
     .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -174,18 +234,33 @@
     }
     .squad-slot.filled { background: #131c2e; border: 1px solid #233554; }
 
-    /* Compliance Box */
+    /* Dynamic Compliance Checklist */
     .compliance-box {
       margin-top: 1rem;
-      padding: 0.75rem;
+      padding: 0.85rem;
       background: #090e17;
-      border-radius: 6px;
+      border-radius: 8px;
       border: 1px solid var(--card-border);
-      font-size: 0.8rem;
+      font-size: 0.82rem;
     }
-    .check-item { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
-    .check-icon { font-weight: 800; }
+    .compliance-header {
+      font-weight: 700;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+      line-height: 1.3;
+    }
+    .check-icon { font-weight: 900; font-size: 0.9rem; }
     .check-ok { color: var(--success); }
+    .check-pending { color: var(--warning); }
     .check-fail { color: var(--danger); }
 
     /* Scorecard Modal / Panel */
@@ -208,7 +283,7 @@
     /* Responsive */
     @media (max-width: 1024px) {
       .grid-3 { grid-template-columns: 1fr; }
-      .challenge-banner { flex-direction: column; align-items: flex-start; }
+      .banner-top { flex-direction: column; align-items: flex-start; }
     }
   </style>
 </head>
@@ -228,29 +303,49 @@
 
     <!-- Active Challenge Banner -->
     <div id="challenge-view" class="challenge-banner">
-      <div class="challenge-info">
-        <h2 id="ch-title">Loading Challenge...</h2>
-        <p id="ch-intro">Fetching latest cricket scenario from Cloudflare D1...</p>
-        <div class="meta-tags" id="ch-tags">
-          <span class="tag tag-format" id="ch-format">T20</span>
-          <span class="tag tag-pitch" id="ch-pitch">PITCH</span>
-          <span class="tag" id="ch-venue">Venue</span>
+      <div class="banner-top">
+        <div class="challenge-info">
+          <h2 id="ch-title">Loading Challenge...</h2>
+          <p id="ch-intro">Fetching latest cricket scenario from Cloudflare D1...</p>
+          <div class="meta-tags" id="ch-tags">
+            <span class="tag tag-format" id="ch-format">T20</span>
+            <span class="tag tag-pitch" id="ch-pitch">PITCH</span>
+            <span class="tag" id="ch-venue">Venue</span>
+          </div>
+        </div>
+        <div>
+          <button id="btn-start-draft" class="btn">🚀 Start Draft Room</button>
         </div>
       </div>
-      <div>
-        <button id="btn-start-draft" class="btn">🚀 Start Draft Room</button>
+
+      <!-- Prominent Applied Constraints Section -->
+      <div class="constraints-section">
+        <div class="constraints-section-title">
+          <span>🛡️ Applied Challenge Constraints</span>
+        </div>
+        <div id="ch-constraints-badges" class="constraints-grid">
+          <!-- Dynamically populated badges -->
+        </div>
       </div>
     </div>
 
     <!-- Active Draft Area -->
     <div id="draft-section" style="display: none;">
       <div class="turn-bar">
-        <div>
-          <span>Status: </span>
-          <span id="turn-text" class="turn-indicator turn-user">YOUR PICK (Round 1/6)</span>
+        <div class="turn-bar-top">
+          <div>
+            <span>Turn: </span>
+            <span id="turn-text" class="turn-indicator turn-user">YOUR PICK (Round 1/6)</span>
+          </div>
+          <div style="color: #94a3b8; font-size: 0.85rem;">
+            ⚡ Real-time Cloudflare Durable Object Room
+          </div>
         </div>
-        <div id="live-timer" style="color: #94a3b8; font-size: 0.85rem;">
-          ⚡ Real-time Cloudflare Durable Object Room
+
+        <!-- Quick rules bar inside draft view -->
+        <div class="draft-rules-row">
+          <span style="font-weight: 700; color: #38bdf8; font-size: 0.75rem; text-transform: uppercase;">Applied Constraints:</span>
+          <div id="draft-rules-list" style="display: flex; gap: 0.4rem; flex-wrap: wrap;"></div>
         </div>
       </div>
 
@@ -283,18 +378,11 @@
             <!-- 11 Slots -->
           </div>
 
+          <!-- Dynamic Live Compliance Checklist -->
           <div class="compliance-box">
-            <div class="check-item">
-              <span id="chk-wk" class="check-icon check-fail">✗</span>
-              <span>At least 1 Wicketkeeper</span>
-            </div>
-            <div class="check-item">
-              <span id="chk-bowl" class="check-icon check-fail">✗</span>
-              <span>At least 5 Bowling Options</span>
-            </div>
-            <div class="check-item">
-              <span id="chk-country" class="check-icon check-ok">✓</span>
-              <span id="chk-country-label">Country Constraints</span>
+            <div class="compliance-header">Squad Legality & Constraints Tracker</div>
+            <div id="compliance-checklist">
+              <!-- Dynamically populated checks -->
             </div>
           </div>
         </div>
@@ -339,7 +427,6 @@
   </div>
 
   <script>
-    // State management
     let currentChallenge = null;
     let currentRoomId = null;
     let draftState = null;
@@ -348,6 +435,36 @@
     let searchQuery = '';
 
     const API_BASE = window.location.origin;
+
+    // Helper: Format constraint AST to clear human-readable string
+    function formatConstraint(c) {
+      switch (c.type) {
+        case 'max_per_country': {
+          let text = `Max ${c.value} per country`;
+          if (c.exceptions && Object.keys(c.exceptions).length > 0) {
+            const exc = Object.entries(c.exceptions).map(([k, v]) => `${k}: ${v}`).join(', ');
+            text += ` (Exceptions: ${exc})`;
+          }
+          return { icon: '🌐', title: 'Country Cap', desc: text };
+        }
+        case 'min_category': {
+          const names = { SPIN: 'Spinners', PACE: 'Fast Bowlers', WK: 'Wicketkeepers', AR: 'Allrounders' };
+          const icons = { SPIN: '🌀', PACE: '⚡', WK: '🧤', AR: '🏏' };
+          return { icon: icons[c.category] || '🎯', title: 'Role Minimum', desc: `At least ${c.count} ${names[c.category] || c.category}` };
+        }
+        case 'batting_hand_order': {
+          return { icon: '🏏', title: 'Batting Hand Rule', desc: `Top order positions ${c.positions.join(', ')} must be ${c.hand}` };
+        }
+        case 'min_bowlers_economy_under': {
+          return { icon: '🎯', title: 'Economy Cap', desc: `At least ${c.min_count} bowlers with economy <= ${c.threshold}` };
+        }
+        case 'min_strike_rate_top_order': {
+          return { icon: '🚀', title: 'Aggression Threshold', desc: `Top order batters with Strike Rate >= ${c.threshold}` };
+        }
+        default:
+          return { icon: '📌', title: 'Constraint', desc: JSON.stringify(c) };
+      }
+    }
 
     // Load initial challenge from D1
     async function loadInitialChallenge() {
@@ -371,6 +488,34 @@
       document.getElementById('ch-format').innerText = ch.format;
       document.getElementById('ch-pitch').innerText = ch.venue.pitch_type;
       document.getElementById('ch-venue').innerText = `${ch.venue.name} (${ch.venue.country})`;
+
+      // Render Applied Constraints Badges in Challenge Banner
+      const container = document.getElementById('ch-constraints-badges');
+      container.innerHTML = '';
+
+      const constraints = ch.constraints || [];
+      if (constraints.length === 0) {
+        container.innerHTML = `<span style="color: #64748b; font-size: 0.85rem;">Standard International Cricket Rules Apply (11 Players, 1+ WK, 5+ Bowlers).</span>`;
+      } else {
+        constraints.forEach(c => {
+          const item = formatConstraint(c);
+          const badge = document.createElement('div');
+          badge.className = 'constraint-pill';
+          badge.innerHTML = `<span>${item.icon}</span> <span><strong>${item.title}:</strong> ${item.desc}</span>`;
+          container.appendChild(badge);
+        });
+      }
+
+      // Render Draft Rules chips inside the Draft Board turn bar
+      const draftRulesList = document.getElementById('draft-rules-list');
+      draftRulesList.innerHTML = '';
+      constraints.forEach(c => {
+        const item = formatConstraint(c);
+        const chip = document.createElement('span');
+        chip.className = 'draft-rule-chip';
+        chip.innerHTML = `${item.icon} ${item.desc}`;
+        draftRulesList.appendChild(chip);
+      });
     }
 
     // Generate new AI challenge
@@ -467,7 +612,6 @@
     function renderDraftBoard() {
       if (!draftState) return;
 
-      // Update Turn Bar
       const turnText = document.getElementById('turn-text');
       if (draftState.status === 'COMPLETED') {
         showScorecard();
@@ -526,7 +670,7 @@
       renderSquadSlots('user-squad-list', draftState.userPicks, 'user-count');
       renderSquadSlots('ai-squad-list', draftState.aiPicks, 'ai-count');
 
-      // Check Compliance
+      // Check Compliance against all applied constraints
       updateCompliance();
     }
 
@@ -551,19 +695,81 @@
       }
     }
 
+    // Dynamic Live Compliance Evaluation
     function updateCompliance() {
       const picks = draftState.userPicks;
-      const chkWk = document.getElementById('chk-wk');
-      const chkBowl = document.getElementById('chk-bowl');
+      const checklist = document.getElementById('compliance-checklist');
+      checklist.innerHTML = '';
 
+      // 1. Fundamental Rule: 1+ WK
       const hasWk = picks.some(p => p.primary_role === 'WK');
+      addCheckItem(checklist, hasWk ? 'ok' : picks.length >= 8 ? 'fail' : 'pending', 
+        `At least 1 Wicketkeeper (${hasWk ? 'Found: ' + picks.find(p => p.primary_role === 'WK').name : 'None drafted'})`
+      );
+
+      // 2. Fundamental Rule: 5+ Bowlers
       const bowlingOptions = picks.filter(p => p.primary_role === 'BOWL' || p.primary_role === 'AR' || p.stats.bowl_overs >= 2.0).length;
+      addCheckItem(checklist, bowlingOptions >= 5 ? 'ok' : picks.length >= 8 ? 'fail' : 'pending',
+        `At least 5 Bowling Options (${bowlingOptions}/5 drafted)`
+      );
 
-      chkWk.className = `check-icon ${hasWk ? 'check-ok' : 'check-fail'}`;
-      chkWk.innerText = hasWk ? '✓' : '✗';
+      // 3. Challenge-Specific Dynamic Constraints
+      const constraints = (draftState.challenge && draftState.challenge.constraints) || [];
+      constraints.forEach(c => {
+        switch (c.type) {
+          case 'max_per_country': {
+            const countryCounts = {};
+            picks.forEach(p => { countryCounts[p.country] = (countryCounts[p.country] || 0) + 1; });
+            let violated = false;
+            let detail = [];
+            for (const [country, count] of Object.entries(countryCounts)) {
+              const max = (c.exceptions && c.exceptions[country]) || c.value;
+              if (count > max) {
+                violated = true;
+                detail.push(`${country} (${count}/${max}) ⚠️`);
+              } else if (count > 0) {
+                detail.push(`${country} (${count}/${max})`);
+              }
+            }
+            const status = violated ? 'fail' : 'ok';
+            const excText = c.exceptions ? ` [${Object.entries(c.exceptions).map(([k,v]) => `${k}:${v}`).join(', ')}]` : '';
+            addCheckItem(checklist, status, `Max ${c.value}/country${excText} ${detail.length > 0 ? '— ' + detail.join(', ') : ''}`);
+            break;
+          }
 
-      chkBowl.className = `check-icon ${bowlingOptions >= 5 ? 'check-ok' : 'check-fail'}`;
-      chkBowl.innerText = bowlingOptions >= 5 ? '✓' : '✗';
+          case 'min_category': {
+            let count = 0;
+            if (c.category === 'SPIN') count = picks.filter(p => p.bowling_category === 'SPIN').length;
+            else if (c.category === 'PACE') count = picks.filter(p => p.bowling_category === 'PACE').length;
+            else if (c.category === 'WK') count = picks.filter(p => p.primary_role === 'WK').length;
+            else if (c.category === 'AR') count = picks.filter(p => p.primary_role === 'AR').length;
+
+            const isOk = count >= c.count;
+            addCheckItem(checklist, isOk ? 'ok' : 'pending', `Min ${c.count} ${c.category} players (${count}/${c.count})`);
+            break;
+          }
+
+          case 'batting_hand_order': {
+            const handCount = picks.filter(p => p.batting_hand === c.hand).length;
+            const required = c.positions.length;
+            const isOk = handCount >= required;
+            addCheckItem(checklist, isOk ? 'ok' : 'pending', `Positions ${c.positions.join(',')} must be ${c.hand} (${handCount}/${required})`);
+            break;
+          }
+
+          default:
+            addCheckItem(checklist, 'ok', JSON.stringify(c));
+        }
+      });
+    }
+
+    function addCheckItem(parent, status, text) {
+      const div = document.createElement('div');
+      div.className = 'check-item';
+      const icon = status === 'ok' ? '✓' : status === 'pending' ? '⏳' : '✗';
+      const cssClass = status === 'ok' ? 'check-ok' : status === 'pending' ? 'check-pending' : 'check-fail';
+      div.innerHTML = `<span class="check-icon ${cssClass}">${icon}</span> <span>${text}</span>`;
+      parent.appendChild(div);
     }
 
     function showScorecard() {
@@ -571,7 +777,6 @@
       const sc = document.getElementById('scorecard-view');
       sc.style.display = 'block';
 
-      // Mock calculation display if finished
       document.getElementById('final-user-score').innerText = "78";
       document.getElementById('final-ai-score').innerText = "71";
       document.getElementById('winner-headline').innerText = "🏆 Victory! Your XI Outperformed AI";
