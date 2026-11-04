@@ -57,9 +57,26 @@
     .btn-secondary:hover { background: #334155; }
     .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
 
+    .btn-remove {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-left: 0.5rem;
+      transition: all 0.15s ease;
+    }
+    .btn-remove:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+
     /* Layout Containers */
     .container { max-width: 1400px; margin: 0 auto; }
-    .grid-3 { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 1.5rem; }
 
     /* Cards */
     .card {
@@ -136,11 +153,6 @@
       gap: 0.45rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
-    .constraint-pill-highlight {
-      background: #2e1065;
-      border-color: #8b5cf6;
-      color: #ddd6fe;
-    }
 
     /* Turn Indicator & Rules Bar */
     .turn-bar {
@@ -175,18 +187,34 @@
       color: #94a3b8;
     }
 
-    /* Player Cards & Pool */
-    .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .filter-btn {
+    /* Role Category Tabs */
+    .category-filters {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .cat-btn {
       background: #1e293b;
       border: 1px solid var(--card-border);
-      color: var(--text-muted);
-      padding: 0.3rem 0.7rem;
+      color: #cbd5e1;
+      padding: 0.35rem 0.65rem;
       border-radius: 6px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
+      font-weight: 600;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease;
     }
-    .filter-btn.active { background: var(--accent); color: #0f172a; font-weight: 700; border-color: var(--accent); }
+    .cat-btn:hover { background: #334155; }
+    .cat-btn.active {
+      background: #0284c7;
+      color: #fff;
+      font-weight: 700;
+      border-color: var(--accent);
+    }
 
     .search-input {
       width: 100%;
@@ -196,9 +224,40 @@
       padding: 0.5rem 0.75rem;
       border-radius: 6px;
       font-size: 0.85rem;
-      margin-bottom: 1rem;
+      margin-bottom: 0.75rem;
     }
     .search-input:focus { outline: none; border-color: var(--accent); }
+
+    /* Tooltip & Stat Box */
+    .stat-tooltip-container {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      cursor: help;
+    }
+    .stat-tooltip-container .tooltip-content {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      bottom: 135%;
+      left: 0;
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      color: #f8fafc;
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.6);
+      transition: opacity 0.15s ease;
+      z-index: 100;
+      pointer-events: none;
+      line-height: 1.4;
+    }
+    .stat-tooltip-container:hover .tooltip-content {
+      visibility: visible;
+      opacity: 1;
+    }
 
     .pool-list { max-height: 600px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.6rem; padding-right: 0.25rem; }
     .player-card {
@@ -212,14 +271,33 @@
       transition: border-color 0.15s ease;
     }
     .player-card:hover { border-color: #38bdf8; }
-    .p-main { display: flex; flex-direction: column; gap: 0.2rem; }
+    .p-main { display: flex; flex-direction: column; gap: 0.25rem; }
     .p-name { font-weight: 700; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
     .p-country { font-size: 0.75rem; color: #94a3b8; font-weight: 700; }
-    .p-sub { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 0.6rem; }
-    .p-stats { font-size: 0.75rem; color: #cbd5e1; display: flex; gap: 0.75rem; margin-top: 0.25rem; }
-    .p-stat-val { font-weight: 700; color: #38bdf8; }
+    .p-sub { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 0.6rem; align-items: center; }
+    .p-stats-bar {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      margin-top: 0.2rem;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #1e293b;
+      width: fit-content;
+    }
+    .p-stat-val { font-weight: 800; color: #38bdf8; }
 
-    /* Squad Lists */
+    /* Squad Lists & Role Groupings */
+    .squad-group-label {
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin: 0.6rem 0 0.25rem 0;
+      letter-spacing: 0.05em;
+    }
     .squad-slot {
       display: flex;
       justify-content: space-between;
@@ -229,7 +307,7 @@
       border-radius: 6px;
       padding: 0.5rem 0.75rem;
       font-size: 0.85rem;
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.35rem;
       min-height: 42px;
     }
     .squad-slot.filled { background: #131c2e; border: 1px solid #233554; }
@@ -350,32 +428,36 @@
       </div>
 
       <div class="grid-3">
-        <!-- Available Pool -->
+        <!-- Available Pool with Role Section Tabs -->
         <div class="card">
           <div class="card-header">
             <span class="card-title">Available Pool (<span id="pool-count">0</span>)</span>
           </div>
           <input type="text" id="pool-search" class="search-input" placeholder="Search player name or country..." />
-          <div class="filters">
-            <button class="filter-btn active" data-role="ALL">All</button>
-            <button class="filter-btn" data-role="BAT">Batters</button>
-            <button class="filter-btn" data-role="WK">WKs</button>
-            <button class="filter-btn" data-role="AR">Allrounders</button>
-            <button class="filter-btn" data-role="BOWL">Bowlers</button>
-            <button class="filter-btn" data-hand="LHB">LHB</button>
+          
+          <!-- Category Sections Tabs -->
+          <div class="category-filters">
+            <button class="cat-btn active" data-category="ALL">All Pool</button>
+            <button class="cat-btn" data-category="OPENER">🏏 Openers</button>
+            <button class="cat-btn" data-category="MIDDLE">🛡️ Middle Order</button>
+            <button class="cat-btn" data-category="SPIN">🌀 Spinners</button>
+            <button class="cat-btn" data-category="PACE">⚡ Fast Bowlers</button>
+            <button class="cat-btn" data-category="WK">🧤 Keepers</button>
+            <button class="cat-btn" data-category="LHB">Left-Handers</button>
           </div>
+
           <div id="pool-list" class="pool-list">
-            <!-- Rendered Player Cards -->
+            <!-- Rendered Player Cards with Role Specific Stats -->
           </div>
         </div>
 
-        <!-- User XI -->
+        <!-- User XI with Remove Buttons -->
         <div class="card">
           <div class="card-header">
             <span class="card-title">Your XI (<span id="user-count">0</span>/11)</span>
           </div>
           <div id="user-squad-list">
-            <!-- 11 Slots -->
+            <!-- 11 Slots grouped by role -->
           </div>
 
           <!-- Dynamic Live Compliance Checklist -->
@@ -430,8 +512,7 @@
     let currentChallenge = null;
     let currentRoomId = null;
     let draftState = null;
-    let activeFilterRole = 'ALL';
-    let activeFilterHand = null;
+    let activeCategory = 'ALL';
     let searchQuery = '';
 
     const API_BASE = window.location.origin;
@@ -453,7 +534,7 @@
           return { icon: icons[c.category] || '🎯', title: 'Role Minimum', desc: `At least ${c.count} ${names[c.category] || c.category}` };
         }
         case 'batting_hand_order': {
-          return { icon: '🏏', title: 'Batting Hand Rule', desc: `Top order positions ${c.positions.join(', ')} must be ${c.hand}` };
+          return { icon: '🏏', title: 'Batting Hand Rule', desc: `Positions ${c.positions.join(', ')} must be ${c.hand}` };
         }
         case 'min_bowlers_economy_under': {
           return { icon: '🎯', title: 'Economy Cap', desc: `At least ${c.min_count} bowlers with economy <= ${c.threshold}` };
@@ -464,6 +545,75 @@
         default:
           return { icon: '📌', title: 'Constraint', desc: JSON.stringify(c) };
       }
+    }
+
+    // Helper: Check if a player belongs to a specific section category
+    function matchCategory(p, cat) {
+      if (cat === 'ALL') return true;
+      if (cat === 'LHB') return p.batting_hand === 'LHB';
+      if (cat === 'WK') return p.primary_role === 'WK';
+      if (cat === 'SPIN') return p.bowling_category === 'SPIN';
+      if (cat === 'PACE') return p.bowling_category === 'PACE';
+
+      // Openers: frequent top-order innings (slots 1-2)
+      if (cat === 'OPENER') {
+        return p.stats.top_order_innings >= 4 || (p.primary_role === 'BAT' && p.stats.top_order_innings >= p.stats.middle_order_innings);
+      }
+
+      // Middle Order: frequent slots 3-6
+      if (cat === 'MIDDLE') {
+        return p.stats.middle_order_innings >= 4 || (p.primary_role === 'BAT' && p.stats.middle_order_innings > p.stats.top_order_innings) || (p.primary_role === 'AR' && p.stats.middle_order_innings >= 3);
+      }
+
+      return true;
+    }
+
+    // Helper: Render role-specific stats with hover tooltips
+    function renderPlayerStats(p) {
+      const isBowler = p.primary_role === 'BOWL' || (p.stats.bowl_overs >= 30 && p.primary_role !== 'WK');
+      const isAllRounder = p.primary_role === 'AR';
+      const isKeeper = p.primary_role === 'WK';
+
+      if (isBowler) {
+        const tooltip = `Style: ${p.bowling_style || p.bowling_category} | Overs: ${p.stats.bowl_overs} | Conceded: ${p.stats.bowl_runs_conceded} | Matches: ${p.stats.matches}`;
+        return `
+          <div class="stat-tooltip-container">
+            <div class="p-stats-bar">
+              <span>Bowl Avg: <span class="p-stat-val">${p.stats.bowl_average || '-'}</span></span>
+              <span>Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
+              <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+            </div>
+            <div class="tooltip-content">${tooltip}</div>
+          </div>
+        `;
+      }
+
+      if (isAllRounder) {
+        const tooltip = `Bat: ${p.stats.bat_runs} runs (${p.stats.bat_innings} inns, Avg ${p.stats.bat_average}) | Bowl: ${p.stats.bowl_overs} ov, ${p.stats.bowl_wickets} wkts (${p.bowling_style || p.bowling_category})`;
+        return `
+          <div class="stat-tooltip-container">
+            <div class="p-stats-bar">
+              <span>Bat SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
+              <span>Bowl Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
+              <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
+            </div>
+            <div class="tooltip-content">${tooltip}</div>
+          </div>
+        `;
+      }
+
+      // Default: Batter or Wicketkeeper
+      const tooltip = `Matches: ${p.stats.matches} | Innings: ${p.stats.bat_innings} | Runs: ${p.stats.bat_runs} | Top-order: ${p.stats.top_order_innings} | Middle-order: ${p.stats.middle_order_innings}${isKeeper ? ' | Designated Keeper' : ''}`;
+      return `
+        <div class="stat-tooltip-container">
+          <div class="p-stats-bar">
+            <span>Bat Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
+            <span>SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
+            ${isKeeper ? '<span style="color: #6ee7b7; font-weight: 700;">🧤 WK</span>' : ''}
+          </div>
+          <div class="tooltip-content">${tooltip}</div>
+        </div>
+      `;
     }
 
     // Load initial challenge from D1
@@ -608,6 +758,28 @@
       }
     }
 
+    // Remove / Undraft Player
+    async function removePlayer(playerId) {
+      if (!currentRoomId) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/remove`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playerId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          draftState = data.state;
+          renderDraftBoard();
+        } else {
+          alert(data.error || "Cannot remove player");
+        }
+      } catch (e) {
+        console.error("Remove error", e);
+      }
+    }
+
     // Render Draft Board
     function renderDraftBoard() {
       if (!draftState) return;
@@ -631,8 +803,7 @@
       poolList.innerHTML = '';
 
       const filtered = draftState.pool.filter(p => {
-        if (activeFilterRole !== 'ALL' && p.primary_role !== activeFilterRole) return false;
-        if (activeFilterHand && p.batting_hand !== activeFilterHand) return false;
+        if (!matchCategory(p, activeCategory)) return false;
         if (searchQuery && !p.name.toLowerCase().includes(searchQuery) && !p.country.toLowerCase().includes(searchQuery)) return false;
         return true;
       });
@@ -650,12 +821,7 @@
               <span>${p.batting_hand}</span> • 
               <span>${p.bowling_category !== 'NONE' ? p.bowling_category : 'No Bowl'}</span>
             </div>
-            <div class="p-stats">
-              <span>Avg: <span class="p-stat-val">${p.stats.bat_average}</span></span>
-              <span>SR: <span class="p-stat-val">${p.stats.bat_strike_rate}</span></span>
-              <span>Wkts: <span class="p-stat-val">${p.stats.bowl_wickets}</span></span>
-              <span>Econ: <span class="p-stat-val">${p.stats.bowl_economy || '-'}</span></span>
-            </div>
+            ${renderPlayerStats(p)}
           </div>
           <div>
             <button class="btn btn-sm" ${draftState.currentTurn !== 'USER' ? 'disabled' : ''} onclick="pickPlayer('${p.id}')">
@@ -667,17 +833,23 @@
       });
 
       // Render Squads
-      renderSquadSlots('user-squad-list', draftState.userPicks, 'user-count');
-      renderSquadSlots('ai-squad-list', draftState.aiPicks, 'ai-count');
+      renderSquadSlots('user-squad-list', draftState.userPicks, 'user-count', true);
+      renderSquadSlots('ai-squad-list', draftState.aiPicks, 'ai-count', false);
 
       // Check Compliance against all applied constraints
       updateCompliance();
     }
 
-    function renderSquadSlots(containerId, picks, countId) {
+    function renderSquadSlots(containerId, picks, countId, isUser = false) {
       const el = document.getElementById(containerId);
       el.innerHTML = '';
       document.getElementById(countId).innerText = picks.length;
+
+      const roleLabels = [
+        "1. Opener", "2. Opener", "3. Top Order", "4. Middle Order",
+        "5. Middle Order", "6. Finisher", "7. All-Rounder", "8. Bowling AR",
+        "9. Bowler", "10. Bowler", "11. Bowler"
+      ];
 
       for (let i = 0; i < 11; i++) {
         const p = picks[i];
@@ -685,11 +857,16 @@
         div.className = `squad-slot ${p ? 'filled' : ''}`;
         if (p) {
           div.innerHTML = `
-            <span><strong>${i+1}. ${p.name}</strong> (${p.country})</span>
-            <span style="color: #94a3b8; font-size: 0.75rem;">${p.primary_role} • ${p.batting_hand}</span>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span><strong>${i+1}. ${p.name}</strong> (${p.country})</span>
+              <span style="color: #94a3b8; font-size: 0.75rem;">${p.primary_role} • ${p.batting_hand}</span>
+            </div>
+            <div>
+              ${isUser ? `<button class="btn-remove" onclick="removePlayer('${p.id}')" title="Return to pool">✕</button>` : ''}
+            </div>
           `;
         } else {
-          div.innerHTML = `<span style="color: #475569;">Slot ${i+1} (Empty)</span>`;
+          div.innerHTML = `<span style="color: #475569;">${roleLabels[i]} (Empty)</span>`;
         }
         el.appendChild(div);
       }
@@ -802,18 +979,12 @@
       renderDraftBoard();
     });
 
-    document.querySelectorAll('.filter-btn').forEach(btn => {
+    // Category Filter Buttons
+    document.querySelectorAll('.cat-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-
-        if (btn.dataset.role) {
-          activeFilterRole = btn.dataset.role;
-          activeFilterHand = null;
-        } else if (btn.dataset.hand) {
-          activeFilterHand = btn.dataset.hand;
-          activeFilterRole = 'ALL';
-        }
+        activeCategory = btn.dataset.category;
         renderDraftBoard();
       });
     });

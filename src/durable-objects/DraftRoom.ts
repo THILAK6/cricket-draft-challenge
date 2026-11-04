@@ -72,6 +72,37 @@ export class DraftRoom implements DurableObject {
       return Response.json({ success: true, state: this.draftState });
     }
 
+    if (url.pathname.endsWith("/remove") && request.method === "POST") {
+      if (!this.draftState) {
+        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
+      }
+
+      const { playerId } = await request.json<{ playerId: string }>();
+
+      const pIdx = this.draftState.userPicks.findIndex((p) => p.id === playerId);
+      if (pIdx === -1) {
+        return Response.json({ error: "Player not found in your squad" }, { status: 400 });
+      }
+
+      // Return player to available pool
+      const [removed] = this.draftState.userPicks.splice(pIdx, 1);
+      this.draftState.pool.unshift(removed);
+
+      // Revert from completed state if necessary
+      if (this.draftState.status === "COMPLETED") {
+        this.draftState.status = "DRAFTING";
+      }
+
+      // Set turn back to user so they can pick their replacement
+      this.draftState.currentTurn = "USER";
+      this.draftState.lastActionTimestamp = Date.now();
+
+      await this.state.storage.put("draftState", this.draftState);
+      this.broadcast({ type: "UPDATE", state: this.draftState });
+
+      return Response.json({ success: true, state: this.draftState });
+    }
+
     return new Response("Not found", { status: 404 });
   }
 
