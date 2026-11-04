@@ -219,3 +219,4 @@ export function applyBoundedAdjustment(
     verdict_summary: verdictSummary,
   };
 }
+

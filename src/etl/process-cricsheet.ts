@@ -181,10 +181,16 @@ async function main() {
               const conceded = (runs.batter || 0) + (extras.wides || 0) + (extras.noballs || 0) + (extras.penalties || 0);
               bwAgg.bowl_runs_conceded += conceded;
 
-              // Bowler wickets exclude run outs, retired out, etc.
+              // Batter dismissals & Bowler wickets
               const wickets = del.wickets || [];
               for (const w of wickets) {
                 const kind = w.kind || "";
+                const outName = w.player_out;
+                const outCId = peopleRegistry[outName];
+                if (outCId && aggregates.has(outCId)) {
+                  aggregates.get(outCId)!.bat_dismissals += 1;
+                }
+
                 if (["bowled", "caught", "caught and bowled", "lbw", "stumped", "hit wicket"].includes(kind)) {
                   bwAgg.bowl_wickets += 1;
                 }
@@ -267,6 +273,14 @@ async function main() {
     // Adjust primary role if Cricsheet shows active keeper or heavy bowler
     if (agg.stumpings > 0) {
       meta.primary_role = "WK";
+    } else if (meta.primary_role === "BAT" && agg.bowl_legal_balls >= 120) {
+      const ballsPerMatch = agg.bowl_legal_balls / Math.max(1, agg.matches);
+      const runsPerMatch = agg.bat_runs / Math.max(1, agg.matches);
+      if (ballsPerMatch >= 14 && runsPerMatch >= 14) {
+        meta.primary_role = "AR";
+      } else if (ballsPerMatch >= 12) {
+        meta.primary_role = "BOWL";
+      }
     }
 
     enrichedList.push({ agg, meta });

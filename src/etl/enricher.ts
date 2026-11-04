@@ -46,11 +46,16 @@ export class AthleteEnricher {
   }
 
   async getPlayerMeta(cricinfo_id: string, fallbackName: string): Promise<EnrichedAthleteMeta> {
-    if (this.cache.has(cricinfo_id)) {
-      return this.cache.get(cricinfo_id)!;
+    const existing = this.cache.get(cricinfo_id);
+    // Return existing if valid, non-fallback entry
+    if (existing && !(existing.bowling_category === "NONE" && existing.bowling_style === "Right-arm medium" && existing.name === fallbackName)) {
+      return existing;
     }
 
     try {
+      // Gentle pacing to avoid rate-limiting
+      await new Promise((r) => setTimeout(r, 40));
+
       const url = `https://site.web.api.espn.com/apis/common/v3/sports/cricket/athletes/${cricinfo_id}`;
       const res = await fetch(url, {
         headers: { "User-Agent": "CricketDraftChallenge/1.0" },

@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "cricdraft-db",
-      "database_id": "local-cricdraft-db"
+      "database_id": "dbb799dd-0e44-427b-8c87-593539524822"
     }
   ],
   "durable_objects": {
@@ -22,7 +22,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["DraftRoom"]
+      "new_sqlite_classes": ["DraftRoom"]
     }
   ],
   "ai": {

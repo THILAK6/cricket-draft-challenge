@@ -247,3 +247,4 @@ describe("Constraint Validator - Feasibility Solver", () => {
     expect(result.reasons[0]).toContain("Country constraints make 11-player squad impossible");
   });
 });
+
