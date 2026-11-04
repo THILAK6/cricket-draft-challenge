@@ -1,5 +1,5 @@
 import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from "../core/types";
-import { validateSquad } from "../core/validator";
+import { validateSquad, canPickPlayer } from "../core/validator";
 import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
 
 export class DraftRoom implements DurableObject {
@@ -156,6 +156,14 @@ export class DraftRoom implements DurableObject {
       return { success: false, error: "Player not in available pool" };
     }
 
+    const candidate = this.draftState.pool[pIdx];
+    const currentSquad = actor === "USER" ? this.draftState.userPicks : this.draftState.aiPicks;
+
+    const check = canPickPlayer(candidate, currentSquad, this.draftState.challenge);
+    if (!check.allowed) {
+      return { success: false, error: check.reason || "Illegal pick" };
+    }
+
     const [picked] = this.draftState.pool.splice(pIdx, 1);
 
     if (actor === "USER") {
@@ -180,12 +188,19 @@ export class DraftRoom implements DurableObject {
     const squad = this.draftState.aiPicks;
     const challenge = this.draftState.challenge;
 
+    // Filter strictly to legal candidates
+    const legalCandidates = this.draftState.pool.filter(
+      (p) => canPickPlayer(p, squad, challenge).allowed
+    );
+
+    const candidatesToScore = legalCandidates.length > 0 ? legalCandidates : this.draftState.pool;
+
     // Check needed roles
     const needsKeeper = squad.length >= 8 && !squad.some((p) => p.primary_role === "WK");
     const needsBowlers = squad.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").length < 4;
 
     // Candidate ranking
-    const scoredCandidates = this.draftState.pool.map((p) => {
+    const scoredCandidates = candidatesToScore.map((p) => {
       let weight = p.stats.bat_average * 0.4 + (p.stats.bat_strike_rate / 130) * 20;
       if (p.primary_role === "BOWL" || p.primary_role === "AR") {
         weight += (7.5 / Math.max(5.5, p.stats.bowl_economy || 8)) * 30 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 15;
@@ -205,7 +220,7 @@ export class DraftRoom implements DurableObject {
     scoredCandidates.sort((a, b) => b.weight - a.weight);
 
     // Pick top legal candidate
-    const topPick = scoredCandidates[0]?.player || this.draftState.pool[0];
+    const topPick = scoredCandidates[0]?.player || candidatesToScore[0];
     this.executePick(topPick.id, "AI");
   }
 

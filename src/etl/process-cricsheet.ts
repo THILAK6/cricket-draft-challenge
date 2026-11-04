@@ -121,6 +121,7 @@ async function main() {
       const match = JSON.parse(matchRaw);
 
       if (!match.info?.players || !match.info?.registry?.people) continue;
+      if (match.info?.gender !== "male") continue;
 
       const peopleRegistry: Record<string, string> = match.info.registry.people;
       const teamPlayers: Record<string, string[]> = match.info.players;

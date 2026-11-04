@@ -271,6 +271,25 @@
       transition: border-color 0.15s ease;
     }
     .player-card:hover { border-color: #38bdf8; }
+    .player-card.restricted {
+      opacity: 0.45;
+      border-color: #1e293b;
+      background: #0d131f;
+    }
+    .player-card.restricted:hover {
+      opacity: 0.85;
+      border-color: #ef4444;
+    }
+
+    .btn-restricted {
+      background: rgba(239, 68, 68, 0.12) !important;
+      border: 1px solid rgba(239, 68, 68, 0.45) !important;
+      color: #fca5a5 !important;
+      cursor: not-allowed !important;
+      font-size: 0.72rem !important;
+      padding: 0.3rem 0.5rem !important;
+      font-weight: 700;
+    }
     .p-main { display: flex; flex-direction: column; gap: 0.25rem; }
     .p-name { font-weight: 700; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
     .p-country { font-size: 0.75rem; color: #94a3b8; font-weight: 700; }
@@ -566,6 +585,113 @@
       return true;
     }
 
+    // Helper: Proactively evaluate whether drafting player p is legal (Option A)
+    function checkPlayerPickLegality(p, currentSquad, challenge) {
+      if (!currentSquad || currentSquad.length >= 11) {
+        return { allowed: false, shortReason: "Full", reason: "Squad already full (11 players)" };
+      }
+      if (currentSquad.some(x => x.id === p.id)) {
+        return { allowed: false, shortReason: "Drafted", reason: "Already in your squad" };
+      }
+
+      // 1. Country cap check
+      const countryCounts = {};
+      currentSquad.forEach(x => {
+        countryCounts[x.country] = (countryCounts[x.country] || 0) + 1;
+      });
+      const curCountry = countryCounts[p.country] || 0;
+
+      for (const c of (challenge.constraints || [])) {
+        if (c.type === "max_per_country") {
+          const maxAllowed = (c.exceptions && c.exceptions[p.country] !== undefined) ? c.exceptions[p.country] : c.value;
+          if (curCountry >= maxAllowed) {
+            return {
+              allowed: false,
+              shortReason: `Max ${p.country}`,
+              reason: `Country limit reached for ${p.country} (Max ${maxAllowed})`
+            };
+          }
+        }
+      }
+
+      const currentPickIndex = currentSquad.length;
+      const remainingSlotsAfterThisPick = 11 - (currentSquad.length + 1);
+
+      // 2. Batting hand order (slot-specific)
+      for (const c of (challenge.constraints || [])) {
+        if (c.type === "batting_hand_order") {
+          const targetSlot = currentPickIndex + 1;
+          if (c.positions && c.positions.includes(targetSlot)) {
+            if (p.batting_hand !== c.hand) {
+              return {
+                allowed: false,
+                shortReason: `Need ${c.hand}`,
+                reason: `Slot ${targetSlot} requires a ${c.hand} batter`
+              };
+            }
+          }
+        }
+      }
+
+      // 3. Critical role guards (Pigeonhole principle)
+      const isWK = p.primary_role === 'WK';
+      const isBowler = p.primary_role === 'BOWL' || p.primary_role === 'AR' || (p.stats && p.stats.bowl_overs >= 2.0);
+
+      // 3a. Wicketkeeper guard
+      const currentKeepers = currentSquad.filter(x => x.primary_role === 'WK').length;
+      const keepersWithThisPick = currentKeepers + (isWK ? 1 : 0);
+      const neededKeepers = Math.max(0, 1 - keepersWithThisPick);
+      if (remainingSlotsAfterThisPick < neededKeepers) {
+        return {
+          allowed: false,
+          shortReason: "Need WK",
+          reason: "Must pick a Wicketkeeper for remaining slot"
+        };
+      }
+
+      // 3b. Bowler guard (at least 5 bowling options required)
+      const currentBowling = currentSquad.filter(x => x.primary_role === 'BOWL' || x.primary_role === 'AR' || (x.stats && x.stats.bowl_overs >= 2.0)).length;
+      const bowlingWithThisPick = currentBowling + (isBowler ? 1 : 0);
+      const neededBowlers = Math.max(0, 5 - bowlingWithThisPick);
+      if (remainingSlotsAfterThisPick < neededBowlers) {
+        return {
+          allowed: false,
+          shortReason: "Need Bowler",
+          reason: `Must pick a bowler (${5 - currentBowling} more needed for remaining slots)`
+        };
+      }
+
+      // 3c. min_category guard
+      for (const c of (challenge.constraints || [])) {
+        if (c.type === "min_category") {
+          let candidateMatches = false;
+          if (c.category === "PACE" && p.bowling_category === "PACE") candidateMatches = true;
+          if (c.category === "SPIN" && p.bowling_category === "SPIN") candidateMatches = true;
+          if (c.category === "WK" && p.primary_role === "WK") candidateMatches = true;
+          if (c.category === "AR" && p.primary_role === "AR") candidateMatches = true;
+
+          let currentCatCount = 0;
+          if (c.category === "PACE") currentCatCount = currentSquad.filter(x => x.bowling_category === "PACE").length;
+          if (c.category === "SPIN") currentCatCount = currentSquad.filter(x => x.bowling_category === "SPIN").length;
+          if (c.category === "WK") currentCatCount = currentSquad.filter(x => x.primary_role === "WK").length;
+          if (c.category === "AR") currentCatCount = currentSquad.filter(x => x.primary_role === "AR").length;
+
+          const catWithThisPick = currentCatCount + (candidateMatches ? 1 : 0);
+          const neededCat = Math.max(0, c.count - catWithThisPick);
+          if (remainingSlotsAfterThisPick < neededCat) {
+            return {
+              allowed: false,
+              shortReason: `Need ${c.category}`,
+              reason: `Must pick a ${c.category} player (${c.count - currentCatCount} needed for remaining slots)`
+            };
+          }
+        }
+      }
+
+      return { allowed: true };
+    }
+    }
+
     // Helper: Render role-specific stats with hover tooltips
     function renderPlayerStats(p) {
       const isBowler = p.primary_role === 'BOWL' || (p.stats.bowl_overs >= 30 && p.primary_role !== 'WK');
@@ -808,9 +934,29 @@
 
       document.getElementById('pool-count').innerText = filtered.length;
 
+      const isUserTurn = draftState.currentTurn === 'USER';
+      const isDraftFull = (draftState.userPicks && draftState.userPicks.length >= 11);
+
       filtered.forEach(p => {
+        let actionBtnHtml = '';
+        let cardClass = 'player-card';
+
+        if (!isUserTurn) {
+          actionBtnHtml = `<button class="btn btn-sm btn-secondary" disabled>AI Turn...</button>`;
+        } else if (isDraftFull) {
+          actionBtnHtml = `<button class="btn btn-sm btn-secondary" disabled>Squad Full</button>`;
+        } else {
+          const legality = checkPlayerPickLegality(p, draftState.userPicks, draftState.challenge);
+          if (!legality.allowed) {
+            cardClass += ' restricted';
+            actionBtnHtml = `<button class="btn btn-sm btn-restricted" disabled title="${legality.reason}">🚫 ${legality.shortReason || 'Restricted'}</button>`;
+          } else {
+            actionBtnHtml = `<button class="btn btn-sm" onclick="pickPlayer('${p.id}')">Draft</button>`;
+          }
+        }
+
         const div = document.createElement('div');
-        div.className = 'player-card';
+        div.className = cardClass;
         div.innerHTML = `
           <div class="p-main">
             <div class="p-name">${p.name} <span class="p-country">${p.country}</span></div>
@@ -822,9 +968,7 @@
             ${renderPlayerStats(p)}
           </div>
           <div>
-            <button class="btn btn-sm" ${draftState.currentTurn !== 'USER' ? 'disabled' : ''} onclick="pickPlayer('${p.id}')">
-              Draft
-            </button>
+            ${actionBtnHtml}
           </div>
         `;
         poolList.appendChild(div);
