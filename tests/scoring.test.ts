@@ -244,5 +244,91 @@ describe("Scoring Engine - LLM Layer Guardrails", () => {
     // Proven international pedigree beats small sample size
     expect(veteranScore.player_quality_score).toBeGreaterThan(noviceScore.player_quality_score);
   });
+
+  it("evaluates country conditions: express pacers like Dale Steyn score higher in South Africa (RSA)", () => {
+    const saChallenge: Challenge = {
+      id: "c-sa",
+      title: "Wanderers Highveld Clash",
+      format: "T20",
+      venue: { name: "Wanderers Stadium, Johannesburg", country: "RSA", pitch_type: "GREEN_SEAMER" },
+      narrative_intro: "Steep pace and bounce at high altitude.",
+      constraints: [],
+    };
+
+    // Squad with high-wicket express pacers (Dale Steyn / Kagiso Rabada profile)
+    const expressPaceSquad: PlayerWithStats[] = [
+      createPlayer("p1", "IND", "BAT"),
+      createPlayer("p2", "AUS", "BAT"),
+      createPlayer("p3", "ENG", "BAT"),
+      createPlayer("p4", "RSA", "BAT"),
+      createPlayer("p5", "NZL", "WK"),
+      createPlayer("p6", "WI", "AR", "RHB", "PACE", 7.8, 145),
+      createPlayer("p7", "IND", "AR", "RHB", "PACE", 7.5, 140),
+      createPlayer("p8", "RSA", "BOWL", "RHB", "PACE", 7.2, 100), // Steyn: 50+ wkts, econ 7.2
+      createPlayer("p9", "RSA", "BOWL", "RHB", "PACE", 7.4, 100), // Rabada: 45+ wkts, econ 7.4
+      createPlayer("p10", "PAK", "BOWL", "RHB", "PACE", 7.5, 100),
+      createPlayer("p11", "AFG", "BOWL", "RHB", "SPIN", 6.8, 90),
+    ];
+    expressPaceSquad[7].stats.bowl_wickets = 55;
+    expressPaceSquad[8].stats.bowl_wickets = 48;
+
+    // Squad with 3+ spinners in South Africa (ineffective on high-bounce fast tracks)
+    const spinHeavySquad: PlayerWithStats[] = [
+      createPlayer("p1", "IND", "BAT"),
+      createPlayer("p2", "AUS", "BAT"),
+      createPlayer("p3", "ENG", "BAT"),
+      createPlayer("p4", "RSA", "BAT"),
+      createPlayer("p5", "NZL", "WK"),
+      createPlayer("p6", "BAN", "AR", "LHB", "SPIN"),
+      createPlayer("p7", "IND", "AR", "RHB", "SPIN"),
+      createPlayer("p8", "AFG", "BOWL", "RHB", "SPIN"),
+      createPlayer("p9", "SL", "BOWL", "RHB", "SPIN"),
+      createPlayer("p10", "PAK", "BOWL", "RHB", "PACE"),
+      createPlayer("p11", "ENG", "BOWL", "RHB", "PACE"),
+    ];
+
+    const paceScore = calculateDeterministicScore(expressPaceSquad, saChallenge);
+    const spinScore = calculateDeterministicScore(spinHeavySquad, saChallenge);
+
+    expect(paceScore.pitch_suitability_score).toBeGreaterThan(spinScore.pitch_suitability_score);
+  });
+
+  it("rewards attack diversity: balanced pace + spin synergy outperforms a one-dimensional attack", () => {
+    const balancedChallenge: Challenge = {
+      id: "c-bal",
+      title: "Standard International Pitch",
+      format: "T20",
+      venue: { name: "Adelaide Oval", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "Balanced surface with true bounce.",
+      constraints: [],
+    };
+
+    // Balanced attack: 3 pacers + 2 spinners
+    const balancedSquad: PlayerWithStats[] = [
+      createPlayer("p1", "IND", "BAT", "RHB", "NONE", 8, 140),
+      createPlayer("p2", "AUS", "BAT", "LHB", "NONE", 8, 140),
+      createPlayer("p3", "ENG", "BAT", "RHB", "NONE", 8, 135),
+      createPlayer("p4", "RSA", "BAT", "RHB", "NONE", 8, 130),
+      createPlayer("p5", "NZL", "WK", "RHB", "NONE", 8, 130),
+      createPlayer("p6", "WI", "AR", "RHB", "PACE", 7.5, 145),   // Finisher + Pacer
+      createPlayer("p7", "BAN", "AR", "LHB", "SPIN", 7.0, 135),  // Spinner 1
+      createPlayer("p8", "IND", "BOWL", "RHB", "SPIN", 7.2, 100), // Spinner 2
+      createPlayer("p9", "PAK", "BOWL", "RHB", "PACE", 7.4, 100), // Pacer 2
+      createPlayer("p10", "RSA", "BOWL", "RHB", "PACE", 7.3, 100), // Pacer 3
+      createPlayer("p11", "AUS", "BOWL", "RHB", "PACE", 7.5, 100), // Pacer 4
+    ];
+
+    // One-dimensional attack: 5 pacers + 0 spinners
+    const oneDimSquad: PlayerWithStats[] = balancedSquad.map((p, idx) =>
+      p.bowling_category === "SPIN"
+        ? createPlayer(`pace_rep_${idx}`, p.country, p.primary_role, p.batting_hand, "PACE", 7.5, p.stats.bat_strike_rate)
+        : p
+    );
+
+    const balancedScore = calculateDeterministicScore(balancedSquad, balancedChallenge);
+    const oneDimScore = calculateDeterministicScore(oneDimSquad, balancedChallenge);
+
+    expect(balancedScore.role_balance_score).toBeGreaterThan(oneDimScore.role_balance_score);
+  });
 });
 

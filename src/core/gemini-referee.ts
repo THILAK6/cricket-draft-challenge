@@ -106,22 +106,32 @@ STATISTICAL BASELINES:
 CRITICAL EVALUATION MANDATE:
 1. BATTING ORDER & POSITIONAL FIT (SLOTS 1 TO 11):
    - Evaluate the exact batting positions chosen by each team.
-   - Slots 1-2: Did they pick proven openers? Heavily penalize putting a tailender or pure bowler in the top order.
-   - Slots 3-4: Are there solid anchors capable of stabilizing the innings?
+   - Slots 1-2: Did they pick proven openers equipped to counter the new ball? Heavily penalize putting a tailender or pure bowler in the top order.
+   - Slot 3: Is there a world-class anchor capable of stabilizing after an early wicket (e.g. Kohli, Williamson, Root)?
+   - Slots 4-5: Can the middle order manipulate spin and maintain strike rotation through overs 7-15?
    - Slots 5-7 (FINISHERS): Did they select genuine death-overs finishers with high strike rates (140+) or proven finishing experience? If a team selected NO FINISHERS in slots 5-7, punish them severely for stalling in overs 16-20.
-2. EXPERIENCE WEIGHTING (MATCHES PLAYED):
-   - Weigh proven international longevity: 100+ and 60+ cap veterans (e.g. Rohit, Kohli, Warner, Bumrah) possess battle-tested temperament under pressure.
-   - Treat small sample sizes (under 15 matches) with skepticism—a player with 6 matches and high average cannot outperform an established world champion.
+   - Slots 8-11: Evaluate batting depth. A long tail (bowlers who cannot bat) creates collapse panic.
+2. TEAM BALANCE & BOWLING SYNERGY:
+   - Attack Variety: Does the team possess both pace and spin? Heavily penalize a one-dimensional attack (e.g. 0 spinners or 0 pacers) unless pitch is an extreme outlier.
+   - Death Bowling: Does the attack feature proven death-over specialists (yorker specialists with sub-7.8 economy)? An attack without death bowlers will leak 45+ runs in overs 17-20.
+   - 6th Bowling Option: Did the team draft an all-rounder providing backup if a frontline bowler gets targeted?
+   - Left-Hand / Right-Hand Balance: Does the top 6 feature LHBs and RHBs to disrupt bowler lines?
 3. GROUND & VENUE SUITABILITY (HISTORICAL CONDITIONS):
    Evaluate how individual players from each team perform specifically in ${challenge.venue.country} on ${challenge.venue.pitch_type} tracks.
-   - Ground familiarity: Consider local country conditions (e.g. Dale Steyn or Kagiso Rabada in South Africa with steep pace and bounce vs James Anderson who historically lacked impact in SA due to missing English swing).
-   - Surface dynamics: Assess turning subcontinental dustbowls (e.g. Chennai, Mirpur) vs true bounce decks (Wankhede, Centurion, Perth).
+   - Ground familiarity & Historical venue records:
+     * South Africa (Wanderers, Centurion): High altitude, steep bounce and express pace (Dale Steyn, Kagiso Rabada, Anrich Nortje) dominate; swing bowlers who lack speed and rely on English atmospheric humidity (e.g. James Anderson historically averaging 34+ in SA) struggle. Batters with strong backfoot pull/cut games thrive.
+     * Subcontinent (Chepauk, Mirpur, Colombo): Turning dustbowls where spin maestros (R Ashwin, Ravindra Jadeja, Sunil Narine, Shakib Al Hasan, Rashid Khan) strangle batting lineups; overseas batters lacking spin technique collapse.
+     * England (Lord's, Headingley, Edgbaston): Dukes ball seam & swing (Anderson, Woakes, Boult) punishing flashy outside-off drives.
+     * High-Scoring Flat Decks (Wankhede, Chinnaswamy): True bounce, small boundaries where 150+ SR power hitters dominate and death bowling yorkers are make-or-break.
    - Spin liability vs Pace advantage: Heavily punish teams that field excessive spin on green seamers, or lack spinners on crumbling dustbowls.
-4. TACTICAL FACTORS:
+4. EXPERIENCE WEIGHTING (MATCHES PLAYED):
+   - Weigh proven international longevity: 100+ and 60+ cap veterans (e.g. Rohit, Kohli, Warner, Buttler, Bumrah) possess battle-tested temperament under pressure.
+   - Treat small sample sizes (under 15 matches) with skepticism—a player with 6 matches and high average cannot outperform an established world champion.
+5. TACTICAL FACTORS & DECISIVE DIFFERENCE:
    - Identify what made the decisive difference between the two squads.
    - Detail exactly why the winning team won (2-3 concrete bullet points).
    - Detail exactly why the losing team lost (2-3 concrete bullet points).
-5. TACTICAL ADJUSTMENTS:
+6. TACTICAL ADJUSTMENTS:
    - Provide an integer adjustment between -10 and +10 for USER XI.
    - Provide an integer adjustment between -10 and +10 for AI XI.
    - Determine the winner ("USER" or "AI").

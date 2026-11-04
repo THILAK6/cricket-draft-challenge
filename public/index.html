@@ -1373,12 +1373,47 @@
       );
 
       // 2. Fundamental Rule: 5+ Bowlers
-      const bowlingOptions = picks.filter(p => p.primary_role === 'BOWL' || p.primary_role === 'AR' || p.stats.bowl_overs >= 2.0).length;
+      const bowlingOptions = picks.filter(p => p.primary_role === 'BOWL' || p.primary_role === 'AR' || (p.stats && p.stats.bowl_overs >= 2.0)).length;
       addCheckItem(checklist, bowlingOptions >= 5 ? 'ok' : picks.length >= 8 ? 'fail' : 'pending',
         `At least 5 Bowling Options (${bowlingOptions}/5 drafted)`
       );
 
-      // 3. Challenge-Specific Dynamic Constraints
+      // 3. Team Balance: Finisher in Slots 5-7
+      let hasFinisher = false;
+      for (let i = 4; i < Math.min(7, picks.length); i++) {
+        const p = picks[i];
+        if (
+          (p.stats && p.stats.finisher_innings >= 6) ||
+          (p.primary_role === 'AR' && p.stats && p.stats.bat_strike_rate >= 135) ||
+          (p.stats && p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200)
+        ) {
+          hasFinisher = true;
+          break;
+        }
+      }
+      addCheckItem(checklist, hasFinisher ? 'ok' : picks.length >= 7 ? 'fail' : 'pending',
+        `Death Overs Finisher in Slots 5-7 (${hasFinisher ? 'Secured ✓' : picks.length >= 7 ? 'Missing ⚠️ (-4 pts deficit)' : 'Required'})`
+      );
+
+      // 4. Team Balance: Attack Diversity (Pace + Spin Synergy)
+      const pacersCount = picks.filter(p => p.bowling_category === 'PACE').length;
+      const spinnersCount = picks.filter(p => p.bowling_category === 'SPIN').length;
+      const hasDiverseAttack = (pacersCount >= 2 && spinnersCount >= 1);
+      if (picks.length >= 6) {
+        addCheckItem(checklist, hasDiverseAttack ? 'ok' : 'pending',
+          `Attack Balance: ${pacersCount} Pace, ${spinnersCount} Spin ${hasDiverseAttack ? '(Balanced Synergy ✓)' : '(Need both Pace & Spin)'}`
+        );
+      }
+
+      // 5. Team Balance: Death Bowling Control (Overs 16-20)
+      const hasDeathBowler = picks.some(p => (p.primary_role === 'BOWL' || p.primary_role === 'AR') && p.stats && p.stats.bowl_overs >= 10 && p.stats.bowl_economy > 0 && p.stats.bowl_economy <= 7.8);
+      if (picks.length >= 7) {
+        addCheckItem(checklist, hasDeathBowler ? 'ok' : 'pending',
+          `Death Overs Control: ${hasDeathBowler ? 'Yorker/Death Specialist Drafted ✓' : 'Looking for death bowler (Econ <= 7.8)'}`
+        );
+      }
+
+      // 6. Challenge-Specific Dynamic Constraints
       const constraints = (draftState.challenge && draftState.challenge.constraints) || [];
       constraints.forEach(c => {
         switch (c.type) {
