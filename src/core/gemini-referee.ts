@@ -7,6 +7,9 @@ export interface RefereeEvaluationResult {
   user_adjustment: number;
   ai_adjustment: number;
   winner: "USER" | "AI" | "TIE";
+  decisive_difference: string;
+  why_winner_won: string[];
+  why_loser_lost: string[];
   ground_conditions_analysis: string;
   verdict_summary: string;
 }
@@ -20,6 +23,13 @@ export async function evaluateGroundConditionsWithGemini(
   const userBreakdown = calculateDeterministicScore(userSquad, challenge);
   const aiBreakdown = calculateDeterministicScore(aiSquad, challenge);
 
+  const fallbackWinner =
+    userBreakdown.deterministic_total > aiBreakdown.deterministic_total
+      ? "USER"
+      : userBreakdown.deterministic_total < aiBreakdown.deterministic_total
+      ? "AI"
+      : "TIE";
+
   // Fallback if no Gemini API key provided
   if (!apiKey) {
     return {
@@ -27,9 +37,20 @@ export async function evaluateGroundConditionsWithGemini(
       ai_score: aiBreakdown.deterministic_total,
       user_adjustment: 0,
       ai_adjustment: 0,
-      winner: userBreakdown.deterministic_total > aiBreakdown.deterministic_total ? "USER" : userBreakdown.deterministic_total < aiBreakdown.deterministic_total ? "AI" : "TIE",
-      ground_conditions_analysis: `Match judged on ${challenge.venue.pitch_type} at ${challenge.venue.name} based on core deterministic cricket analytics.`,
-      verdict_summary: "Deterministic stats assessment completed. Connect Gemini API for ground and venue history analysis.",
+      winner: fallbackWinner,
+      decisive_difference: `Statistical baseline differential on ${challenge.venue.pitch_type} surface determined the winner.`,
+      why_winner_won: [
+        "Superior aggregate player career averages and strike rates.",
+        "Better role balance matching standard T20 requirements.",
+        "Higher batting depth in the lower order.",
+      ],
+      why_loser_lost: [
+        "Lower aggregate bowling economy and strike rates.",
+        "Lacking optimal pitch suitability for this venue.",
+        "Thin lower-order batting capacity under pressure.",
+      ],
+      ground_conditions_analysis: `Match played on ${challenge.venue.pitch_type} at ${challenge.venue.name} (${challenge.venue.country}). Baseline statistical models evaluated player roles and batting depth.`,
+      verdict_summary: "Deterministic analytics determined the outcome. Add Gemini API key for in-depth conditions and player venue history analysis.",
     };
   }
 
@@ -59,7 +80,11 @@ CRITICAL EVALUATION MANDATE:
    - Ground familiarity: Consider local country conditions (e.g. Dale Steyn or Kagiso Rabada in South Africa with steep pace and bounce vs James Anderson who historically lacked impact in SA due to missing English swing).
    - Surface dynamics: Assess turning subcontinental dustbowls (e.g. Chennai, Mirpur) vs true bounce decks (Wankhede, Centurion, Perth).
    - Spin liability vs Pace advantage: Heavily punish teams that field excessive spin on green seamers, or lack spinners on crumbling dustbowls.
-2. TACTICAL ADJUSTMENTS:
+2. TACTICAL FACTORS:
+   - Identify what made the decisive difference between the two squads.
+   - Detail exactly why the winning team won (2-3 concrete bullet points).
+   - Detail exactly why the losing team lost (2-3 concrete bullet points).
+3. TACTICAL ADJUSTMENTS:
    - Provide an integer adjustment between -10 and +10 for USER XI.
    - Provide an integer adjustment between -10 and +10 for AI XI.
    - Determine the winner ("USER" or "AI").
@@ -69,6 +94,9 @@ Return JSON in this exact structure:
   "user_adjustment": number (-10 to 10),
   "ai_adjustment": number (-10 to 10),
   "winner": "USER" | "AI",
+  "decisive_difference": string (1-2 sentences capturing the single biggest factor that decided the match),
+  "why_winner_won": [string, string, string],
+  "why_loser_lost": [string, string, string],
   "ground_conditions_analysis": string (2-3 sentences explaining how this specific ground and pitch suitability decided individual matchups),
   "verdict_summary": string (3-4 sentences delivering the broadcast referee match report)
 }`;
@@ -105,6 +133,9 @@ Return JSON in this exact structure:
       user_adjustment: userAdj,
       ai_adjustment: aiAdj,
       winner: parsed.winner || (finalUser > finalAi ? "USER" : finalUser < finalAi ? "AI" : "TIE"),
+      decisive_difference: parsed.decisive_difference || "Tactical condition fit decided the outcome.",
+      why_winner_won: Array.isArray(parsed.why_winner_won) ? parsed.why_winner_won : ["Better condition adaptation."],
+      why_loser_lost: Array.isArray(parsed.why_loser_lost) ? parsed.why_loser_lost : ["Sub-optimal team balance for pitch."],
       ground_conditions_analysis: parsed.ground_conditions_analysis || "Conditions analysis completed.",
       verdict_summary: parsed.verdict_summary || "Match completed successfully.",
     };
@@ -115,7 +146,16 @@ Return JSON in this exact structure:
       ai_score: aiBreakdown.deterministic_total,
       user_adjustment: 0,
       ai_adjustment: 0,
-      winner: userBreakdown.deterministic_total > aiBreakdown.deterministic_total ? "USER" : userBreakdown.deterministic_total < aiBreakdown.deterministic_total ? "AI" : "TIE",
+      winner: fallbackWinner,
+      decisive_difference: `Statistical baseline differential on ${challenge.venue.pitch_type} surface determined the winner.`,
+      why_winner_won: [
+        "Stronger overall statistical ratings across core batting and bowling roles.",
+        "Higher batting depth across lower-order positions.",
+      ],
+      why_loser_lost: [
+        "Lower aggregate bowling economy and strike rates in key overs.",
+        "Lacking bowling firepower tailored for this pitch type.",
+      ],
       ground_conditions_analysis: `Analyzed for ${challenge.venue.pitch_type} at ${challenge.venue.name}.`,
       verdict_summary: "Baseline score applied. Referee commentary defaulted to factual statistics.",
     };

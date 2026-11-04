@@ -515,16 +515,44 @@
         </div>
       </div>
 
-      <!-- Gemini Ground Conditions Referee Box -->
-      <div id="ground-referee-box" style="text-align: left; background: #0f172a; border: 1px solid #38bdf8; border-radius: 8px; padding: 1rem; margin: 1.5rem 0;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-          <h4 style="color: #38bdf8; margin: 0; font-size: 0.95rem;">🌍 Ground Conditions & Venue Nuance (Gemini Referee)</h4>
-          <span id="referee-badge" style="background: #1e293b; color: #94a3b8; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700;">AI Conditions Analysis</span>
+      <!-- Decisive Difference Callout Box -->
+      <div id="decisive-difference-box" style="text-align: left; background: linear-gradient(135deg, rgba(2, 132, 199, 0.15), rgba(15, 23, 42, 0.9)); border: 1px solid #38bdf8; border-radius: 8px; padding: 1.1rem; margin: 1.25rem 0;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;">
+          <span style="font-size: 1.1rem;">⚡</span>
+          <span style="color: #38bdf8; font-weight: 800; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">What Made The Difference</span>
         </div>
-        <p id="referee-conditions-text" style="color: #e2e8f0; font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.75rem;"></p>
-        <div style="background: rgba(30, 41, 59, 0.6); padding: 0.6rem; border-radius: 6px; border-left: 3px solid #38bdf8;">
-          <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Match Verdict & Key Matchups</div>
-          <p id="referee-verdict-text" style="color: #f8fafc; font-size: 0.82rem; margin: 0.35rem 0 0 0; line-height: 1.45;"></p>
+        <p id="decisive-diff-text" style="color: #f1f5f9; font-size: 0.92rem; font-weight: 600; line-height: 1.5; margin: 0;"></p>
+      </div>
+
+      <!-- Why Winner Won & Where Loser Fell Short Grid -->
+      <div class="scorecard-reasons-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem; text-align: left;">
+        <!-- Why Winner Won -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.9rem;">
+          <div style="color: #6ee7b7; font-weight: 800; font-size: 0.82rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>🏆</span> <span id="why-winner-title">Why Winner Won</span>
+          </div>
+          <ul id="why-winner-list" style="margin: 0; padding-left: 1.2rem; color: #d1fae5; font-size: 0.8rem; line-height: 1.45;"></ul>
+        </div>
+
+        <!-- Where Loser Fell Short -->
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 0.9rem;">
+          <div style="color: #fca5a5; font-weight: 800; font-size: 0.82rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⚠️</span> <span id="why-loser-title">Where Loser Fell Short</span>
+          </div>
+          <ul id="why-loser-list" style="margin: 0; padding-left: 1.2rem; color: #fee2e2; font-size: 0.8rem; line-height: 1.45;"></ul>
+        </div>
+      </div>
+
+      <!-- Gemini Ground Conditions Referee Box -->
+      <div id="ground-referee-box" style="text-align: left; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem; margin: 1rem 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <h4 style="color: #94a3b8; margin: 0; font-size: 0.85rem; font-weight: 700;">🌍 Ground Conditions & Player Adaptability Report</h4>
+          <span id="referee-badge" style="background: #1e293b; color: #38bdf8; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 700;">Gemini 3.8 Flash Analysis</span>
+        </div>
+        <p id="referee-conditions-text" style="color: #cbd5e1; font-size: 0.82rem; line-height: 1.5; margin-bottom: 0.6rem;"></p>
+        <div style="background: rgba(30, 41, 59, 0.5); padding: 0.6rem; border-radius: 6px;">
+          <div style="font-size: 0.72rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;">Broadcast Verdict</div>
+          <p id="referee-verdict-text" style="color: #f8fafc; font-size: 0.82rem; margin: 0.25rem 0 0 0; line-height: 1.45;"></p>
         </div>
       </div>
 
@@ -1153,6 +1181,34 @@
 
         const adj = results.userAdjustment !== undefined ? results.userAdjustment : 0;
         document.getElementById('bd-adj').innerText = `${adj >= 0 ? '+' : ''}${adj} pts`;
+
+        // Populate Decisive Difference
+        document.getElementById('decisive-diff-text').innerText = results.decisiveDifference || "Tactical ground fit and player adaptability determined the final outcome.";
+
+        // Populate Why Winner Won & Where Loser Fell Short
+        const winnerName = results.winner === 'USER' ? 'Your XI' : 'AI XI';
+        const loserName = results.winner === 'USER' ? 'AI XI' : 'Your XI';
+
+        document.getElementById('why-winner-title').innerText = `Why ${winnerName} Won`;
+        document.getElementById('why-loser-title').innerText = `Where ${loserName} Fell Short`;
+
+        const winList = document.getElementById('why-winner-list');
+        winList.innerHTML = '';
+        (results.whyWinnerWon || ["Superior condition fit and execution."]).forEach(item => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '0.35rem';
+          li.innerText = item;
+          winList.appendChild(li);
+        });
+
+        const loseList = document.getElementById('why-loser-list');
+        loseList.innerHTML = '';
+        (results.whyLoserLost || ["Sub-optimal team balance under these venue conditions."]).forEach(item => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '0.35rem';
+          li.innerText = item;
+          loseList.appendChild(li);
+        });
 
         document.getElementById('referee-conditions-text').innerText = results.groundConditionsAnalysis || "Ground conditions evaluated.";
         document.getElementById('referee-verdict-text').innerText = results.verdictSummary || "Match concluded.";
