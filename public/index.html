@@ -363,6 +363,7 @@
       gap: 0.25rem;
       transition: border-color 0.12s ease, transform 0.08s ease;
       cursor: pointer;
+      user-select: none;
     }
     .player-card:hover:not(.restricted) {
       border-color: rgba(212, 175, 55, 0.5);
@@ -370,6 +371,22 @@
     }
     .player-card:active:not(.restricted) {
       transform: scale(0.985);
+    }
+    .player-card.draggable {
+      cursor: grab;
+    }
+    .player-card.draggable:active {
+      cursor: grabbing;
+    }
+    .player-card.selected-in-pool {
+      border-color: var(--gold) !important;
+      background: rgba(212, 175, 55, 0.14) !important;
+      box-shadow: 0 0 0 1px var(--gold), 0 0 14px rgba(212, 175, 55, 0.4);
+    }
+    .player-card.dragging-from-pool {
+      opacity: 0.35;
+      transform: scale(0.96);
+      border-color: var(--gold) !important;
     }
     .player-card.restricted {
       opacity: 0.45;
@@ -432,6 +449,16 @@
       background: rgba(212, 175, 55, 0.18) !important;
       box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(212, 175, 55, 0.35);
       transform: translateY(-1px);
+    }
+    .slot-row.awaiting-drop {
+      border-color: rgba(212, 175, 55, 0.5) !important;
+      background: rgba(212, 175, 55, 0.05);
+      cursor: pointer;
+    }
+    .slot-row.awaiting-drop:hover {
+      border-color: var(--gold) !important;
+      background: rgba(212, 175, 55, 0.18) !important;
+      box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(212, 175, 55, 0.35);
     }
     .drag-handle {
       color: var(--text-dim);
@@ -954,6 +981,7 @@
     let activeCategory = 'ALL';
     let searchQuery = '';
     let currentTargetSlot = 0; // 0-based index (0 to 10)
+    let selectedPoolPlayer = null; // Currently selected player in available pool for Select & Drop
     let socket = null;
     let currentScorecardInnings = 'user';
 
@@ -1225,11 +1253,13 @@
       renderDraftBoard();
     }
 
-    // Pick Player into currentTargetSlot
-    async function pickPlayer(playerId) {
+    // Pick / Drop player into a specific slot in Your XI
+    async function pickPlayerIntoSlot(playerId, targetIndex) {
       if (!currentRoomId || draftState.currentTurn !== 'USER') return;
 
-      const targetIndex = (currentTargetSlot !== null && currentTargetSlot >= 0 && currentTargetSlot < 11)
+      const target = (typeof targetIndex === 'number' && targetIndex >= 0 && targetIndex < 11)
+        ? targetIndex
+        : (currentTargetSlot !== null && currentTargetSlot >= 0 && currentTargetSlot < 11)
         ? currentTargetSlot
         : draftState.userPicks.findIndex(p => p === null);
 
@@ -1237,12 +1267,13 @@
         const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/pick`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerId, targetIndex })
+          body: JSON.stringify({ playerId, targetIndex: target })
         });
         const data = await res.json();
         if (data.success) {
           draftState = data.state;
-          // Find next empty slot
+          selectedPoolPlayer = null;
+          // Advance target slot to next empty slot
           const nextEmpty = draftState.userPicks.findIndex(p => p === null);
           currentTargetSlot = nextEmpty !== -1 ? nextEmpty : 0;
           renderDraftBoard();
@@ -1253,6 +1284,7 @@
         console.error("Pick error", e);
       }
     }
+    const pickPlayer = pickPlayerIntoSlot;
 
     // Remove player from slot
     async function removePlayer(slotIndex) {
@@ -1320,12 +1352,30 @@
         aiStatusBadge.innerText = "Drafting...";
       }
 
-      // Update Target Slot Callout
-      const targetLabel = document.getElementById('target-slot-name');
-      if (targetLabel) {
-        const slotIdx = currentTargetSlot !== null && currentTargetSlot < 11 ? currentTargetSlot : 0;
-        const slotDef = SLOT_DEFINITIONS[slotIdx];
-        targetLabel.innerText = `${slotDef.icon} Slot ${slotIdx + 1}: ${slotDef.name}`;
+      // Update Target Slot Callout / Selection Banner
+      const targetBox = document.getElementById('target-callout-box');
+      if (targetBox) {
+        if (selectedPoolPlayer) {
+          targetBox.style.background = 'rgba(212, 175, 55, 0.16)';
+          targetBox.style.borderColor = 'var(--gold)';
+          targetBox.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 0.4rem; min-width: 0;">
+              <span>🎯</span>
+              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Selected: <strong style="color: var(--gold);">${selectedPoolPlayer.name}</strong></span>
+              <span style="color: #cbd5e1; font-size: 0.68rem;">— Drag or click any slot in Your XI to drop</span>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); selectedPoolPlayer = null; renderDraftBoard();" style="padding: 0.12rem 0.45rem; font-size: 0.68rem;">✕ Deselect</button>
+          `;
+        } else {
+          targetBox.style.background = '';
+          targetBox.style.borderColor = '';
+          const slotIdx = currentTargetSlot !== null && currentTargetSlot < 11 ? currentTargetSlot : 0;
+          const slotDef = SLOT_DEFINITIONS[slotIdx];
+          targetBox.innerHTML = `
+            <span>🎯 <strong>Select & Drop:</strong> Click/drag player into any slot</span>
+            <span style="color: var(--text-dim); font-size: 0.68rem;">Target: ${slotDef.name} (#${slotIdx+1})</span>
+          `;
+        }
       }
 
       // Render Pool
@@ -1348,12 +1398,72 @@
 
       filtered.forEach(p => {
         const card = document.createElement('div');
+        const isSelected = selectedPoolPlayer && selectedPoolPlayer.id === p.id;
         const legality = checkPlayerPickLegality(p, draftState.userPicks, draftState.challenge, currentTargetSlot);
         const isLegal = legality.allowed && isUserTurn && !isFull;
 
-        card.className = `player-card ${!isLegal ? 'restricted' : ''}`;
+        card.className = `player-card ${!isLegal ? 'restricted' : ''} ${isSelected ? 'selected-in-pool' : ''} ${isLegal ? 'draggable' : ''}`;
+        card.dataset.playerId = p.id;
+
         if (isLegal) {
-          card.onclick = () => pickPlayer(p.id);
+          card.setAttribute('draggable', 'true');
+
+          // 1. Click toggles selection (Select & Drop)
+          card.onclick = () => {
+            if (selectedPoolPlayer && selectedPoolPlayer.id === p.id) {
+              selectedPoolPlayer = null;
+            } else {
+              selectedPoolPlayer = p;
+            }
+            renderDraftBoard();
+          };
+
+          // 2. Native HTML5 Drag start from Pool
+          card.ondragstart = (e) => {
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', p.id);
+            window.draggedPoolPlayerId = p.id;
+            selectedPoolPlayer = p;
+            card.classList.add('dragging-from-pool');
+          };
+
+          card.ondragend = () => {
+            window.draggedPoolPlayerId = null;
+            card.classList.remove('dragging-from-pool');
+            document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+          };
+
+          // 3. Mobile Touch Drag Support
+          card.ontouchstart = (e) => {
+            window.touchDraggedPoolPlayerId = p.id;
+            selectedPoolPlayer = p;
+          };
+
+          card.ontouchmove = (e) => {
+            if (!window.touchDraggedPoolPlayerId) return;
+            const touch = e.touches[0];
+            const overEl = document.elementFromPoint(touch.clientX, touch.clientY);
+            const targetRow = overEl ? overEl.closest('#user-slots-list .slot-row') : null;
+            document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+            if (targetRow) {
+              targetRow.classList.add('drag-over');
+            }
+          };
+
+          card.ontouchend = (e) => {
+            if (!window.touchDraggedPoolPlayerId) return;
+            const touch = e.changedTouches[0];
+            const endEl = document.elementFromPoint(touch.clientX, touch.clientY);
+            const targetRow = endEl ? endEl.closest('#user-slots-list .slot-row') : null;
+            document.querySelectorAll('#user-slots-list .slot-row').forEach(r => r.classList.remove('drag-over'));
+            if (targetRow && targetRow.dataset.slotIndex !== undefined) {
+              const toIdx = parseInt(targetRow.dataset.slotIndex, 10);
+              if (!isNaN(toIdx)) {
+                pickPlayerIntoSlot(window.touchDraggedPoolPlayerId, toIdx);
+              }
+            }
+            window.touchDraggedPoolPlayerId = null;
+          };
         }
 
         const caps = getCapsBadge(p.stats.matches);
@@ -1364,8 +1474,14 @@
 
         card.innerHTML = `
           <div class="player-card-top">
-            <span class="p-name">${p.name} <span class="p-meta">(${p.country})</span></span>
-            ${caps}
+            <span class="p-name">
+              ${isLegal ? '<span class="drag-handle" style="font-size:0.75rem; margin-right:2px;" title="Drag & drop into slot">⋮⋮</span>' : ''}
+              ${p.name} <span class="p-meta">(${p.country})</span>
+            </span>
+            <div style="display: flex; align-items: center; gap: 0.35rem;">
+              ${isSelected ? '<span style="font-size: 0.65rem; font-weight: 800; background: var(--gold); color: #0b0f14; padding: 0.08rem 0.35rem; border-radius: 3px;">SELECTED</span>' : ''}
+              ${caps}
+            </div>
           </div>
           <div class="p-stats-row">
             <span>Role: <strong class="stat-val">${p.primary_role}</strong> (${p.batting_hand}${p.bowling_category !== 'NONE' ? ' • ' + p.bowling_category : ''})</span>
@@ -1402,14 +1518,19 @@
         row.dataset.slotIndex = i.toString();
 
         if (p) {
-          row.className = `slot-row ${isTargeted ? 'targeted' : ''}`;
+          row.className = `slot-row ${isTargeted ? 'targeted' : ''} ${selectedPoolPlayer ? 'awaiting-drop' : ''}`;
           if (isUser) {
             row.classList.add('draggable');
             row.setAttribute('draggable', 'true');
 
-            // Click to select as active target
+            // Click: Drop selected player into slot, or select as active target
             row.onclick = (e) => {
-              if (e.target.tagName !== 'BUTTON') selectTargetSlot(i);
+              if (e.target.tagName === 'BUTTON') return;
+              if (selectedPoolPlayer) {
+                pickPlayerIntoSlot(selectedPoolPlayer.id, i);
+              } else {
+                selectTargetSlot(i);
+              }
             };
 
             // HTML5 Drag Events
@@ -1487,18 +1608,28 @@
             ` : ''}
           `;
         } else {
-          row.className = `slot-row empty ${isTargeted ? 'targeted' : ''}`;
+          row.className = `slot-row empty ${isTargeted ? 'targeted' : ''} ${selectedPoolPlayer ? 'awaiting-drop' : ''}`;
           if (isUser) {
-            row.onclick = () => selectTargetSlot(i);
+            row.onclick = () => {
+              if (selectedPoolPlayer) {
+                pickPlayerIntoSlot(selectedPoolPlayer.id, i);
+              } else {
+                selectTargetSlot(i);
+              }
+            };
           }
+
+          const emptyLabel = selectedPoolPlayer
+            ? `⬇ Click to drop ${selectedPoolPlayer.name} into Slot ${i+1}`
+            : (isTargeted ? '🎯 Active Target — Click player in pool' : (isUser ? 'Empty Slot — Click to target / drop' : 'Vacant'));
 
           row.innerHTML = `
             <div style="display: flex; align-items: center; gap: 0.35rem; min-width: 0; flex: 1;">
               ${isUser ? '<span class="drag-handle" style="opacity: 0.2;">⋮⋮</span>' : ''}
               <span class="slot-tag ${isTargeted ? 'slot-tag-active' : ''}">#${i+1} ${slotDef.shortRole}</span>
               <div class="slot-content">
-                <span style="font-size: 0.72rem; color: ${isTargeted ? 'var(--gold)' : 'var(--text-dim)'}; font-weight: 600;">
-                  ${isTargeted ? '🎯 Active Target — Click player in pool' : (isUser ? 'Empty Slot — Click to target' : 'Vacant')}
+                <span style="font-size: 0.72rem; color: ${selectedPoolPlayer ? 'var(--gold)' : isTargeted ? 'var(--gold)' : 'var(--text-dim)'}; font-weight: ${selectedPoolPlayer ? '700' : '600'};">
+                  ${emptyLabel}
                 </span>
               </div>
             </div>
@@ -1510,10 +1641,8 @@
         if (isUser) {
           row.ondragover = (e) => {
             e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            if (window.draggedSlotIndex !== null && window.draggedSlotIndex !== i) {
-              row.classList.add('drag-over');
-            }
+            e.dataTransfer.dropEffect = window.draggedPoolPlayerId ? 'copy' : 'move';
+            row.classList.add('drag-over');
           };
 
           row.ondragleave = () => {
@@ -1523,6 +1652,15 @@
           row.ondrop = (e) => {
             e.preventDefault();
             row.classList.remove('drag-over');
+
+            // 1. Dragged from pool directly into this slot
+            if (window.draggedPoolPlayerId) {
+              pickPlayerIntoSlot(window.draggedPoolPlayerId, i);
+              window.draggedPoolPlayerId = null;
+              return;
+            }
+
+            // 2. Dragged from another slot (reordering)
             const fromIdx = window.draggedSlotIndex !== null ? window.draggedSlotIndex : parseInt(e.dataTransfer.getData('text/plain'), 10);
             if (!isNaN(fromIdx) && fromIdx !== i) {
               reorderSlot(fromIdx, i);
