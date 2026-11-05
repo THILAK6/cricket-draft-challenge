@@ -30,6 +30,8 @@ describe("front-end HTML safety", () => {
       // Plain-text sinks are safe: innerText/textContent/title/showToast arguments and string building.
       if (/\.(innerText|textContent|title|value|placeholder)\s*=/.test(line) || /showToast\(/.test(line)) return;
       if (/reason:|desc = |const |return `|slotSubStats|statDisplay/.test(line)) return;
+      // Team report rows are plain values; renderTeamReport() passes every one through esc() when drawing.
+      if (/^\s*\['[^']+', /.test(line)) return;
       offenders.push(`${i + 1}: ${line.trim()}`);
     });
     expect(offenders).toEqual([]);
@@ -48,5 +50,7 @@ describe("front-end features", () => {
     expect(html).toContain("sim.superOver");
     expect(html).toContain('id="difficulty-select"');
     expect(html).toContain("draftState.userStuck");
+    expect(html).toContain('id="team-report-box"');
+    expect(html).toContain("renderTeamReport(sim)");
   });
 });

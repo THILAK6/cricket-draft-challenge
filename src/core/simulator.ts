@@ -1,4 +1,5 @@
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
+import { computeMatchPerformance, type MatchPerformance } from "./performance";
 
 export interface BatterScorecard {
   playerId: string;
@@ -24,6 +25,14 @@ export interface BowlerScorecard {
   economy: number;
 }
 
+export interface FielderScorecard {
+  playerId: string;
+  name: string;
+  catches: number;
+  runOuts: number;
+  stumpings: number;
+}
+
 export interface InningsScorecard {
   teamName: string;
   inningsNumber?: number; // 1 or 2 (for Tests)
@@ -35,6 +44,10 @@ export interface InningsScorecard {
   maxOvers: number;
   batters: BatterScorecard[];
   bowlers: BowlerScorecard[];
+  /** Fielders of the side bowling in this innings, from the simulated dismissals. */
+  fielders?: FielderScorecard[];
+  /** Catches the fielding side put down in this innings (does not change the score). */
+  droppedCatches?: number;
   phaseRuns: {
     powerplay: number;
     middle: number;
@@ -96,6 +109,8 @@ export interface MatchSimulationResult {
   testTarget?: number;
   dayChronicle?: TestDayChronicle[];
   keyMoments: KeyMoment[];
+  /** Batting, bowling and fielding scores plus comparison stats for each side. */
+  performance: MatchPerformance;
   decisiveDifference: string;
   whyWinnerWon: string[];
   whyLoserLost: string[];
@@ -325,6 +340,7 @@ export function simulateCricketMatch(
       testTarget,
       dayChronicle,
       keyMoments,
+      performance: computeMatchPerformance("TEST", [userInn1, userInn2].filter((i): i is InningsScorecard => !!i), [aiInn1, aiInn2].filter((i): i is InningsScorecard => !!i)),
       decisiveDifference: analysis.decisiveDifference,
       whyWinnerWon: analysis.whyWinnerWon,
       whyLoserLost: analysis.whyLoserLost,
@@ -436,6 +452,7 @@ export function simulateCricketMatch(
     aiInnings,
     keyMoments,
     superOver,
+    performance: computeMatchPerformance(format, [userInnings], [aiInnings]),
     decisiveDifference: analysis.decisiveDifference,
     whyWinnerWon: analysis.whyWinnerWon,
     whyLoserLost: analysis.whyLoserLost,
@@ -564,6 +581,12 @@ function simulateInnings(
   let lastBowlerId: string | null = null;
   let matchEnded = false;
 
+  const fieldingSide = bowlingLineup.filter((p): p is PlayerWithStats => p !== null);
+  const keeper = fieldingSide.find((p) => p.primary_role === "WK");
+  const fielderMap = new Map<string, FielderScorecard>();
+  for (const f of fieldingSide) fielderMap.set(f.id, { playerId: f.id, name: f.name, catches: 0, runOuts: 0, stumpings: 0 });
+  let droppedCatches = 0;
+
   for (let over = 1; over <= maxOvers; over++) {
     if (totalWickets >= wicketLimit) break;
     if (target && totalRuns >= target) break;
@@ -611,9 +634,18 @@ function simulateInnings(
 
       if (ballOutcome.isOut) {
         striker.isOut = true;
-        striker.dismissal = `c & b ${bowler.name}`;
+        const how = rollDismissal(totalBallsBowled * 7919 + totalRuns * 104729 + totalWickets * 1299709 + strikerIdx, bowler, fieldingSide, keeper, isTest);
+        striker.dismissal = dismissalText(how.kind, bowler, how.fielder);
         totalWickets++;
-        bStats.wickets++;
+        if (how.kind !== "RUN_OUT") bStats.wickets++; // a run out is not the bowler's wicket
+        const card = how.fielder ? fielderMap.get(how.fielder.id) : undefined;
+        if (card) {
+          if (how.kind === "RUN_OUT") card.runOuts++;
+          else if (how.kind === "STUMPED") card.stumpings++;
+          else card.catches++;
+        }
+        // A catch put down before this wicket: roughly one in six caught dismissals has a miss too
+        if ((how.kind === "CAUGHT" || how.kind === "CAUGHT_BEHIND") && (totalBallsBowled * 31 + totalRuns) % 6 === 0) droppedCatches++;
 
         if (nextBatterIdx < batterCards.length) {
           strikerIdx = nextBatterIdx;
@@ -693,12 +725,65 @@ function simulateInnings(
     maxOvers,
     batters: batterCards,
     bowlers: bowlerCards,
+    fielders: [...fielderMap.values()].filter((f) => f.catches + f.runOuts + f.stumpings > 0),
+    droppedCatches,
     phaseRuns: {
       powerplay: powerplayRuns,
       middle: middleRuns,
       death: deathRuns,
     },
   };
+}
+
+type DismissalKind = "BOWLED" | "LBW" | "CAUGHT" | "CAUGHT_BEHIND" | "CAUGHT_AND_BOWLED" | "RUN_OUT" | "STUMPED";
+
+/**
+ * Decides how a wicket fell. Uses its own hash-based roll so the main simulation's random stream
+ * (and therefore every score and result) is untouched.
+ */
+function rollDismissal(
+  salt: number,
+  bowler: PlayerWithStats,
+  fielders: PlayerWithStats[],
+  keeper: PlayerWithStats | undefined,
+  isTest: boolean
+): { kind: DismissalKind; fielder?: PlayerWithStats } {
+  const roll = (n: number) => {
+    let h = Math.imul(salt + n * 374761393, 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 3266489917) >>> 0;
+    return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+  };
+  const r = roll(1);
+  const spin = bowler.bowling_category === "SPIN";
+  const others = fielders.filter((f) => f.id !== bowler.id && f.id !== keeper?.id);
+  const pickOther = () => (others.length ? others[Math.floor(roll(2) * others.length)] : keeper);
+
+  const bowled = isTest ? 0.2 : 0.18;
+  const lbw = isTest ? 0.18 : 0.12;
+  const cb = 0.05;
+  const runOut = isTest ? 0.03 : 0.07;
+  const stumped = spin && keeper ? (isTest ? 0.06 : 0.1) : 0;
+
+  let acc = bowled;
+  if (r < acc) return { kind: "BOWLED" };
+  if (r < (acc += lbw)) return { kind: "LBW" };
+  if (r < (acc += cb)) return { kind: "CAUGHT_AND_BOWLED", fielder: bowler };
+  if (r < (acc += runOut)) return { kind: "RUN_OUT", fielder: pickOther() };
+  if (r < (acc += stumped) && keeper) return { kind: "STUMPED", fielder: keeper };
+  if (keeper && roll(3) < 0.2) return { kind: "CAUGHT_BEHIND", fielder: keeper };
+  return { kind: "CAUGHT", fielder: pickOther() };
+}
+
+function dismissalText(kind: DismissalKind, bowler: PlayerWithStats, fielder?: PlayerWithStats): string {
+  switch (kind) {
+    case "BOWLED": return `b ${bowler.name}`;
+    case "LBW": return `lbw b ${bowler.name}`;
+    case "CAUGHT_AND_BOWLED": return `c & b ${bowler.name}`;
+    case "CAUGHT_BEHIND": return `c †${fielder?.name ?? "keeper"} b ${bowler.name}`;
+    case "STUMPED": return `st †${fielder?.name ?? "keeper"} b ${bowler.name}`;
+    case "RUN_OUT": return `run out (${fielder?.name ?? "direct hit"})`;
+    default: return `c ${fielder?.name ?? "fielder"} b ${bowler.name}`;
+  }
 }
 
 /** Three best hitters among non-bowlers, by strike rate weighted with batting average. */

@@ -234,4 +234,42 @@ describe("Realistic Cricket Match Simulator", () => {
       expect(simulateCricketMatch(userSquad, aiSquad, ch, seed).superOver).toBeUndefined();
     }
   });
+
+  it("reports batting, bowling and fielding scores that match the scorecards", () => {
+    for (const format of ["T20", "ODI", "TEST"] as const) {
+      const ch: Challenge = { ...t20Challenge, format };
+      for (let seed = 1; seed <= 15; seed++) {
+        const r = simulateCricketMatch(userSquad, aiSquad, ch, seed);
+        for (const side of ["USER", "AI"] as const) {
+          const t = r.performance[side];
+          for (const v of [t.battingScore, t.bowlingScore, t.fieldingScore, t.overallScore]) {
+            expect(v).toBeGreaterThanOrEqual(0);
+            expect(v).toBeLessThanOrEqual(100);
+          }
+        }
+        const innings = [r.userInnings, r.aiInnings, r.userSecondInnings, r.aiSecondInnings].filter(Boolean) as NonNullable<typeof r.userInnings>[];
+        const dismissals = innings.reduce((n, i) => n + i.batters.filter((b) => b.isOut).length, 0);
+        const bowlerWickets = r.performance.USER.stats.wicketsTaken + r.performance.AI.stats.wicketsTaken;
+        const runOuts = r.performance.USER.stats.runOuts + r.performance.AI.stats.runOuts;
+        // Every dismissal is either a bowler's wicket or a run out
+        expect(bowlerWickets + runOuts).toBe(dismissals);
+        expect(r.performance.USER.stats.runs).toBe(
+          r.userInnings.totalRuns + (r.userSecondInnings?.totalRuns ?? 0)
+        );
+      }
+    }
+  });
+
+  it("describes each dismissal and credits the right fielder", () => {
+    const r = simulateCricketMatch(userSquad, aiSquad, t20Challenge, 7);
+    const outs = [...r.userInnings.batters, ...r.aiInnings.batters].filter((b) => b.isOut);
+    expect(outs.length).toBeGreaterThan(0);
+    for (const b of outs) expect(b.dismissal).toMatch(/^(b |lbw b |c & b |c .+ b |st .+ b |run out)/);
+    const kinds = new Set<string>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const m = simulateCricketMatch(userSquad, aiSquad, t20Challenge, seed);
+      [...m.userInnings.batters, ...m.aiInnings.batters].filter((b) => b.isOut).forEach((b) => kinds.add(b.dismissal!.split(" ")[0]));
+    }
+    expect(kinds.size).toBeGreaterThanOrEqual(4);
+  });
 });
