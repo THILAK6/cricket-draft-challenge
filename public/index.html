@@ -1041,20 +1041,16 @@
     /* Phones: two-row header, no badge, nothing running off the edge */
     @media (max-width: 640px) {
       header {
-        height: auto;
-        min-height: 0;
-        flex-wrap: wrap;
+        height: 44px;
+        min-height: 44px;
+        flex-wrap: nowrap;
         gap: 0.35rem;
         padding: 0.4rem 0.6rem;
       }
-      .brand-wrap { width: 100%; justify-content: space-between; }
+      .brand-wrap { justify-content: flex-start; }
       .brand-title { white-space: nowrap; font-size: 0.95rem; }
       .header-badge { display: none; }
-      .header-controls { width: 100%; gap: 0.4rem; }
-      .fmt-pill-group { flex: 1; }
-      .fmt-pill { flex: 1; justify-content: center; padding: 0.3rem 0.2rem; }
-      #difficulty-select { flex-shrink: 0; }
-      #btn-start-draft { flex-shrink: 0; white-space: nowrap; }
+      #ch-venue, #ch-constraints-badges { display: none !important; }
       .scenario-bar { height: auto; min-height: 0; flex-wrap: wrap; padding: 0.3rem 0.6rem; gap: 0.3rem; }
       .scenario-left { flex-wrap: wrap; gap: 0.3rem; }
       /* Scorecards: dismissal moves under the name so every column fits */
@@ -1063,9 +1059,80 @@
       .col-dismissal { display: none; }
       .dismissal-inline { display: block; font-weight: 400; font-size: 0.62rem; color: #94a3b8; line-height: 1.25; }
     }
+
+    /* Setup wizard: one step at a time before drafting */
+    .wiz { position: fixed; inset: 0; z-index: 60; background: #0b0f16; display: none; flex-direction: column; overflow-y: auto; }
+    .wiz.open { display: flex; }
+    .wiz-inner { width: 100%; max-width: 560px; margin: 0 auto; padding: 1.2rem 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; min-height: 100%; }
+    .wiz-steps { display: flex; gap: 6px; }
+    .wiz-steps i { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.1); }
+    .wiz-steps i.on { background: var(--gold); }
+    .wiz h2 { font-size: 1.25rem; font-weight: 800; color: #fff; margin: 0; }
+    .wiz .sub { color: var(--text-muted); font-size: 0.85rem; margin-top: -0.5rem; }
+    .wiz-cards { display: flex; flex-direction: column; gap: 0.6rem; }
+    .wiz-card { text-align: left; background: rgba(255,255,255,0.04); border: 1.5px solid var(--border); border-radius: 12px; padding: 0.85rem 1rem; color: #e2e8f0; cursor: pointer; font: inherit; }
+    .wiz-card b { display: block; font-size: 1rem; color: #fff; }
+    .wiz-card span { font-size: 0.78rem; color: var(--text-muted); }
+    .wiz-card.sel { border-color: var(--gold); background: rgba(212,175,55,0.1); }
+    .wiz-seg { display: flex; gap: 0.5rem; }
+    .wiz-seg .wiz-card { flex: 1; text-align: center; padding: 0.7rem 0.4rem; }
+    .wiz-seg .wiz-card b { font-size: 0.9rem; }
+    .wiz-label { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
+    .wiz-actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: 0.6rem; padding-top: 0.5rem; }
+    #wz-next { flex-basis: 100%; order: -1; }
+    .wiz-actions .btn { flex: 1; padding: 0.8rem 1rem; font-size: 0.95rem; }
+    .wiz-box { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 12px; padding: 0.9rem 1rem; }
+    .wiz-box p { margin: 0; color: #cbd5e1; font-size: 0.88rem; line-height: 1.45; }
+    .wiz-rules { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+    .wiz-rules li { font-size: 0.88rem; color: #e2e8f0; display: flex; gap: 0.5rem; }
+    .wiz-rules li::before { content: '•'; color: var(--gold); }
   </style>
 </head>
 <body>
+
+  <!-- Setup wizard: format -> scenario -> draft -->
+  <div class="wiz" id="wizard" role="dialog" aria-modal="true" aria-label="Set up your match">
+    <div class="wiz-inner">
+      <div class="wiz-steps"><i id="wz-dot-1"></i><i id="wz-dot-2"></i><i id="wz-dot-3"></i></div>
+
+      <section id="wz-step-1">
+        <h2>Pick a format</h2>
+        <p class="sub" style="margin: 0.3rem 0 0.9rem;">Step 1 of 3. Then you'll see the ground, the conditions and the selection rules.</p>
+        <div class="wiz-cards" id="wz-formats">
+          <button type="button" class="wiz-card" data-format="T20"><b>🟣 T20</b><span>20 overs a side. Fast, boundary-heavy, death overs decide it.</span></button>
+          <button type="button" class="wiz-card" data-format="ODI"><b>⚪ ODI</b><span>50 overs a side. Build an innings; depth and spin matter.</span></button>
+          <button type="button" class="wiz-card" data-format="TEST"><b>🔴 Test</b><span>Five days, two innings. Twenty wickets win it.</span></button>
+        </div>
+        <div class="wiz-label" style="margin: 1rem 0 0.4rem;">AI opponent</div>
+        <div class="wiz-seg" id="wz-diff">
+          <button type="button" class="wiz-card" data-diff="easy"><b>Easy</b></button>
+          <button type="button" class="wiz-card" data-diff="normal"><b>Normal</b></button>
+          <button type="button" class="wiz-card" data-diff="hard"><b>Hard</b></button>
+        </div>
+      </section>
+
+      <section id="wz-step-2" style="display: none;">
+        <h2 id="wz-title">Your match</h2>
+        <p class="sub" style="margin: 0.3rem 0 0.9rem;">Step 2 of 3. Read the conditions: they decide who you should pick.</p>
+        <div style="display: flex; flex-direction: column; gap: 0.7rem;">
+          <div class="wiz-box">
+            <div class="wiz-label">Ground</div>
+            <p id="wz-venue" style="color: #fff; font-weight: 700; margin-top: 2px;"></p>
+            <div style="margin-top: 0.4rem;"><span class="tag-pill tag-pitch" id="wz-pitch"></span></div>
+          </div>
+          <div class="wiz-box"><div class="wiz-label">Conditions</div><p id="wz-intro" style="margin-top: 2px;"></p></div>
+          <div class="wiz-box"><div class="wiz-label" style="margin-bottom: 6px;">Selection rules</div><ul class="wiz-rules" id="wz-rules"></ul></div>
+          <div class="wiz-box"><p id="wz-pool"></p></div>
+        </div>
+      </section>
+
+      <div class="wiz-actions">
+        <button type="button" class="btn btn-secondary" id="wz-back" style="display: none;">Back</button>
+        <button type="button" class="btn btn-secondary" id="wz-reroll" style="display: none;">New scenario</button>
+        <button type="button" class="btn" id="wz-next">Next</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Top Header (44px) -->
   <header>
@@ -1078,7 +1145,9 @@
       </div>
     </div>
 
-    <div class="header-controls">
+    <button id="btn-new-game" class="btn btn-secondary btn-sm" type="button">New game</button>
+
+    <div class="header-controls" style="display: none;">
       <div class="fmt-pill-group">
         <button class="fmt-pill" data-format="TEST">🔴 TEST</button>
         <button class="fmt-pill" data-format="ODI">⚪ ODI</button>
@@ -3110,9 +3179,78 @@
       });
     });
 
+    // ---------- Setup wizard ----------
+    let wizStep = 1;
+    const FORMAT_LABEL = { T20: 'T20', ODI: 'ODI', TEST: 'Test' };
+    function describeRule(c) {
+      if (c.type === 'max_per_country') {
+        const ex = c.exceptions ? Object.entries(c.exceptions).map(([k, v]) => `${v} from ${k}`).join(', ') : '';
+        return `At most ${c.value} players from one country${ex ? ` (${ex})` : ''}`;
+      }
+      if (c.type === 'min_category') {
+        const one = { PACE: 'pace bowler', SPIN: 'spin bowler', WK: 'wicketkeeper', AR: 'all-rounder' };
+        const name = one[c.category] || c.category;
+        return `At least ${c.count} ${name}${c.count === 1 ? '' : 's'}`;
+      }
+      if (c.type === 'batting_hand_order') return `A ${c.hand === 'LHB' ? 'left' : 'right'}-hand batter at ${c.positions.length > 1 ? 'slots' : 'slot'} ${c.positions.join(', ')}`;
+      if (c.type === 'min_strike_rate_top_order') return `At least 2 batters with a strike rate of ${c.threshold}+`;
+      if (c.type === 'min_bowlers_economy_under') return `At least ${c.min_count} bowlers with an economy of ${c.threshold} or better`;
+      return c.type;
+    }
+    function wizShow(step) {
+      wizStep = step;
+      document.getElementById('wizard').classList.add('open');
+      document.getElementById('wz-step-1').style.display = step === 1 ? '' : 'none';
+      document.getElementById('wz-step-2').style.display = step === 2 ? '' : 'none';
+      [1, 2, 3].forEach(n => document.getElementById('wz-dot-' + n).classList.toggle('on', n <= step));
+      document.getElementById('wz-back').style.display = step === 2 ? '' : 'none';
+      document.getElementById('wz-reroll').style.display = step === 2 ? '' : 'none';
+      document.getElementById('wz-next').innerText = step === 1 ? 'Next: roll the scenario' : 'Start drafting';
+      document.querySelectorAll('#wz-formats .wiz-card').forEach(b => b.classList.toggle('sel', b.dataset.format === currentFormat));
+      const diff = document.getElementById('difficulty-select').value;
+      document.querySelectorAll('#wz-diff .wiz-card').forEach(b => b.classList.toggle('sel', b.dataset.diff === diff));
+    }
+    function wizFillBriefing() {
+      const ch = currentChallenge;
+      if (!ch) return;
+      document.getElementById('wz-title').innerText = ch.title;
+      document.getElementById('wz-venue').innerText = `${ch.venue.name}, ${ch.venue.country}`;
+      document.getElementById('wz-pitch').innerText = ch.venue.pitch_type.replace(/_/g, ' ');
+      document.getElementById('wz-intro').innerText = ch.narrative_intro || '';
+      const ul = document.getElementById('wz-rules');
+      ul.innerHTML = '';
+      (ch.constraints || []).forEach(c => { const li = document.createElement('li'); li.innerText = describeRule(c); ul.appendChild(li); });
+      const n = draftState && draftState.pool ? draftState.pool.length : 30;
+      document.getElementById('wz-pool').innerText = `${n} players are in the pool, and you and the AI take turns picking an XI each. The AI picks too, so the best players go fast.`;
+    }
+    async function wizRoll() {
+      const next = document.getElementById('wz-next');
+      next.disabled = true; next.innerText = 'Rolling...';
+      await startDraft();
+      next.disabled = false;
+      if (currentChallenge) { wizFillBriefing(); wizShow(2); } else wizShow(1);
+    }
+    document.querySelectorAll('#wz-formats .wiz-card').forEach(b => b.addEventListener('click', () => {
+      currentFormat = b.dataset.format;
+      document.querySelectorAll('.fmt-pill').forEach(p => p.classList.toggle('active', p.dataset.format === currentFormat));
+      wizShow(1);
+    }));
+    document.querySelectorAll('#wz-diff .wiz-card').forEach(b => b.addEventListener('click', () => {
+      document.getElementById('difficulty-select').value = b.dataset.diff;
+      wizShow(1);
+    }));
+    document.getElementById('wz-next').addEventListener('click', () => {
+      if (wizStep === 1) wizRoll();
+      else { document.getElementById('wizard').classList.remove('open'); [1, 2, 3].forEach(n => document.getElementById('wz-dot-' + n).classList.add('on')); }
+    });
+    document.getElementById('wz-back').addEventListener('click', () => wizShow(1));
+    document.getElementById('wz-reroll').addEventListener('click', wizRoll);
+    document.getElementById('btn-new-game').addEventListener('click', () => wizShow(1));
+
     // Initial Load
     window.addEventListener('DOMContentLoaded', async () => {
-      await loadChallengesForFormat('T20', true);
+      currentFormat = 'T20';
+      wizShow(1);
     });
   </script>
 </body>
