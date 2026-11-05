@@ -119,7 +119,7 @@ export interface DraftState {
   currentTurn: "USER" | "AI";
   round: number;
   maxRounds: number;
-  status: "WAITING" | "DRAFTING" | "SOLO_PICK" | "COMPLETED";
+  status: "WAITING" | "DRAFTING" | "SOLO_PICK" | "READY_TO_PLAY" | "COMPLETED";
   lastActionTimestamp: number;
   simulation?: MatchSimulationResult;
   results?: any;

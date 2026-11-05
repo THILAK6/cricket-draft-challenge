@@ -927,6 +927,59 @@
       line-height: 1.35;
     }
 
+    /* Match Ready Launch Action Banner */
+    .match-ready-banner {
+      background: linear-gradient(135deg, rgba(212, 175, 55, 0.18), rgba(16, 185, 129, 0.22));
+      border: 1px solid rgba(212, 175, 55, 0.5);
+      border-radius: 6px;
+      padding: 0.45rem 0.75rem;
+      margin: 0.35rem 0.5rem 0.2rem 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      animation: pulseReadyGlow 2.5s infinite ease-in-out;
+    }
+    @keyframes pulseReadyGlow {
+      0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.2); border-color: rgba(212, 175, 55, 0.4); }
+      50% { box-shadow: 0 0 18px rgba(16, 185, 129, 0.45); border-color: rgba(16, 185, 129, 0.65); }
+    }
+    .match-ready-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+    .btn-match-ready {
+      background: linear-gradient(135deg, #f59e0b, #10b981) !important;
+      color: #050b14 !important;
+      font-weight: 800 !important;
+      font-size: 0.74rem !important;
+      padding: 0.35rem 0.75rem !important;
+      border: none !important;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    .btn-match-ready:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.12);
+    }
+    .spinner-tiny {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-radius: 50%;
+      border-top-color: #000;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
     /* Responsive Rules */
     @media (max-width: 1024px) {
       .cockpit-view {
@@ -1059,6 +1112,20 @@
             YOUR TURN
           </span>
         </div>
+      </div>
+
+      <!-- Match Ready Action Banner (Shown when status === 'READY_TO_PLAY' or 'COMPLETED') -->
+      <div id="match-ready-banner" class="match-ready-banner" style="display: none;">
+        <div class="match-ready-info">
+          <span style="font-size: 1.15rem;">⚔️</span>
+          <div>
+            <div id="match-ready-title" style="font-weight: 800; font-size: 0.78rem; color: #fde047;">Both Squads Assembled (11 vs 11)!</div>
+            <div id="match-ready-subtitle" style="font-size: 0.67rem; color: #cbd5e1;">Review order (drag to swap), then start match.</div>
+          </div>
+        </div>
+        <button id="btn-start-match-sim" class="btn btn-sm btn-match-ready" onclick="startMatchSimulation()">
+          ⚔️ START MATCH SIMULATION
+        </button>
       </div>
 
       <!-- Live Squad Balance HUD -->
@@ -1568,6 +1635,14 @@
           if (msg.type === 'SYNC' || msg.type === 'UPDATE') {
             draftState = msg.state;
             renderDraftBoard();
+          } else if (msg.type === 'COMPLETED') {
+            if (draftState) {
+              draftState.status = 'COMPLETED';
+              draftState.results = msg.results;
+              draftState.simulation = msg.results.simulation;
+            }
+            renderDraftBoard();
+            showScorecard();
           }
         } catch (e) {
           console.error("WS error", e);
@@ -1704,7 +1779,9 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       const modal = document.getElementById('ai-snipe-modal');
       if (modal) modal.style.display = 'none';
       renderDraftBoard();
-      if (draftState && draftState.status === 'COMPLETED') {
+      if (draftState && draftState.status === 'READY_TO_PLAY') {
+        showToast("⚔️ Both Squads Complete! Click START MATCH SIMULATION to play.", "info");
+      } else if (draftState && draftState.status === 'COMPLETED') {
         showScorecard();
       }
     }
@@ -1741,7 +1818,9 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
             triggerAiSnipePanic(snipe);
           } else {
             renderDraftBoard();
-            if (draftState.status === 'COMPLETED') {
+            if (draftState.status === 'READY_TO_PLAY') {
+              showToast("⚔️ Both Squads Complete! Click START MATCH SIMULATION to play.", "info");
+            } else if (draftState.status === 'COMPLETED') {
               showScorecard();
             }
           }
@@ -1795,6 +1874,42 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       }
     }
 
+    // Explicit Match Simulation Trigger
+    async function startMatchSimulation() {
+      if (!currentRoomId) return;
+      const btn = document.getElementById('btn-start-match-sim');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-tiny"></span> Simulating Match...`;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/start-match`, {
+          method: 'POST'
+        });
+        const data = await res.json();
+        if (data.success) {
+          draftState = data.state;
+          showToast("Match simulation complete!", "success");
+          renderDraftBoard();
+          showScorecard();
+        } else {
+          showToast(data.error || "Failed to start match", "error");
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `⚔️ START MATCH SIMULATION`;
+          }
+        }
+      } catch (err) {
+        console.error("Match start error", err);
+        showToast("Network error starting match", "error");
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `⚔️ START MATCH SIMULATION`;
+        }
+      }
+    }
+
     // Live Squad Balance HUD Updater
     function updateSquadHud() {
       if (!draftState) return;
@@ -1842,20 +1957,56 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       const format = draftState.challenge.format || currentFormat;
       const slotDefs = getSlotDefinitions(format);
 
-      // Turn Indicators
+      // Turn Indicators & Match Launch Banner
       const turnBadge = document.getElementById('turn-badge');
       const aiStatusBadge = document.getElementById('ai-status-badge');
+      const readyBanner = document.getElementById('match-ready-banner');
+      const readyTitle = document.getElementById('match-ready-title');
+      const readySubtitle = document.getElementById('match-ready-subtitle');
+      const btnSim = document.getElementById('btn-start-match-sim');
 
-      if (draftState.currentTurn === 'USER') {
-        turnBadge.innerText = "YOUR TURN";
-        turnBadge.style.background = "rgba(16, 185, 129, 0.15)";
-        turnBadge.style.color = "#34d399";
-        aiStatusBadge.innerText = "Waiting for You";
+      if (draftState.status === 'READY_TO_PLAY') {
+        turnBadge.innerText = "SQUADS READY (11v11)";
+        turnBadge.style.background = "rgba(212, 175, 55, 0.2)";
+        turnBadge.style.color = "var(--gold)";
+        aiStatusBadge.innerText = "Ready to Play";
+
+        if (readyBanner) {
+          readyBanner.style.display = 'flex';
+          readyTitle.innerText = "Both Squads Assembled (11 vs 11)!";
+          readySubtitle.innerText = "Review lineup (drag to reorder slots), then initiate match.";
+          btnSim.innerHTML = "⚔️ START MATCH SIMULATION";
+          btnSim.onclick = startMatchSimulation;
+          btnSim.disabled = false;
+        }
+      } else if (draftState.status === 'COMPLETED') {
+        turnBadge.innerText = "MATCH COMPLETED";
+        turnBadge.style.background = "rgba(56, 189, 248, 0.2)";
+        turnBadge.style.color = "#38bdf8";
+        aiStatusBadge.innerText = "Finished";
+
+        if (readyBanner) {
+          readyBanner.style.display = 'flex';
+          readyTitle.innerText = "Match Simulation Finished";
+          readySubtitle.innerText = draftState.simulation?.summary || "Match completed. Inspect the full scorecard.";
+          btnSim.innerHTML = "📊 VIEW SCORECARD";
+          btnSim.onclick = showScorecard;
+          btnSim.disabled = false;
+        }
       } else {
-        turnBadge.innerText = "AI THINKING...";
-        turnBadge.style.background = "rgba(56, 189, 248, 0.15)";
-        turnBadge.style.color = "#7dd3fc";
-        aiStatusBadge.innerText = "Drafting...";
+        if (readyBanner) readyBanner.style.display = 'none';
+
+        if (draftState.currentTurn === 'USER') {
+          turnBadge.innerText = "YOUR TURN";
+          turnBadge.style.background = "rgba(16, 185, 129, 0.15)";
+          turnBadge.style.color = "#34d399";
+          aiStatusBadge.innerText = "Waiting for You";
+        } else {
+          turnBadge.innerText = "AI THINKING...";
+          turnBadge.style.background = "rgba(56, 189, 248, 0.15)";
+          turnBadge.style.color = "#7dd3fc";
+          aiStatusBadge.innerText = "Drafting...";
+        }
       }
 
       // Update Selection Guide Banner

@@ -78,15 +78,27 @@ describe("Realistic Cricket Match Simulator", () => {
   ];
 
   it("simulates a complete T20 match with realistic team scores and player performances", () => {
-    const result = simulateCricketMatch(userSquad, aiSquad, t20Challenge, 12345);
+    for (const seed of [12345, 99999, 45678, 88812, 34211]) {
+      const result = simulateCricketMatch(userSquad, aiSquad, t20Challenge, seed);
 
-    expect(result.format).toBe("T20");
-    expect(["USER", "AI", "TIE"]).toContain(result.winner);
-    expect(result.userInnings.totalRuns).toBeGreaterThan(100);
-    expect(result.aiInnings.totalRuns).toBeGreaterThan(100);
-    expect(result.summary).toBeDefined();
-    expect(result.playerOfTheMatch.name).toBeDefined();
-    expect(result.decisiveDifference).toBeDefined();
+      expect(result.format).toBe("T20");
+      expect(["USER", "AI", "TIE"]).toContain(result.winner);
+      // Realistic T20 score bounds: must never exceed 235 runs (definitely never 300+)
+      expect(result.userInnings.totalRuns).toBeGreaterThanOrEqual(90);
+      expect(result.userInnings.totalRuns).toBeLessThan(235);
+      expect(result.aiInnings.totalRuns).toBeGreaterThanOrEqual(90);
+      expect(result.aiInnings.totalRuns).toBeLessThan(235);
+
+      expect(result.summary).toBeDefined();
+      expect(result.playerOfTheMatch.name).toBeDefined();
+      expect(result.decisiveDifference).toBeDefined();
+
+      // If defending team won, narrative must NOT say "paced the chase"
+      if (result.summary.includes("won by") && result.summary.includes("run")) {
+        expect(result.decisiveDifference).not.toContain("paced");
+        expect(result.decisiveDifference).not.toContain("crossing the line");
+      }
+    }
   });
 
   it("simulates a multi-innings Test match with toss and lead dynamics", () => {

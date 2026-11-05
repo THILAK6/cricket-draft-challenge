@@ -283,7 +283,7 @@ export function simulateCricketMatch(
     });
 
     const potm = determinePlayerOfTheMatch(userInn1, aiInn1, winner === "DRAW" ? "USER" : winner, userInn2, aiInn2);
-    const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userInn2, aiInn2);
+    const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2);
 
     return {
       format: "TEST",
@@ -384,7 +384,7 @@ export function simulateCricketMatch(
   });
 
   const potm = determinePlayerOfTheMatch(userInnings, aiInnings, winner);
-  const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining);
+  const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst);
 
   return {
     format,
@@ -804,58 +804,59 @@ function resolveBall(
     if (phase === "PP") {
       expectedRunsPerBall *= 1.05; // 10 overs field restrictions
     } else if (phase === "MID") {
-      // If team has preserved 7+ wickets in hand, start accelerating earlier
-      if (wicketsInHand >= 7) expectedRunsPerBall *= 1.12;
-      else expectedRunsPerBall *= 0.98;
+      if (wicketsInHand >= 7) expectedRunsPerBall *= 1.08;
+      else expectedRunsPerBall *= 0.96;
     } else if (phase === "DEATH") {
-      // Overs 41-50 in ODI: If wickets in hand, unleash onslaught!
+      // Overs 41-50 in ODI: 8.5-10.5 RPO authentic death tempo
       if (wicketsInHand >= 6) {
-        expectedRunsPerBall *= 1.58; // 9-12 RPO death onslaught
+        expectedRunsPerBall *= 1.34;
       } else if (wicketsInHand >= 4) {
-        expectedRunsPerBall *= 1.30;
+        expectedRunsPerBall *= 1.18;
       } else {
-        expectedRunsPerBall *= 0.92; // Tail consolidation
+        expectedRunsPerBall *= 0.92;
       }
 
-      // Dynamic finisher & power hitter boost (e.g. AB de Villiers, Dhoni, Buttler, Maxwell)
       const isAggressive = batSr >= 95 || batter.stats.finisher_innings >= 4;
       if (isAggressive) {
-        expectedRunsPerBall *= 1.26;
+        expectedRunsPerBall *= 1.15;
       }
 
-      // Set batter launch bonus
-      if (batterRunsSoFar >= 25) expectedRunsPerBall *= 1.20;
+      if (batterRunsSoFar >= 25) expectedRunsPerBall *= 1.10;
     }
   } else {
-    // T20
+    // T20: Realistic authentic scoring rate (par 165-185, flat track 195-215, low/slow 135-155)
     if (phase === "PP") {
-      expectedRunsPerBall *= 1.22;
+      expectedRunsPerBall *= 1.08;
     } else if (phase === "MID") {
-      expectedRunsPerBall *= wicketsInHand >= 7 ? 1.15 : 1.02;
+      expectedRunsPerBall *= wicketsInHand >= 7 ? 1.04 : 0.96;
     } else if (phase === "DEATH") {
-      if (wicketsInHand >= 5) {
-        expectedRunsPerBall *= 1.60;
+      if (wicketsInHand >= 6) {
+        expectedRunsPerBall *= 1.28;
+      } else if (wicketsInHand >= 4) {
+        expectedRunsPerBall *= 1.14;
       } else {
-        expectedRunsPerBall *= 1.20;
+        expectedRunsPerBall *= 0.95;
       }
-      const isFinisher = batter.stats.finisher_innings >= 5 || batSr >= 135;
-      if (isFinisher) expectedRunsPerBall *= 1.30;
-      if (batterRunsSoFar >= 20) expectedRunsPerBall *= 1.20;
+      const isFinisher = batter.stats.finisher_innings >= 5 || batSr >= 140;
+      if (isFinisher) expectedRunsPerBall *= 1.12;
+      if (batterRunsSoFar >= 20) expectedRunsPerBall *= 1.08;
     }
   }
 
   // Pitch modifier on runs
-  if (pitch === "HIGH_SCORING_FLAT") expectedRunsPerBall *= 1.20;
-  if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.92;
+  if (pitch === "HIGH_SCORING_FLAT") expectedRunsPerBall *= 1.08;
+  if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.90;
   if (isDeterioratedPitch) expectedRunsPerBall *= 0.82;
 
-  const benchmark = isTest ? 0.65 : isOdi ? 1.05 : 1.25;
-  const rFactor = Math.max(0.65, Math.min(2.35, expectedRunsPerBall / benchmark));
+  const benchmark = isTest ? 0.65 : isOdi ? 1.05 : 1.35;
+  // Strictly clamp rFactor so total match boundary percentage matches genuine ICC T20 stats
+  const rFactor = Math.max(0.65, Math.min(1.35, expectedRunsPerBall / benchmark));
 
-  const dotProb = Math.max(0.12, (isTest ? 0.60 : isOdi ? 0.40 : 0.32) / rFactor);
-  const singleProb = dotProb + Math.min(0.40, (isTest ? 0.28 : 0.33) * (rFactor >= 1.25 ? 0.82 : 1.0));
-  const doubleProb = singleProb + (isTest ? 0.06 : 0.10);
-  const fourProb = doubleProb + Math.min(0.24, (isTest ? 0.05 : 0.10) * rFactor);
+  // Authentic dot ball floor: minimum 32% dots in T20, 36% in ODI, 44% in Tests
+  const dotProb = Math.max(isTest ? 0.44 : isOdi ? 0.36 : 0.32, (isTest ? 0.60 : isOdi ? 0.48 : 0.42) / rFactor);
+  const singleProb = dotProb + Math.min(0.40, (isTest ? 0.30 : isOdi ? 0.35 : 0.38) * (rFactor >= 1.15 ? 0.92 : 1.0));
+  const doubleProb = singleProb + (isTest ? 0.06 : isOdi ? 0.07 : 0.08);
+  const fourProb = doubleProb + Math.min(0.15, (isTest ? 0.06 : isOdi ? 0.09 : 0.13) * (rFactor >= 1.0 ? 1.0 : 0.85));
 
   const roll = rng();
 
@@ -880,11 +881,13 @@ function determinePlayerOfTheMatch(
     ...(aiInn2 ? aiInn2.batters.map((b) => ({ ...b, team: "AI" as const })) : []),
   ];
 
+  // Bowlers in userInnings bowled against User XI (i.e. AI bowlers)
+  // Bowlers in aiInnings bowled against AI XI (i.e. User XI bowlers)
   const allBowlers = [
-    ...userInnings.bowlers.map((b) => ({ ...b, team: "USER" as const })),
-    ...aiInnings.bowlers.map((b) => ({ ...b, team: "AI" as const })),
-    ...(userInn2 ? userInn2.bowlers.map((b) => ({ ...b, team: "USER" as const })) : []),
-    ...(aiInn2 ? aiInn2.bowlers.map((b) => ({ ...b, team: "AI" as const })) : []),
+    ...userInnings.bowlers.map((b) => ({ ...b, team: "AI" as const })),
+    ...aiInnings.bowlers.map((b) => ({ ...b, team: "USER" as const })),
+    ...(userInn2 ? userInn2.bowlers.map((b) => ({ ...b, team: "AI" as const })) : []),
+    ...(aiInn2 ? aiInn2.bowlers.map((b) => ({ ...b, team: "USER" as const })) : []),
   ];
 
   // Weight winning performances higher
@@ -1045,6 +1048,7 @@ function deriveMatchAnalysis(
   challenge: Challenge,
   winner: "USER" | "AI" | "TIE" | "DRAW",
   ballsRemaining = 0,
+  userBatsFirst = true,
   userInn2?: InningsScorecard,
   aiInn2?: InningsScorecard
 ) {
@@ -1076,21 +1080,25 @@ function deriveMatchAnalysis(
   const loseBatters = [...losingInnings.batters].sort((a, b) => b.runs - a.runs);
   const topBatLose = loseBatters[0];
 
-  const winBowlers = [...winningInnings.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs));
+  // In cricket scorecards:
+  // - losingInnings.bowlers are the bowlers for the WINNING team who bowled to the losing team!
+  // - winningInnings.bowlers are the bowlers for the LOSING team who bowled to the winning team!
+  const winBowlers = [...losingInnings.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs));
   const topBowlWin = winBowlers[0];
 
-  const loseBowlers = [...losingInnings.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs));
+  const loseBowlers = [...winningInnings.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs));
   const topBowlLose = loseBowlers[0];
 
-  // Most expensive bowler on losing side
-  const expLoseBowler = [...losingInnings.bowlers]
+  // Most expensive bowler on losing side (from winningInnings.bowlers)
+  const expLoseBowler = [...winningInnings.bowlers]
     .filter((b) => parseFloat(b.overs) >= (isTest ? 10 : isOdi ? 4 : 2))
-    .sort((a, b) => b.economy - a.economy)[0] || losingInnings.bowlers[0];
+    .sort((a, b) => b.economy - a.economy)[0] || winningInnings.bowlers[0];
 
-  // Best economy bowler on winning side
-  const tightWinBowler = [...winningInnings.bowlers]
-    .filter((b) => parseFloat(b.overs) >= (isTest ? 10 : isOdi ? 4 : 2))
-    .sort((a, b) => a.economy - b.economy)[0] || winningInnings.bowlers[0];
+  // Best economy bowler on winning side (from losingInnings.bowlers) - must be genuinely tight!
+  const maxEconomyThreshold = isTest ? 2.8 : isOdi ? 5.2 : 7.2;
+  const tightWinBowler = [...losingInnings.bowlers]
+    .filter((b) => parseFloat(b.overs) >= (isTest ? 10 : isOdi ? 4 : 2) && b.economy <= maxEconomyThreshold)
+    .sort((a, b) => a.economy - b.economy)[0];
 
   const losingWktsInHand = 10 - losingInnings.totalWickets;
   const losingRPO = losingInnings.totalBalls > 0 ? (losingInnings.totalRuns / (losingInnings.totalBalls / 6)) : 0;
@@ -1111,10 +1119,10 @@ function deriveMatchAnalysis(
       whyLoserLost.push(`Batting collapses against disciplined line and length on this ${pitch.replace(/_/g, " ")} pitch.`);
     }
   } else {
-    // Limited Overs (T20 & ODI)
-    const isChaseWin = winningInnings.totalRuns > losingInnings.totalRuns;
+    // Limited Overs (T20 & ODI): Authentically determine whether winner batted 2nd (chasing) or 1st (defending)
+    const isChaseWin = (winner === "USER" && !userBatsFirst) || (winner === "AI" && userBatsFirst);
 
-    if (isChaseWin && topBatWin && topBatWin.runs >= 50) {
+    if (isChaseWin && topBatWin && topBatWin.runs >= 45) {
       // Anchoring run chase
       const ballsInfo = ballsRemaining >= 12
         ? `with ${formatBallsToOvers(ballsRemaining)} overs to spare`
@@ -1136,22 +1144,33 @@ function deriveMatchAnalysis(
         whyLoserLost.push(`Inability to dislodge ${topBatWin.name}, who controlled the innings tempo.`);
       }
       if (expLoseBowler) {
-        whyLoserLost.push(`Boundary release: ${expLoseBowler.name} was expensive at ${expLoseBowler.economy} RPO (${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov).`);
+        whyLoserLost.push(`Boundary release: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
       }
-    } else if (!isChaseWin && topBowlWin && topBowlWin.wickets >= 3) {
-      // Defending total with bowling penetration
-      decisiveDifference = `A fiery bowling defense led by ${topBowlWin.name} (${topBowlWin.wickets}/${topBowlWin.runs} in ${topBowlWin.overs} ov) restricted ${loserName} to ${losingInnings.totalRuns}/${losingInnings.totalWickets}, defending ${winningInnings.totalRuns} runs.`;
+    } else if (!isChaseWin) {
+      // Defending a total!
+      const runMargin = winningInnings.totalRuns - losingInnings.totalRuns;
 
-      whyWinnerWon.push(`${topBowlWin.name}'s ${topBowlWin.wickets}-wicket haul dismantled the chase.`);
-      if (topBatWin) {
-        whyWinnerWon.push(`${topBatWin.name} provided the winning total with ${topBatWin.runs} off ${topBatWin.balls} balls.`);
+      if (topBowlWin && topBowlWin.wickets >= 2) {
+        decisiveDifference = `Disciplined bowling defense: ${winnerName} defended ${winningInnings.totalRuns} by restricting ${loserName} to ${losingInnings.totalRuns}/${losingInnings.totalWickets}, spearheaded by ${topBowlWin.name}'s ${topBowlWin.wickets}/${topBowlWin.runs} in ${topBowlWin.overs} ov.`;
+        whyWinnerWon.push(`${topBowlWin.name}'s strike spell of ${topBowlWin.wickets}/${topBowlWin.runs} dismantled key partnerships.`);
+      } else {
+        decisiveDifference = `Scoreboard pressure proved decisive: ${winnerName}'s 1st innings total of ${winningInnings.totalRuns}/${winningInnings.totalWickets} was defended with precision, closing out a ${runMargin}-run victory.`;
+        whyWinnerWon.push(`Imposing 1st innings total exerted constant required rate pressure on the chase.`);
       }
-      whyLoserLost.push(`Top order lost early wickets, leaving too much to do for the lower order.`);
+
+      if (tightWinBowler) {
+        whyWinnerWon.push(`Squeeze bowling: ${tightWinBowler.name} conceded only ${tightWinBowler.runs} runs in ${tightWinBowler.overs} ov (Econ ${tightWinBowler.economy}).`);
+      }
+      if (topBatWin && topBatWin.runs >= 40) {
+        whyWinnerWon.push(`${topBatWin.name}'s foundational ${topBatWin.runs} (${topBatWin.balls}b) set the winning benchmark.`);
+      }
+
+      whyLoserLost.push(`Stumbled under scoreboard pressure, falling behind the required rate.`);
       if (expLoseBowler) {
-        whyLoserLost.push(`Bowlers conceded too many boundary deliveries in the 1st innings.`);
+        whyLoserLost.push(`Leaked early boundaries: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
       }
     } else {
-      // Phase differential
+      // Phase differential fallback
       const winDeath = winningInnings.phaseRuns.death;
       const loseDeath = losingInnings.phaseRuns.death;
 

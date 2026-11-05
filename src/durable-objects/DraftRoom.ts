@@ -69,9 +69,10 @@ export class DraftRoom implements DurableObject {
       const userFilled = this.draftState.userPicks.filter(Boolean).length;
       const aiFilled = this.draftState.aiPicks.filter(Boolean).length;
 
-      // Check if draft complete
+      // When both squads reach 11, draft is ready for user to review and manually launch match
       if (userFilled >= 11 && aiFilled >= 11) {
-        await this.finishDraft();
+        this.draftState.status = "READY_TO_PLAY";
+        this.draftState.currentTurn = "USER";
       } else {
         // Trigger AI Pick if AI still needs players
         if (aiFilled < 11) {
@@ -83,7 +84,8 @@ export class DraftRoom implements DurableObject {
         const userFilledAfter = this.draftState.userPicks.filter(Boolean).length;
         const aiFilledAfter = this.draftState.aiPicks.filter(Boolean).length;
         if (userFilledAfter >= 11 && aiFilledAfter >= 11) {
-          await this.finishDraft();
+          this.draftState.status = "READY_TO_PLAY";
+          this.draftState.currentTurn = "USER";
         }
       }
 
@@ -91,6 +93,22 @@ export class DraftRoom implements DurableObject {
       this.broadcast({ type: "UPDATE", state: this.draftState });
 
       return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
+    }
+
+    if (url.pathname.endsWith("/start-match") && request.method === "POST") {
+      if (!this.draftState) {
+        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
+      }
+
+      const userFilled = this.draftState.userPicks.filter(Boolean).length;
+      const aiFilled = this.draftState.aiPicks.filter(Boolean).length;
+
+      if (userFilled < 11 || aiFilled < 11) {
+        return Response.json({ error: "Both squads must be completely filled (11 players each) before starting match simulation" }, { status: 400 });
+      }
+
+      await this.finishDraft();
+      return Response.json({ success: true, results: (this.draftState as any).results, state: this.draftState });
     }
 
     if (url.pathname.endsWith("/referee") && request.method === "POST") {
@@ -125,8 +143,8 @@ export class DraftRoom implements DurableObject {
       this.draftState.userPicks[targetIdx] = null;
       this.draftState.pool.unshift(removed);
 
-      // Revert from completed state if necessary
-      if (this.draftState.status === "COMPLETED") {
+      // Revert from completed or ready-to-play state if necessary
+      if (this.draftState.status === "COMPLETED" || this.draftState.status === "READY_TO_PLAY") {
         this.draftState.status = "DRAFTING";
       }
 
@@ -203,15 +221,24 @@ export class DraftRoom implements DurableObject {
           const aiFilled = this.draftState.aiPicks.filter(Boolean).length;
 
           if (userFilled >= 11 && aiFilled >= 11) {
-            await this.finishDraft();
+            this.draftState.status = "READY_TO_PLAY";
+            this.draftState.currentTurn = "USER";
           } else if (aiFilled < 11) {
             this.executeAiPick();
             if (this.draftState.userPicks.filter(Boolean).length >= 11 && this.draftState.aiPicks.filter(Boolean).length >= 11) {
-              await this.finishDraft();
+              this.draftState.status = "READY_TO_PLAY";
+              this.draftState.currentTurn = "USER";
             }
           }
           await this.state.storage.put("draftState", this.draftState);
           this.broadcast({ type: "UPDATE", state: this.draftState });
+        } else if (data.type === "START_MATCH") {
+          const userFilled = this.draftState?.userPicks.filter(Boolean).length || 0;
+          const aiFilled = this.draftState?.aiPicks.filter(Boolean).length || 0;
+          if (userFilled >= 11 && aiFilled >= 11) {
+            await this.finishDraft();
+            await this.state.storage.put("draftState", this.draftState);
+          }
         }
       } catch (err) {
         // ignore malformed socket payload
@@ -417,14 +444,25 @@ export class DraftRoom implements DurableObject {
 
         if (slotIdx === 0 || slotIdx === 1) {
           // OPENERS
+          const isTrueOpener =
+            p.stats.top_order_innings >= 8 ||
+            (p.stats.bat_innings >= 5 && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35);
+
+          const isMiddleAnchorOrFinisher =
+            p.stats.finisher_innings >= 4 ||
+            (p.stats.middle_order_innings >= 12 && p.stats.top_order_innings < 6);
+
           if (isBowl) {
             slotFit -= 1500;
-          } else if (p.stats.top_order_innings >= 8 || (isBat && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35)) {
-            slotFit += 60;
-          } else if (isBat || isWK) {
-            slotFit += 25;
+          } else if (isMiddleAnchorOrFinisher) {
+            // Middle-order anchors & legendary finishers (e.g. Dhoni, Miller, DK, Boucher) MUST NEVER OPEN
+            slotFit -= 1200;
+          } else if (isTrueOpener && (isBat || isWK)) {
+            slotFit += 80;
+          } else if (isBat && p.stats.top_order_innings >= 3) {
+            slotFit += 30;
           } else {
-            slotFit -= 400; // Finishers/tailenders penalized
+            slotFit -= 600; // Finishers/tailenders penalized
           }
         } else if (slotIdx === 2) {
           // #3 ANCHOR
@@ -450,16 +488,24 @@ export class DraftRoom implements DurableObject {
           if (isTest) {
             // In Tests: All-Rounders (Stokes, Jadeja, Kallis) or solid WK (Gilchrist, Pant, Watling)
             if (isAR) slotFit += 65;
-            else if (isWK) slotFit += 55;
+            else if (isWK) slotFit += 60;
             else if (isBat && p.stats.bat_average >= 32.0) slotFit += 45;
             else slotFit -= 150;
           } else {
             // In T20 / ODI: Explosive Finishers
-            if (isAR) slotFit += 60;
-            else if (p.stats.finisher_innings >= 5 || p.stats.bat_strike_rate >= (isT20 ? 140 : 100)) slotFit += 60;
-            else if (isWK) slotFit += 40;
-            else if (isBat) slotFit += 25;
-            else slotFit -= 200;
+            if (p.stats.finisher_innings >= 5 || p.name.includes("Dhoni") || p.name.includes("Miller")) {
+              slotFit += 160; // Huge boost for legendary finishers in Slots #6 and #7!
+            } else if (isAR) {
+              slotFit += 60;
+            } else if (p.stats.bat_strike_rate >= (isT20 ? 140 : 100)) {
+              slotFit += 50;
+            } else if (isWK) {
+              slotFit += 45;
+            } else if (isBat) {
+              slotFit += 25;
+            } else {
+              slotFit -= 200;
+            }
           }
         } else if (slotIdx === 7) {
           // LOWER ORDER / BOWLING AR (Slot 8)
@@ -486,7 +532,11 @@ export class DraftRoom implements DurableObject {
         if (bowlingOptionsCount < 5 && (isBowl || isAR)) {
           urgency += emptyIndices.length <= 5 ? 160 : 70;
         }
-        if (openerCount < 2 && (slotIdx === 0 || slotIdx === 1) && (isBat || isWK)) {
+        const isTrueOpenerCandidate =
+          p.stats.top_order_innings >= 8 ||
+          (p.stats.bat_innings >= 5 && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35);
+
+        if (openerCount < 2 && (slotIdx === 0 || slotIdx === 1) && isTrueOpenerCandidate) {
           urgency += emptyIndices.length <= 4 ? 120 : 50;
         }
 
