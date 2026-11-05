@@ -365,7 +365,7 @@ export class DraftRoom implements DurableObject {
    * Grandmaster AI Draft Algorithm:
    * Format-Aware, Pitch-Aware, Value-Over-Replacement Draft Engine.
    * Instead of rigid sequential slot filling, AI evaluates every legal (candidate, vacantSlot)
-   * pair in the pool. It snipes generational stars (Bumrah, Kohli, Cummins, etc.) early,
+   * pair in the pool. It takes the strongest players on the board (judged by career stats only) early,
    * matches them to their optimal slot, and counters pitch conditions ruthlessly.
    */
   /** Pool + opponent squad, so legality checks can protect the shared pool. */
@@ -373,6 +373,60 @@ export class DraftRoom implements DurableObject {
     const state = this.draftState!;
     const opponentSquad = squad === state.aiPicks ? state.userPicks : state.aiPicks;
     return { pool: state.pool, opponentSquad };
+  }
+
+  /** Format-specific base quality from career stats only (no names, no reputation). */
+  private playerQuality(p: PlayerWithStats, format: string): number {
+    const isTest = format === "TEST";
+    const isOdi = format === "ODI";
+    const isAR = p.primary_role === "AR";
+    const isBat = p.primary_role === "BAT";
+    const isWK = p.primary_role === "WK";
+    const isBowl = p.primary_role === "BOWL";
+    const matches = Math.max(1, p.stats.matches);
+  let quality = 0;
+  if (isTest) {
+    // TEST: Batting average & resistance are king; Bowling average & wickets per match rule
+    if (isBat || isWK || isAR) {
+      const avg = p.stats.bat_average || 25;
+      quality += Math.pow(Math.min(65, avg) / 38.0, 1.8) * 75;
+      if (avg >= 50.0) quality += 40; // Platinum test batters (Smith, Root, Williamson)
+      else if (avg >= 42.0) quality += 25;
+    }
+    if (isBowl || isAR) {
+      const bowlAvg = p.stats.bowl_average || 35.0;
+      const wpm = p.stats.bowl_wickets / matches;
+      quality += (28.0 / Math.max(18.0, bowlAvg)) * 80 + Math.min(3.5, wpm) * 15;
+      if (bowlAvg <= 24.0 && matches >= 15) quality += 40; // Elite test strike weapons (Bumrah, Cummins, Anderson)
+    }
+    // Test Experience / Caps resilience
+    quality += Math.min(35, matches * 0.6);
+  } else if (isOdi) {
+    // ODI: High average + healthy strike rate + low economy
+    if (isBat || isWK || isAR) {
+      quality += (p.stats.bat_average / 38.0) * 55 + (p.stats.bat_strike_rate / 90.0) * 35;
+      if (p.stats.bat_average >= 45.0) quality += 30;
+    }
+    if (isBowl || isAR) {
+      const econ = p.stats.bowl_economy || 5.8;
+      quality += (5.2 / Math.max(3.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
+      if (econ <= 4.8) quality += 25;
+    }
+    quality += Math.min(25, matches * 0.3);
+  } else {
+    // T20: Boundary hitting strike rate & death economy
+    if (isBat || isWK || isAR) {
+      quality += (p.stats.bat_strike_rate / 135.0) * 65 + (p.stats.bat_average / 30.0) * 35;
+      if (p.stats.bat_strike_rate >= 145.0) quality += 30;
+    }
+    if (isBowl || isAR) {
+      const econ = p.stats.bowl_economy || 8.0;
+      quality += (7.6 / Math.max(5.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
+      if (econ <= 7.2) quality += 30;
+    }
+    quality += Math.min(20, matches * 0.25);
+  }
+    return quality;
   }
 
   private executeAiPick() {
@@ -423,6 +477,21 @@ export class DraftRoom implements DurableObject {
 
     const candidatePairs: ScoredPair[] = [];
 
+    // Stats-only quality for every available player. "Stars" are simply the top tier of what is
+    // left in the pool, so the AI recognises elite players from their numbers, not their names.
+    const qualityMap = new Map<string, number>();
+    for (const q of this.draftState.pool) qualityMap.set(q.id, this.playerQuality(q, format));
+    const percentile = (values: number[], pct: number) => {
+      if (values.length === 0) return Infinity;
+      const sorted = [...values].sort((a, b) => a - b);
+      return sorted[Math.min(sorted.length - 1, Math.floor(pct * sorted.length))];
+    };
+    const starCut = percentile([...qualityMap.values()], 0.85);
+    const keeperStarCut = percentile(
+      this.draftState.pool.filter((q) => q.primary_role === "WK").map((q) => qualityMap.get(q.id) ?? 0),
+      0.5
+    );
+
     for (const p of this.draftState.pool) {
       const isPacer = p.bowling_category === "PACE";
       const isSpinner = p.bowling_category === "SPIN";
@@ -432,52 +501,10 @@ export class DraftRoom implements DurableObject {
       const isBowl = p.primary_role === "BOWL";
       const matches = Math.max(1, p.stats.matches);
 
-      // Pitch restriction
-      if (disallowMoreSpinners && isSpinner) continue;
+      // Pitch preference (soft): a second spinner on a flat or green track is unattractive, not illegal
+      const spinnerPenalty = disallowMoreSpinners && isSpinner ? -80 : 0;
 
-      // Calculate Player Base Quality for the specific format
-      let quality = 0;
-      if (isTest) {
-        // TEST: Batting average & resistance are king; Bowling average & wickets per match rule
-        if (isBat || isWK || isAR) {
-          const avg = p.stats.bat_average || 25;
-          quality += Math.pow(Math.min(65, avg) / 38.0, 1.8) * 75;
-          if (avg >= 50.0) quality += 40; // Platinum test batters (Smith, Root, Williamson)
-          else if (avg >= 42.0) quality += 25;
-        }
-        if (isBowl || isAR) {
-          const bowlAvg = p.stats.bowl_average || 35.0;
-          const wpm = p.stats.bowl_wickets / matches;
-          quality += (28.0 / Math.max(18.0, bowlAvg)) * 80 + Math.min(3.5, wpm) * 15;
-          if (bowlAvg <= 24.0 && matches >= 15) quality += 40; // Elite test strike weapons (Bumrah, Cummins, Anderson)
-        }
-        // Test Experience / Caps resilience
-        quality += Math.min(35, matches * 0.6);
-      } else if (isOdi) {
-        // ODI: High average + healthy strike rate + low economy
-        if (isBat || isWK || isAR) {
-          quality += (p.stats.bat_average / 38.0) * 55 + (p.stats.bat_strike_rate / 90.0) * 35;
-          if (p.stats.bat_average >= 45.0) quality += 30;
-        }
-        if (isBowl || isAR) {
-          const econ = p.stats.bowl_economy || 5.8;
-          quality += (5.2 / Math.max(3.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
-          if (econ <= 4.8) quality += 25;
-        }
-        quality += Math.min(25, matches * 0.3);
-      } else {
-        // T20: Boundary hitting strike rate & death economy
-        if (isBat || isWK || isAR) {
-          quality += (p.stats.bat_strike_rate / 135.0) * 65 + (p.stats.bat_average / 30.0) * 35;
-          if (p.stats.bat_strike_rate >= 145.0) quality += 30;
-        }
-        if (isBowl || isAR) {
-          const econ = p.stats.bowl_economy || 8.0;
-          quality += (7.6 / Math.max(5.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
-          if (econ <= 7.2) quality += 30;
-        }
-        quality += Math.min(20, matches * 0.25);
-      }
+      const quality = qualityMap.get(p.id) ?? 0;
 
       // Pitch Synergy
       let pitchBonus = 0;
@@ -512,7 +539,7 @@ export class DraftRoom implements DurableObject {
           if (isBowl) {
             slotFit -= 1500;
           } else if (isMiddleAnchorOrFinisher) {
-            // Middle-order anchors & legendary finishers (e.g. Dhoni, Miller, DK, Boucher) MUST NEVER OPEN
+            // Middle-order anchors and finishers (judged by innings played in those roles) must not open
             slotFit -= 1200;
           } else if (isTrueOpener && (isBat || isWK)) {
             slotFit += 80;
@@ -543,15 +570,15 @@ export class DraftRoom implements DurableObject {
         } else if (slotIdx === 5 || slotIdx === 6) {
           // SLOTS 6 & 7: FORMAT SPECIFIC
           if (isTest) {
-            // In Tests: All-Rounders (Stokes, Jadeja, Kallis) or solid WK (Gilchrist, Pant, Watling)
+            // In Tests: all-rounders or a solid keeper-batter
             if (isAR) slotFit += 65;
             else if (isWK) slotFit += 60;
             else if (isBat && p.stats.bat_average >= 32.0) slotFit += 45;
             else slotFit -= 150;
           } else {
             // In T20 / ODI: Explosive Finishers
-            if (p.stats.finisher_innings >= 5 || p.name.includes("Dhoni") || p.name.includes("Miller")) {
-              slotFit += 160; // Huge boost for legendary finishers in Slots #6 and #7!
+            if (p.stats.finisher_innings >= 5) {
+              slotFit += 160; // Proven finishers (by innings played in that role) belong in Slots #6 and #7
             } else if (isAR) {
               slotFit += 60;
             } else if (p.stats.bat_strike_rate >= (isT20 ? 140 : 100)) {
@@ -601,64 +628,45 @@ export class DraftRoom implements DurableObject {
         let counterSnipeBonus = 0;
         let snipeReason = "";
 
+        const isStar = quality >= starCut;
+        const starTag = isStar ? "star " : "";
         if (lastUserPick) {
-          // 1. Nationality Synergy Sniping (e.g., if User took Kohli, AI snipes Rohit / Dhoni / Tendulkar / Bumrah)
-          if (p.country === lastUserPick.country && p.country === "IND") {
-            const isMarquee = p.name.includes("Rohit") || p.name.includes("Dhoni") || p.name.includes("Tendulkar") || p.name.includes("Bumrah") || p.name.includes("Kohli");
-            if (isMarquee) {
-              counterSnipeBonus += 140;
-              snipeReason = `AI anticipated your next move and snatched ${p.name} before you could pair them with ${lastUserPick.name}!`;
-            } else {
-              counterSnipeBonus += 50;
-              snipeReason = `AI counter-drafted ${p.name} to restrict your Indian combinations!`;
-            }
-          } else if (p.country === lastUserPick.country && p.country === "AUS") {
-            const isMarquee = p.name.includes("Warner") || p.name.includes("Smith") || p.name.includes("Starc") || p.name.includes("Maxwell") || p.name.includes("Cummins");
-            if (isMarquee) {
-              counterSnipeBonus += 130;
-              snipeReason = `AI intercepted ${p.name} to deny you an Australian powerhouse pairing with ${lastUserPick.name}!`;
-            }
-          } else if (p.country === lastUserPick.country && p.country === "ENG") {
-            const isMarquee = p.name.includes("Root") || p.name.includes("Stokes") || p.name.includes("Buttler") || p.name.includes("Anderson");
-            if (isMarquee) {
-              counterSnipeBonus += 130;
-              snipeReason = `AI struck back by seizing ${p.name} before you could expand your English core!`;
-            }
-          } else if (p.country === lastUserPick.country && p.country === "RSA") {
-            const isMarquee = p.name.includes("Villiers") || p.name.includes("Kallis") || p.name.includes("Steyn") || p.name.includes("Rabada");
-            if (isMarquee) {
-              counterSnipeBonus += 130;
-              snipeReason = `AI poached ${p.name} to deny you South Africa's premier match-winner!`;
-            }
+          // 1. Core denial: same country as the user's latest pick (stronger for true stars)
+          if (p.country === lastUserPick.country) {
+            counterSnipeBonus += isStar ? 110 : 40;
+            snipeReason = isStar
+              ? `AI took ${starTag}${p.name} so you can't build a ${p.country} core around ${lastUserPick.name}!`
+              : `AI picked ${p.name} to limit your ${p.country} combinations.`;
           }
 
-          // 2. Role Rivalry Counter: User took top anchor/batter -> AI snipes strike bowler
-          if ((lastUserPick.primary_role === "BAT" || lastUserPick.primary_role === "WK") && (isBowl && (p.stats.bowl_wickets >= 30 || p.stats.bowl_economy <= 5.2))) {
+          // 2. Role rivalry: user took a batter/keeper -> AI takes a genuine strike bowler
+          if (
+            (lastUserPick.primary_role === "BAT" || lastUserPick.primary_role === "WK") &&
+            isBowl &&
+            (p.stats.bowl_wickets >= 30 || (p.stats.bowl_economy > 0 && p.stats.bowl_economy <= 5.2))
+          ) {
             counterSnipeBonus += 90;
-            if (!snipeReason) snipeReason = `AI counter-drafted strike weapon ${p.name} to neutralize ${lastUserPick.name}!`;
+            if (!snipeReason) snipeReason = `AI took strike bowler ${p.name} to answer ${lastUserPick.name}.`;
           }
 
-          // 3. Wicketkeeper Starvation
-          if (!userHasKeeper && isWK && (p.name.includes("Dhoni") || p.name.includes("Gilchrist") || p.name.includes("Sangakkara") || p.name.includes("Buttler") || p.name.includes("Pant"))) {
-            counterSnipeBonus += 125;
-            snipeReason = `AI sniped premier wicketkeeper ${p.name}, applying massive squad pressure!`;
+          // 3. Keeper starvation: user has no keeper yet, AI takes a top-half keeper
+          if (!userHasKeeper && isWK && quality >= keeperStarCut) {
+            counterSnipeBonus += 100;
+            snipeReason = `AI took top wicketkeeper ${p.name} while you still need a keeper!`;
           }
 
-          // 4. Bowling Starvation
+          // 4. Bowling starvation: user is short of bowlers
           if (userBowlersCount < 3 && userNonNull.length >= 6 && isBowl) {
-            counterSnipeBonus += 80;
-            if (!snipeReason) snipeReason = `AI secured ${p.name} to starve your remaining bowling slots!`;
+            counterSnipeBonus += 70;
+            if (!snipeReason) snipeReason = `AI took ${p.name} while you are still short of bowlers.`;
           }
-        } else {
-          // Round 1 Marquee Star Sniping
-          const isMarqueeIcon = p.name.includes("Kohli") || p.name.includes("Rohit") || p.name.includes("Dhoni") || p.name.includes("Bumrah") || p.name.includes("Kallis") || p.name.includes("Smith") || p.name.includes("Root") || p.name.includes("Villiers") || p.name.includes("Malinga") || p.name.includes("Warne");
-          if (isMarqueeIcon) {
-            counterSnipeBonus += 150;
-            snipeReason = `AI opened the draft aggressively by locking down generational superstar ${p.name}!`;
-          }
+        } else if (isStar) {
+          // Opening move: grab the best available player by the numbers
+          counterSnipeBonus += 100;
+          snipeReason = `AI opened by taking ${starTag}${p.name}, the strongest player on the board.`;
         }
 
-        const totalScore = quality + pitchBonus + slotFit + urgency + counterSnipeBonus;
+        const totalScore = quality + pitchBonus + slotFit + urgency + counterSnipeBonus + spinnerPenalty;
         candidatePairs.push({
           player: p,
           slotIndex: slotIdx,

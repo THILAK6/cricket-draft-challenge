@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { generateRefereeReport } from "../src/core/gemini-referee";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
-import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
+import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, canCompleteSquad, validateSquad, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import type { Challenge, DraftState, PlayerWithStats } from "../src/core/types";
 
 function mockPlayer(
@@ -297,5 +297,78 @@ describe("Single source of truth for the result", () => {
     // Cooling down: no further network call
     expect(await generateRefereeReport(st.userPicks, st.aiPicks, st.challenge, sim, "key")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AI drafting is stats-driven and fair", () => {
+  async function aiSquadFor(names: (id: string) => string, pitch: Challenge["venue"]["pitch_type"] = "HIGH_SCORING_FLAT") {
+    const room = new DraftRoom(fakeState(), {});
+    const st = initState();
+    st.pool = buildPool().map((p) => ({ ...p, name: names(p.id) }));
+    st.challenge = { ...challenge, venue: { ...challenge.venue, pitch_type: pitch }, constraints: [{ type: "max_per_country", value: 2 }] };
+    await call(room, "/init", st);
+    const drafted = await draftToCompletion(room);
+    return drafted.aiPicks.map((p) => p!.id);
+  }
+
+  it("makes identical picks whether or not players carry famous names", async () => {
+    const plain = await aiSquadFor((id) => `Player ${id}`);
+    const famous = await aiSquadFor((id) =>
+      ["Virat Kohli", "Rohit Sharma", "MS Dhoni", "Jasprit Bumrah", "Steve Smith", "Joe Root"][id.length % 6] + ` ${id}`
+    );
+    expect(famous).toEqual(plain);
+  });
+
+  it("always assembles a valid XI, even when told a second spinner is unattractive", async () => {
+    for (const pitch of ["HIGH_SCORING_FLAT", "GREEN_SEAMER", "DUSTBOWL", "SLOW_LOW"] as const) {
+      const room = new DraftRoom(fakeState(), {});
+      const st = initState();
+      st.challenge = {
+        ...challenge,
+        venue: { ...challenge.venue, pitch_type: pitch },
+        constraints: [{ type: "max_per_country", value: 2 }, { type: "min_category", category: "SPIN", count: 3 }],
+      };
+      await call(room, "/init", st);
+      const drafted = await draftToCompletion(room);
+      const ai = drafted.aiPicks.filter(Boolean) as PlayerWithStats[];
+      expect(ai).toHaveLength(11);
+      expect(validateSquad(drafted.aiPicks, st.challenge).valid, `${pitch}: ${validateSquad(drafted.aiPicks, st.challenge).violations}`).toBe(true);
+    }
+  });
+});
+
+describe("Endgame lookahead", () => {
+  const lhbOpener: Challenge = { ...challenge, constraints: [{ type: "batting_hand_order", positions: [1], hand: "LHB" }] };
+
+  function almostFullSquad(all: PlayerWithStats[], missingSlot: number) {
+    const ids = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
+    const squad: (PlayerWithStats | null)[] = ids.map((id) => all.find((p) => p.id === id)!);
+    squad[missingSlot] = null;
+    return squad;
+  }
+
+  it("detects a squad whose last slot can no longer be filled legally", () => {
+    const all = buildPool();
+    const squad = almostFullSquad(all, 0); // slot 1 must be an LHB opener
+    const onlyRhb = all.filter((p) => p.batting_hand === "RHB" && !squad.includes(p));
+    expect(canCompleteSquad(squad, onlyRhb, lhbOpener)).toBe(false);
+    const withLhb = [...onlyRhb, all.find((p) => p.id === "PAK_lhb")!];
+    expect(canCompleteSquad(squad, withLhb, lhbOpener)).toBe(true);
+  });
+
+  it("stops a pick that would strand the last slot", () => {
+    const all = buildPool();
+    const squad = almostFullSquad(all, 0); // hole at slot 1 (needs an LHB opener)
+    squad[4] = null; // and a middle-order hole at slot 5
+    const lhb = all.find((p) => p.id === "PAK_lhb")!;
+    const rhb = all.find((p) => p.id === "PAK_rhb")!;
+    const ctx = { pool: [lhb, rhb], opponentSquad: Array(11).fill(null) };
+    // Spending the only LHB on slot 5 would leave slot 1 impossible to fill
+    const stranding = canPickPlayer(lhb, squad, lhbOpener, 4, ctx);
+    expect(stranding.allowed).toBe(false);
+    expect(stranding.reason).toMatch(/too few|unable to complete/);
+    // The RHB in the middle is fine, and so is the LHB at the top
+    expect(canPickPlayer(rhb, squad, lhbOpener, 4, ctx).allowed).toBe(true);
+    expect(canPickPlayer(lhb, squad, lhbOpener, 0, ctx).allowed).toBe(true);
   });
 });

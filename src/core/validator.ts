@@ -692,12 +692,47 @@ export function canPickPlayer(
 
       const catWithThisPick = otherCatCount + (candidateMatches ? 1 : 0);
       const neededCat = Math.max(0, constraint.count - catWithThisPick);
-      if (remainingSlotsAfterThisPick < neededCat) {
+      // Keepers can't bat 9-11; bowling categories (PACE/SPIN/AR) can't open
+      const slotsForCat = constraint.category === "WK" ? keeperSlots : bowlerSlots;
+      if (slotsForCat < neededCat) {
         return {
           allowed: false,
           reason: `Must pick a ${constraint.category} player (${constraint.count - otherCatCount} needed for remaining slots)`,
         };
       }
+    }
+  }
+
+  // 5c-joint. Competing needs share the same empty slots: add up what must still be filled.
+  {
+    const catNeeded = (cat: string) => {
+      let best = 0;
+      for (const c of challenge.constraints) {
+        if (c.type !== "min_category" || c.category !== cat) continue;
+        const matchesCat = (q: PlayerWithStats) =>
+          cat === "PACE" ? q.bowling_category === "PACE"
+          : cat === "SPIN" ? q.bowling_category === "SPIN"
+          : cat === "WK" ? q.primary_role === "WK"
+          : q.primary_role === "AR";
+        const have =
+          currentSquad.filter((q, idx) => q && idx !== slotIndex && idx !== targetSlotIndex && matchesCat(q)).length +
+          (matchesCat(player) ? 1 : 0);
+        best = Math.max(best, c.count - have);
+      }
+      return Math.max(0, best);
+    };
+    const keeperDemand = Math.max(neededKeepers, catNeeded("WK"));
+    // PACE and SPIN players are different people; AR and bowling options can overlap with them
+    const bowlerDemand = Math.max(neededBowlers, catNeeded("PACE") + catNeeded("SPIN"), catNeeded("AR"));
+    if (
+      keeperDemand > keeperSlots ||
+      bowlerDemand > bowlerSlots ||
+      keeperDemand + bowlerDemand > remainingSlotsAfterThisPick
+    ) {
+      return {
+        allowed: false,
+        reason: "That pick leaves too few open slots for the keeper, bowlers and categories you still need",
+      };
     }
   }
 
@@ -711,6 +746,17 @@ export function canPickPlayer(
   if (ctx) {
     const reserve = checkPoolReserve(player, currentSquad, challenge, targetSlotIndex, slotIndex, ctx);
     if (reserve) return { allowed: false, reason: reserve };
+
+    // Endgame lookahead: with only a few slots left, prove each side can still finish a legal XI.
+    const poolAfter = ctx.pool.filter((q) => q.id !== player.id);
+    const mineAfter = currentSquad.slice();
+    mineAfter[slotIndex] = player;
+    if (!canCompleteSquad(mineAfter, poolAfter, challenge)) {
+      return { allowed: false, reason: "That pick would leave you unable to complete a legal XI from the remaining pool" };
+    }
+    if (!canCompleteSquad(ctx.opponentSquad, poolAfter, challenge)) {
+      return { allowed: false, reason: "That pick would leave your opponent unable to complete a legal XI from the remaining pool" };
+    }
   }
 
   return { allowed: true };
@@ -818,4 +864,61 @@ function checkPoolReserve(
     }
   }
   return null;
+}
+
+/** Endgame lookahead only runs when this few slots remain (earlier, the cheap guards are enough). */
+const LOOKAHEAD_MAX_EMPTY = 5;
+/** Cap on canPickPlayer calls per lookahead so worst-case CPU stays tiny (Workers free plan). */
+const LOOKAHEAD_CALL_BUDGET = 600;
+
+/**
+ * Can this squad still be completed into a fully valid XI using only `pool`?
+ * Exact depth-first fill of the empty slots, most constrained slots first. Returns true when the
+ * search budget runs out (unknown is treated as feasible so a pick is never blocked on a guess).
+ */
+export function canCompleteSquad(
+  squad: (PlayerWithStats | null)[],
+  pool: PlayerWithStats[],
+  challenge: Challenge,
+  callBudget = LOOKAHEAD_CALL_BUDGET
+): boolean {
+  const work = squad.slice();
+  while (work.length < 11) work.push(null);
+  const empties = work.map((p, i) => (p ? -1 : i)).filter((i) => i >= 0);
+  if (empties.length === 0) return validateSquad(work, challenge).valid;
+  if (empties.length > LOOKAHEAD_MAX_EMPTY) return true;
+
+  // Most constrained slots first: hand-order slots, openers, tail, then the middle
+  const handSlots = new Set<number>();
+  for (const c of challenge.constraints) {
+    if (c.type === "batting_hand_order") for (const pos of c.positions) handSlots.add(pos - 1);
+  }
+  const rank = (i: number) => (handSlots.has(i) ? 0 : OPENER_SLOTS.includes(i) ? 1 : TAIL_SLOTS.includes(i) ? 2 : 3);
+  empties.sort((a, b) => rank(a) - rank(b));
+
+  let calls = 0;
+  let exhausted = false;
+  const used = new Set(work.filter((p): p is PlayerWithStats => p !== null).map((p) => p.id));
+
+  const fill = (k: number): boolean => {
+    if (k === empties.length) return validateSquad(work, challenge).valid;
+    const slot = empties[k];
+    for (const cand of pool) {
+      if (used.has(cand.id)) continue;
+      if (++calls > callBudget) {
+        exhausted = true;
+        return true;
+      }
+      if (!canPickPlayer(cand, work, challenge, slot).allowed) continue;
+      work[slot] = cand;
+      used.add(cand.id);
+      const ok = fill(k + 1);
+      work[slot] = null;
+      used.delete(cand.id);
+      if (ok) return true;
+      if (exhausted) return true;
+    }
+    return false;
+  };
+  return fill(0);
 }
