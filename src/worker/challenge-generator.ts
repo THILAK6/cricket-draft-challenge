@@ -5,13 +5,15 @@ import { checkDraftFeasibility } from "../core/validator";
 
 /**
  * Players in each draft room. Every draft gets a fresh random 30 drawn from the most-capped
- * players of the format (POOL_SOURCE_SIZE). 30 leaves 8 spare after both XIs are filled, which
+ * eligible players of the format (POOL_SOURCE_SIZE; not limited to the most-capped). 30 leaves 8 spare after both XIs are filled, which
  * keeps role and country rules satisfiable; 25 left too little slack (only 70-83% of random
  * pools could host any scenario, against 98-100% at 30).
  */
 export const DRAFT_POOL_SIZE = 30;
 /** Players the random pool is drawn from. */
-export const POOL_SOURCE_SIZE = 150;
+export const POOL_SOURCE_SIZE = 1000;
+/** Minimum caps to be eligible for a random pool (any player with a real record, not just the top-N). */
+export const POOL_MIN_MATCHES = 15;
 /** The fixed top-N pool the built-in templates are verified against (tests/templates.test.ts). */
 export const VERIFIED_POOL_SIZE = 50;
 
@@ -28,12 +30,13 @@ const poolCache = new Map<string, { at: number; pool: PlayerWithStats[] }>();
 export async function getPlayerPool(
   db: D1Database,
   format: MatchFormat,
-  limit = VERIFIED_POOL_SIZE
+  limit = VERIFIED_POOL_SIZE,
+  minMatches = 5
 ): Promise<PlayerWithStats[]> {
-  const key = `${format}:${limit}`;
+  const key = `${format}:${limit}:${minMatches}`;
   const hit = poolCache.get(key);
   if (hit && Date.now() - hit.at < POOL_CACHE_TTL_MS) return hit.pool;
-  const pool = await fetchPlayerPool(db, format, limit);
+  const pool = await fetchPlayerPool(db, format, limit, minMatches);
   if (pool.length > 0) poolCache.set(key, { at: Date.now(), pool });
   return pool;
 }
@@ -284,7 +287,8 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
 export async function fetchPlayerPool(
   db: D1Database,
   format: MatchFormat = "T20",
-  limit = 70
+  limit = 70,
+  minMatches = 5
 ): Promise<PlayerWithStats[]> {
   const query = `
     SELECT 
@@ -296,12 +300,12 @@ export async function fetchPlayerPool(
       s.bowl_average, s.bowl_economy
     FROM players p
     JOIN player_format_stats s ON p.id = s.player_id
-    WHERE s.format = ? AND s.matches >= 5
+    WHERE s.format = ? AND s.matches >= ?
     ORDER BY s.matches DESC, s.bat_runs DESC
     LIMIT ?;
   `;
 
-  const { results } = await db.prepare(query).bind(format, limit).all();
+  const { results } = await db.prepare(query).bind(format, minMatches, limit).all();
 
   return (results || []).map((row: any) => ({
     id: row.id,
@@ -372,6 +376,7 @@ export function samplePool(source: PlayerWithStats[], size: number, rand: () => 
   take((p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", 6);
   take((p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", 4);
   take((p) => p.primary_role === "AR", 4);
+  take((p) => p.primary_role === "BAT", 10);
   const perCountry = new Map<string, number>();
   for (const p of picked) perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
   const cap = Math.ceil(size / 5);
@@ -393,7 +398,7 @@ export async function buildRandomDraft(
   format: MatchFormat,
   rand: () => number = Math.random
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[] }> {
-  const source = await getPlayerPool(db, format, POOL_SOURCE_SIZE);
+  const source = await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES);
   const templates = FALLBACK_SCENARIOS.filter((s) => s.format === format);
   if (source.length < DRAFT_POOL_SIZE || templates.length === 0) {
     throw new Error(`Not enough ${format} players in the database (found ${source.length}). Run database seeding.`);
