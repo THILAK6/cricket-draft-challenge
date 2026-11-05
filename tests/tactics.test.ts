@@ -101,7 +101,7 @@ describe("conditions-driven tactics", () => {
 
   it("keeps the log short and the batting card in the order they actually batted", () => {
     const r = simulateCricketMatch(squad("u"), squad("a"), ch("HIGH_SCORING_FLAT"), 5);
-    expect(r.tactics.length).toBeLessThanOrEqual(8);
+    expect(r.tactics.length).toBeLessThanOrEqual(12);
     for (const inn of [r.userInnings, r.aiInnings]) {
       expect(new Set(inn.batters.map((b) => b.playerId)).size).toBe(inn.batters.length);
     }

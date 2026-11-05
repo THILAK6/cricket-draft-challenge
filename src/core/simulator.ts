@@ -373,7 +373,7 @@ export function simulateCricketMatch(
       winner,
       summary,
       toss: tossInfo,
-      tactics: tactics.slice(0, 8),
+      tactics: yourSideFirst(tactics).slice(0, 12),
       userInnings: userInn1,
       aiInnings: aiInn1,
       userSecondInnings: userInn2,
@@ -497,7 +497,7 @@ export function simulateCricketMatch(
     userInnings,
     aiInnings,
     keyMoments,
-    tactics: tactics.slice(0, 8),
+    tactics: yourSideFirst(tactics).slice(0, 12),
     superOver,
     performance: limitedPerf,
     selection: limitedSel,
@@ -507,6 +507,11 @@ export function simulateCricketMatch(
     groundConditionsAnalysis: analysis.groundConditionsAnalysis,
     playerOfTheMatch: potm,
   };
+}
+
+/** Lists the user's own side first so their plan calls are never cut off. */
+function yourSideFirst(xs: string[]): string[] {
+  return [...xs.filter((t) => t.startsWith("Your XI")), ...xs.filter((t) => !t.startsWith("Your XI"))];
 }
 
 function createEmptyInnings(teamName: string, innNum: number): InningsScorecard {
@@ -1125,6 +1130,9 @@ function selectBowlerForOver(
       if (isPartTimer) weight -= 800; // Never bowl part-timer in death overs
       if (ctx.plan?.death === b.id) add(170, `${b.name} is held back for the death overs`, "death");
     }
+
+    // The death specialist keeps his last two overs back for the end of the innings
+    if (!isTest && phase !== "DEATH" && ctx.plan?.death === b.id && (statsMap.get(b.id)?.balls || 0) >= maxQuotaBalls - 12) weight -= 500;
 
     if (phase === "MID") {
       if (isSpinner && (pitch === "DUSTBOWL" || pitch === "SLOW_LOW")) weight += 45;
