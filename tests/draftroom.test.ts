@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { generateRefereeReport } from "../src/core/gemini-referee";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
 import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import type { Challenge, DraftState, PlayerWithStats } from "../src/core/types";
@@ -262,5 +263,39 @@ describe("Role rules while drafting", () => {
     const drafted = await draftToCompletion(room);
     expect(drafted.userPicks.filter(Boolean)).toHaveLength(11);
     expect(drafted.aiPicks.filter(Boolean)).toHaveLength(11);
+  });
+});
+
+describe("Single source of truth for the result", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("takes the winner from the simulated match, not from a rating or Gemini", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    await call(room, "/init", initState());
+    await draftToCompletion(room);
+    const { data } = await call(room, "/start-match");
+    const r = data.results;
+    expect(r.winner).toBe(r.simulation.winner);
+    expect(r.verdictSummary).toBe(r.simulation.summary);
+    expect(r.refereeReport).toBeNull(); // no Gemini key: commentary is optional, result is unaffected
+    expect(typeof r.userRating).toBe("number");
+    expect(r).not.toHaveProperty("userAdjustment");
+  });
+
+  it("falls back to null on Gemini errors and pauses after a 429", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    await call(room, "/init", initState());
+    await draftToCompletion(room);
+    const sim = (await call(room, "/start-match")).data.results.simulation;
+    const st: DraftState = (await call(room, "/state")).data.state;
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response("slow down", { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const first = await generateRefereeReport(st.userPicks, st.aiPicks, st.challenge, sim, "key");
+    expect(first).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Cooling down: no further network call
+    expect(await generateRefereeReport(st.userPicks, st.aiPicks, st.challenge, sim, "key")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

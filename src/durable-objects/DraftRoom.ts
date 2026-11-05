@@ -1,7 +1,7 @@
 import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from "../core/types";
 import { validateSquad, canPickPlayer, type PickContext } from "../core/validator";
 import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
-import { evaluateGroundConditionsWithGemini } from "../core/gemini-referee";
+import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
 
 function isValidSlot(n: unknown): n is number {
@@ -733,27 +733,28 @@ export class DraftRoom implements DurableObject {
     const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
     const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
 
-    // 3. Ground conditions & referee report
-    const apiKey = this.env?.GEMINI_API_KEY;
-    const evaluation = await evaluateGroundConditionsWithGemini(
+    // 3. Optional Gemini referee report (commentary only; null when unavailable)
+    const refereeReport = await generateRefereeReport(
       this.draftState.userPicks,
       this.draftState.aiPicks,
       this.draftState.challenge,
-      apiKey,
+      simulation,
+      this.env?.GEMINI_API_KEY,
       this.env?.GEMINI_MODEL
     );
 
+    // The simulated match is the single source of truth for the outcome. The 0-100 numbers are
+    // squad ratings (team balance), shown for context and never used to pick a winner.
     const completedResults = {
-      userScore: evaluation.user_score,
-      aiScore: evaluation.ai_score,
-      userAdjustment: evaluation.user_adjustment,
-      aiAdjustment: evaluation.ai_adjustment,
-      winner: simulation.winner !== "TIE" && simulation.winner !== "DRAW" ? simulation.winner : evaluation.winner,
-      decisiveDifference: simulation.decisiveDifference || evaluation.decisive_difference,
-      whyWinnerWon: simulation.whyWinnerWon?.length ? simulation.whyWinnerWon : evaluation.why_winner_won,
-      whyLoserLost: simulation.whyLoserLost?.length ? simulation.whyLoserLost : evaluation.why_loser_lost,
-      groundConditionsAnalysis: simulation.groundConditionsAnalysis || evaluation.ground_conditions_analysis,
-      verdictSummary: simulation.summary || evaluation.verdict_summary,
+      winner: simulation.winner,
+      decisiveDifference: simulation.decisiveDifference,
+      whyWinnerWon: simulation.whyWinnerWon,
+      whyLoserLost: simulation.whyLoserLost,
+      groundConditionsAnalysis: simulation.groundConditionsAnalysis,
+      verdictSummary: simulation.summary,
+      refereeReport,
+      userRating: userBreakdown.deterministic_total,
+      aiRating: aiBreakdown.deterministic_total,
       simulation,
       userBreakdown,
       aiBreakdown,

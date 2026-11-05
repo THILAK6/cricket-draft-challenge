@@ -2499,7 +2499,9 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         loseList.appendChild(li);
       });
 
-      document.getElementById('referee-conditions-text').innerText = sim.groundConditionsAnalysis || results.groundConditionsAnalysis || '';
+      document.getElementById('referee-conditions-text').innerText =
+        [sim.groundConditionsAnalysis || results.groundConditionsAnalysis || '', results.refereeReport || '']
+          .filter(Boolean).join('\n\n');
 
       // Innings Tabs setup (Support 4 innings + 5-day chronicle in Test)
       const tabsContainer = document.getElementById('innings-tabs');
