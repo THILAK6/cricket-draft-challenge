@@ -362,7 +362,9 @@ describe("Endgame lookahead", () => {
     squad[4] = null; // and a middle-order hole at slot 5
     const lhb = all.find((p) => p.id === "PAK_lhb")!;
     const rhb = all.find((p) => p.id === "PAK_rhb")!;
-    const ctx = { pool: [lhb, rhb], opponentSquad: Array(11).fill(null) };
+    // Opponent already has a full XI, so only my own squad can be stranded
+    const fullOpp = almostFullSquad(all, 0).map((p) => p ?? all.find((x) => x.id === "IND_lhb")!);
+    const ctx = { pool: [lhb, rhb], opponentSquad: fullOpp };
     // Spending the only LHB on slot 5 would leave slot 1 impossible to fill
     const stranding = canPickPlayer(lhb, squad, lhbOpener, 4, ctx);
     expect(stranding.allowed).toBe(false);
