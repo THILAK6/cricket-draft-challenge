@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { FALLBACK_SCENARIOS, fetchPlayerPool, DRAFT_POOL_SIZE } from "../src/worker/challenge-generator";
+import { FALLBACK_SCENARIOS, fetchPlayerPool, VERIFIED_POOL_SIZE } from "../src/worker/challenge-generator";
 import { checkDraftFeasibility, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import { ChallengeSchema } from "../src/core/types";
 import type { MatchFormat } from "../src/core/types";
@@ -41,8 +41,8 @@ describe("built-in challenge templates", () => {
       for (const template of templates) {
         it(`"${template.title}" is schema-valid and playable head-to-head`, async () => {
           ChallengeSchema.parse({ id: "t", ...template });
-          const pool = await fetchPlayerPool(d1, format, DRAFT_POOL_SIZE);
-          expect(pool.length).toBe(DRAFT_POOL_SIZE);
+          const pool = await fetchPlayerPool(d1, format, VERIFIED_POOL_SIZE);
+          expect(pool.length).toBe(VERIFIED_POOL_SIZE);
 
           const result = checkDraftFeasibility(pool, { id: "t", ...template }, 50);
           expect(result.reasons).toEqual([]);

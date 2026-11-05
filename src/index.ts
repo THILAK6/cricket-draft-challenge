@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DraftRoom } from "./durable-objects/DraftRoom";
-import { generateValidatedChallenge, getPlayerPool, DRAFT_POOL_SIZE } from "./worker/challenge-generator";
+import { generateValidatedChallenge, buildRandomDraft, saveChallenge } from "./worker/challenge-generator";
 import type { PlayerWithStats } from "./core/types";
 import type { Challenge, MatchFormat } from "./core/types";
 
@@ -109,39 +109,10 @@ app.post("/api/draft/start", async (c) => {
   try {
     const body = await c.req.json<{ challengeId?: string; format?: MatchFormat; difficulty?: string }>();
     const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
-    let challenge: Challenge;
-    let pool: PlayerWithStats[];
-
-    if (body.challengeId) {
-      const row: any = await c.env.DB.prepare(
-        "SELECT id, format, venue_name, venue_country, pitch_type, title, narrative_intro, constraints_json FROM challenges WHERE id = ?"
-      )
-        .bind(body.challengeId)
-        .first();
-
-      if (!row) return c.json({ error: "Challenge not found" }, 404);
-
-      challenge = {
-        id: row.id,
-        format: row.format,
-        venue: {
-          name: row.venue_name,
-          country: row.venue_country,
-          pitch_type: row.pitch_type,
-        },
-        title: row.title,
-        narrative_intro: row.narrative_intro,
-        constraints: JSON.parse(row.constraints_json || "[]"),
-      };
-
-      // Feasibility was verified when the challenge was generated (same pool size)
-      pool = await getPlayerPool(c.env.DB, challenge.format, DRAFT_POOL_SIZE);
-    } else {
-      // Auto-generate a challenge if not supplied; reuse the exact pool it was validated against
-      const generated = await generateValidatedChallenge(c.env, { format: body.format });
-      challenge = generated.challenge;
-      pool = generated.pool;
-    }
+    // The scenario and the 30-player pool are both random per draft; nothing is selectable.
+    const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
+    const { challenge, pool } = await buildRandomDraft(c.env.DB, format);
+    await saveChallenge(c.env.DB, challenge);
 
     // Instantiate unique Durable Object room
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

@@ -1024,10 +1024,6 @@
         <button class="fmt-pill active" data-format="T20">🟣 T20</button>
       </div>
 
-      <button id="btn-generate-ai" class="btn btn-secondary btn-sm" title="Generate New AI Scenario">
-        ✨ New Scenario
-      </button>
-
       <select id="difficulty-select" class="btn btn-secondary btn-sm" title="AI opponent strength" aria-label="AI difficulty">
         <option value="easy">AI: Easy</option>
         <option value="normal" selected>AI: Normal</option>
@@ -1043,10 +1039,7 @@
   <!-- Scenario & Pitch Bar (38px) -->
   <div class="scenario-bar">
     <div class="scenario-left">
-      <label for="challenge-dropdown" style="font-size: 0.72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Match:</label>
-      <select id="challenge-dropdown" class="scenario-select">
-        <option value="">Loading scenarios...</option>
-      </select>
+      <span id="ch-title" style="font-size: 0.8rem; font-weight: 800; color: #e2e8f0;">Random scenario</span>
       <span class="tag-pill tag-pitch" id="ch-pitch">PITCH</span>
       <span class="tag-pill tag-venue" id="ch-venue">VENUE</span>
     </div>
@@ -1377,7 +1370,6 @@
     const API_BASE = window.location.origin;
 
     let currentFormat = 'T20';
-    let formatChallenges = [];
     let currentChallenge = null;
     let currentRoomId = null;
     let draftState = null;
@@ -1558,43 +1550,16 @@
       if (activePanel) activePanel.classList.add('active-mobile-panel');
     }
 
-    // Load challenges from D1
-    async function loadChallengesForFormat(format = 'T20', autoStart = false) {
+    // Each draft rolls a random scenario and a random 30-player pool on the server.
+    function loadChallengesForFormat(format = 'T20', autoStart = false) {
       currentFormat = format;
-      try {
-        const res = await fetch(`${API_BASE}/api/challenges?format=${format}`);
-        const data = await res.json();
-        formatChallenges = data.challenges || [];
-        updateChallengeDropdown();
-        if (formatChallenges.length > 0) {
-          setChallenge(formatChallenges[0]);
-          if (autoStart) {
-            startDraft();
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load challenges:", err);
-      }
-    }
-
-    function updateChallengeDropdown() {
-      const select = document.getElementById('challenge-dropdown');
-      if (!select) return;
-      select.innerHTML = '';
-      if (formatChallenges.length === 0) {
-        select.innerHTML = `<option value="">No ${currentFormat} scenarios</option>`;
-        return;
-      }
-      formatChallenges.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.innerText = `${c.title} (${c.venue.name})`;
-        select.appendChild(opt);
-      });
+      if (autoStart) return startDraft();
     }
 
     function setChallenge(ch) {
       currentChallenge = ch;
+      const titleEl = document.getElementById('ch-title');
+      if (titleEl) titleEl.innerText = ch.title;
       document.getElementById('ch-pitch').innerText = ch.venue.pitch_type.replace(/_/g, ' ');
       document.getElementById('ch-venue').innerText = `${ch.venue.name}, ${ch.venue.country}`;
 
@@ -1626,37 +1591,8 @@
       });
     }
 
-    // Generate fresh scenario
-    async function generateNewChallenge() {
-      const btn = document.getElementById('btn-generate-ai');
-      btn.disabled = true;
-      btn.innerText = "Generating...";
-      try {
-        const res = await fetch(`${API_BASE}/api/challenges/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ format: currentFormat })
-        });
-        const data = await res.json();
-        if (data.success && data.challenge) {
-          formatChallenges.unshift(data.challenge);
-          updateChallengeDropdown();
-          setChallenge(data.challenge);
-          showToast(`Generated: ${data.challenge.title}`, "success");
-          startDraft();
-        }
-      } catch (e) {
-        console.error("Generate error", e);
-        showToast("Failed to generate challenge", "error");
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "✨ New Scenario";
-      }
-    }
-
     // Start Draft Session
     async function startDraft() {
-      if (!currentChallenge) return;
       const btn = document.getElementById('btn-start-draft');
       btn.disabled = true;
       btn.innerText = "Starting Room...";
@@ -1664,10 +1600,11 @@
         const res = await fetch(`${API_BASE}/api/draft/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ challengeId: currentChallenge.id, format: currentFormat, difficulty: document.getElementById('difficulty-select').value })
+          body: JSON.stringify({ format: currentFormat, difficulty: document.getElementById('difficulty-select').value })
         });
         const data = await res.json();
         if (data.success) {
+          if (data.challenge) setChallenge(data.challenge);
           currentRoomId = data.roomId;
           selectedPoolPlayer = null;
           showToast(`Draft started! Format: ${currentFormat}`, "success");
@@ -2947,7 +2884,6 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
     });
 
     // Event Listeners
-    document.getElementById('btn-generate-ai').addEventListener('click', generateNewChallenge);
     document.getElementById('btn-start-draft').addEventListener('click', startDraft);
 
     // Format Selector Pills
@@ -2959,15 +2895,6 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         showToast(`Switched format to ${fmt}`, "info");
         loadChallengesForFormat(fmt, true);
       });
-    });
-
-    // Scenario Dropdown
-    document.getElementById('challenge-dropdown').addEventListener('change', (e) => {
-      const ch = formatChallenges.find(c => c.id === e.target.value);
-      if (ch) {
-        setChallenge(ch);
-        startDraft();
-      }
     });
 
     // Pool Search Filter

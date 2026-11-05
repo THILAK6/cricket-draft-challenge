@@ -4,10 +4,16 @@ import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 
 /**
- * Size of the player pool a draft room is seeded with. Challenge feasibility is checked
- * against exactly this pool, so a validated challenge is always playable in the room.
+ * Players in each draft room. Every draft gets a fresh random 30 drawn from the most-capped
+ * players of the format (POOL_SOURCE_SIZE). 30 leaves 8 spare after both XIs are filled, which
+ * keeps role and country rules satisfiable; 25 left too little slack (only 70-83% of random
+ * pools could host any scenario, against 98-100% at 30).
  */
-export const DRAFT_POOL_SIZE = 50;
+export const DRAFT_POOL_SIZE = 30;
+/** Players the random pool is drawn from. */
+export const POOL_SOURCE_SIZE = 150;
+/** The fixed top-N pool the built-in templates are verified against (tests/templates.test.ts). */
+export const VERIFIED_POOL_SIZE = 50;
 
 /**
  * Free-plan budget: Workers AI gives ~10k neurons/day, so ask the model once per request and
@@ -22,7 +28,7 @@ const poolCache = new Map<string, { at: number; pool: PlayerWithStats[] }>();
 export async function getPlayerPool(
   db: D1Database,
   format: MatchFormat,
-  limit = DRAFT_POOL_SIZE
+  limit = VERIFIED_POOL_SIZE
 ): Promise<PlayerWithStats[]> {
   const key = `${format}:${limit}`;
   const hit = poolCache.get(key);
@@ -179,6 +185,97 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
       { type: "min_category", category: "SPIN", count: 1 },
     ],
   },
+  // --- More scenarios (verified against random pools by tests/random-draft.test.ts) ---
+  {
+    title: "Newlands Evening Seam",
+    format: "T20",
+    venue: { name: "Newlands, Cape Town", country: "RSA", pitch_type: "GREEN_SEAMER" },
+    narrative_intro: "Table Mountain shadows and a cool sea breeze. The new ball nips around under lights; pace with bounce gets rewarded.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
+      { type: "min_category", category: "PACE", count: 2 },
+    ],
+  },
+  {
+    title: "Dubai Under The Lights",
+    format: "T20",
+    venue: { name: "Dubai International Stadium", country: "UAE", pitch_type: "SLOW_LOW" },
+    narrative_intro: "A tacky, tired surface that grips under lights. Pace-off cutters and clever spin choke the powerplay; chasing is never easy.",
+    constraints: [
+      { type: "max_per_country", value: 2 },
+      { type: "min_category", category: "SPIN", count: 1 },
+    ],
+  },
+  {
+    title: "MCG Boxing Day Blast",
+    format: "T20",
+    venue: { name: "Melbourne Cricket Ground", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
+    narrative_intro: "A huge outfield, a packed house and a flat deck. Clean hitters thrive, and bowlers must back their yorkers.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
+      { type: "min_category", category: "AR", count: 1 },
+    ],
+  },
+  {
+    title: "Lord's Final Showdown",
+    format: "ODI",
+    venue: { name: "Lord's Cricket Ground, London", country: "ENG", pitch_type: "GREEN_SEAMER" },
+    narrative_intro: "A cloudy morning in St John's Wood. The ball swings and seams early, then the slope and the Lord's crowd take over.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { ENG: 3 } },
+      { type: "min_category", category: "PACE", count: 2 },
+    ],
+  },
+  {
+    title: "Colombo Spin Web",
+    format: "ODI",
+    venue: { name: "R. Premadasa Stadium, Colombo", country: "SL", pitch_type: "DUSTBOWL" },
+    narrative_intro: "Humid air, a dry square and spinners from the first over. Rotating strike against turn decides who wins the middle overs.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { SL: 3 } },
+      { type: "min_category", category: "SPIN", count: 2 },
+    ],
+  },
+  {
+    title: "Melbourne 90,000 Roar",
+    format: "ODI",
+    venue: { name: "Melbourne Cricket Ground", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
+    narrative_intro: "The biggest ground in the game on a true surface. Boundaries are long but pace on the ball runs away; all-rounders carry the balance.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
+      { type: "min_category", category: "AR", count: 1 },
+    ],
+  },
+  {
+    title: "Galle Day 3 Turner",
+    format: "TEST",
+    venue: { name: "Galle International Stadium", country: "SL", pitch_type: "DUSTBOWL" },
+    narrative_intro: "The Indian Ocean on one side and a crumbling pitch on the other. By day three every spinner is a threat and every defensive prod is risky.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { SL: 3 } },
+      { type: "min_category", category: "SPIN", count: 1 },
+    ],
+  },
+  {
+    title: "Newlands Cape Town Seam",
+    format: "TEST",
+    venue: { name: "Newlands, Cape Town", country: "RSA", pitch_type: "GREEN_SEAMER" },
+    narrative_intro: "Grass, cloud and pace. The ball does plenty off the seam on day one, and patient batters are rewarded after lunch.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
+      { type: "min_category", category: "PACE", count: 2 },
+    ],
+  },
+  {
+    title: "Sabina Park Slow Burn",
+    format: "TEST",
+    venue: { name: "Sabina Park, Kingston", country: "WI", pitch_type: "SLOW_LOW" },
+    narrative_intro: "A slow, low surface that keeps low and tests patience. Reverse swing and relentless line and length decide who breaks through.",
+    constraints: [
+      { type: "max_per_country", value: 2, exceptions: { WI: 3 } },
+      { type: "min_category", category: "PACE", count: 2 },
+    ],
+  },
 ];
 
 /**
@@ -240,12 +337,90 @@ export async function fetchPlayerPool(
  * Calls Workers AI to propose a challenge, then validates feasibility deterministically.
  * If validation fails, it retries with the error explanation.
  */
+
+const shuffled = <T,>(xs: T[], rand: () => number): T[] => {
+  const a = [...xs];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+/**
+ * Draws a random pool: role quotas first (so a keeper, pace, spin and all-rounders are always
+ * available), then random fill with at most a fifth of the pool from one country.
+ */
+export function samplePool(source: PlayerWithStats[], size: number, rand: () => number = Math.random): PlayerWithStats[] {
+  const order = shuffled(source, rand);
+  const picked: PlayerWithStats[] = [];
+  const ids = new Set<string>();
+  const add = (p: PlayerWithStats) => {
+    picked.push(p);
+    ids.add(p.id);
+  };
+  const take = (match: (p: PlayerWithStats) => boolean, count: number) => {
+    for (const p of order) {
+      if (count <= 0) break;
+      if (!ids.has(p.id) && match(p)) {
+        add(p);
+        count--;
+      }
+    }
+  };
+  take((p) => p.primary_role === "WK", 4);
+  take((p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", 6);
+  take((p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", 4);
+  take((p) => p.primary_role === "AR", 4);
+  const perCountry = new Map<string, number>();
+  for (const p of picked) perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
+  const cap = Math.ceil(size / 5);
+  for (const p of order) {
+    if (picked.length >= size) break;
+    if (ids.has(p.id) || (perCountry.get(p.country) ?? 0) >= cap) continue;
+    add(p);
+    perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
+  }
+  return picked.sort((a, b) => b.stats.matches - a.stats.matches);
+}
+
+/**
+ * A fresh draft: a random pool and a random scenario that the pool can actually host. The check
+ * is the cheap constructive one (about 0.03 ms), so it fits the free-plan CPU budget. No AI call.
+ */
+export async function buildRandomDraft(
+  db: D1Database,
+  format: MatchFormat,
+  rand: () => number = Math.random
+): Promise<{ challenge: Challenge; pool: PlayerWithStats[] }> {
+  const source = await getPlayerPool(db, format, POOL_SOURCE_SIZE);
+  const templates = FALLBACK_SCENARIOS.filter((s) => s.format === format);
+  if (source.length < DRAFT_POOL_SIZE || templates.length === 0) {
+    throw new Error(`Not enough ${format} players in the database (found ${source.length}). Run database seeding.`);
+  }
+  const make = (t: Omit<Challenge, "id">): Challenge => ({
+    id: `ch_${Date.now()}_${Math.floor(rand() * 1e9).toString(36)}`,
+    ...t,
+    format,
+  });
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const pool = samplePool(source, DRAFT_POOL_SIZE, rand);
+    for (const t of shuffled(templates, rand)) {
+      const challenge = make(t);
+      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool };
+    }
+  }
+  // Extremely unlikely: fall back to the fixed pool every template is verified against.
+  const pool = await getPlayerPool(db, format, VERIFIED_POOL_SIZE);
+  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool };
+}
+
 export async function generateValidatedChallenge(
   env: Env,
   options: { format?: MatchFormat; requestedVenue?: string } = {}
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[]; attempts: number }> {
   const format: MatchFormat = options.format || "T20";
-  const pool = await getPlayerPool(env.DB, format, DRAFT_POOL_SIZE);
+  const pool = await getPlayerPool(env.DB, format, VERIFIED_POOL_SIZE);
 
   if (pool.length < 22) {
     throw new Error(`Insufficient players in D1 database for format ${format} (found ${pool.length}). Run database seeding.`);
