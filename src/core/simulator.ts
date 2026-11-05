@@ -55,6 +55,14 @@ export interface TossInfo {
   narrative: string;
 }
 
+export interface TestDayChronicle {
+  day: number;
+  title: string;
+  stumpsScore: string;
+  highlight: string;
+  pitchBehavior: string;
+}
+
 export interface MatchSimulationResult {
   format: MatchFormat;
   winner: "USER" | "AI" | "TIE" | "DRAW";
@@ -68,6 +76,8 @@ export interface MatchSimulationResult {
     team: "USER" | "AI";
     runs: number;
   };
+  testTarget?: number;
+  dayChronicle?: TestDayChronicle[];
   keyMoments: KeyMoment[];
   decisiveDifference: string;
   whyWinnerWon: string[];
@@ -174,11 +184,13 @@ export function simulateCricketMatch(
     let aiInn2: InningsScorecard;
     let winner: "USER" | "AI" | "DRAW" = "DRAW";
     let summary = "";
+    let testTarget = 0;
 
     if (userBatsFirst) {
       const userLead = userInn1.totalRuns - aiInn1.totalRuns;
       userInn2 = simulateInnings(userSquad, aiSquad, challenge, 60, "Your XI", undefined, rng, 2, true);
       const targetForAi = userLead + userInn2.totalRuns + 1;
+      testTarget = targetForAi;
 
       if (targetForAi <= 0) {
         winner = "AI";
@@ -204,6 +216,7 @@ export function simulateCricketMatch(
       const aiLead = aiInn1.totalRuns - userInn1.totalRuns;
       aiInn2 = simulateInnings(aiSquad, userSquad, challenge, 60, "AI XI", undefined, rng, 2, true);
       const targetForUser = aiLead + aiInn2.totalRuns + 1;
+      testTarget = targetForUser;
 
       if (targetForUser <= 0) {
         winner = "USER";
@@ -226,6 +239,27 @@ export function simulateCricketMatch(
         }
       }
     }
+
+    const firstBatTeam = userBatsFirst ? "Your XI" : "AI XI";
+    const secondBatTeam = userBatsFirst ? "AI XI" : "Your XI";
+    const firstInn1 = userBatsFirst ? userInn1 : aiInn1;
+    const secondInn1 = userBatsFirst ? aiInn1 : userInn1;
+    const firstInn2 = userBatsFirst ? userInn2 : aiInn2;
+    const secondInn2 = userBatsFirst ? aiInn2 : userInn2;
+
+    const dayChronicle = buildTestDayChronicle(
+      firstBatTeam,
+      secondBatTeam,
+      firstInn1,
+      secondInn1,
+      firstInn2,
+      secondInn2,
+      leadFirstInnings,
+      testTarget,
+      winner,
+      summary,
+      pitchType
+    );
 
     keyMoments.push({
       over: "Day 1 - 2",
@@ -261,6 +295,8 @@ export function simulateCricketMatch(
       userSecondInnings: userInn2,
       aiSecondInnings: aiInn2,
       leadFirstInnings,
+      testTarget,
+      dayChronicle,
       keyMoments,
       decisiveDifference: analysis.decisiveDifference,
       whyWinnerWon: analysis.whyWinnerWon,
@@ -889,6 +925,113 @@ function determinePlayerOfTheMatch(
   }
 
   return { name: "Match Aggregate", team: "USER", performance: "All-round team display" };
+}
+
+/**
+ * Builds an authentic, data-driven 5-day chronicle of a Test Match.
+ */
+function buildTestDayChronicle(
+  firstBatTeam: "Your XI" | "AI XI",
+  secondBatTeam: "Your XI" | "AI XI",
+  firstInn1: InningsScorecard,
+  secondInn1: InningsScorecard,
+  firstInn2: InningsScorecard,
+  secondInn2: InningsScorecard,
+  lead: { team: "USER" | "AI"; runs: number },
+  target: number,
+  winner: "USER" | "AI" | "DRAW",
+  summary: string,
+  pitchType: PitchType
+): TestDayChronicle[] {
+  const chronicle: TestDayChronicle[] = [];
+
+  const topBat1 = [...firstInn1.batters].sort((a, b) => b.runs - a.runs)[0];
+  const topBowl1 = [...firstInn1.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs))[0];
+
+  const topBat2 = [...secondInn1.batters].sort((a, b) => b.runs - a.runs)[0];
+  const topBowl2 = [...secondInn1.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs))[0];
+
+  const topBat3 = [...firstInn2.batters].sort((a, b) => b.runs - a.runs)[0];
+  const topBat4 = [...secondInn2.batters].sort((a, b) => b.runs - a.runs)[0];
+  const topBowl4 = [...secondInn2.bowlers].sort((a, b) => b.wickets * 25 - b.runs - (a.wickets * 25 - a.runs))[0];
+
+  const day1Pitch = pitchType === "GREEN_SEAMER"
+    ? "Generous morning grass and overcast moisture: seamers extracted steep bounce and sharp deviation off the seam."
+    : pitchType === "DUSTBOWL"
+    ? "Dry surface with hints of variable grip for finger spinners from Session 2 onwards."
+    : pitchType === "SLOW_LOW"
+    ? "Sluggish paced wicket with low bounce testing front-foot defense against skiddy deliveries."
+    : "Hard, true surface rewarding confident stroke makers through the line.";
+
+  const day3Pitch = pitchType === "DUSTBOWL"
+    ? "Footmarks outside off-stump widening noticeably; sharp turn and variable bounce."
+    : "Track drying out with reverse swing appearing for the pacers and natural surface wear.";
+
+  const day5Pitch = pitchType === "DUSTBOWL"
+    ? "A minefield on Day 5! Dust puffing off length deliveries, extreme spin, and crumbling craters."
+    : pitchType === "GREEN_SEAMER"
+    ? "Cracks widened on Day 5: variable up-and-down bounce keeping bat and pad under constant danger."
+    : "Day 5 attrition: natural pitch deterioration, reverse swing, and low bounce testing the chasers.";
+
+  // DAY 1
+  const d1Runs = Math.min(firstInn1.totalRuns, Math.round(firstInn1.totalRuns * 0.92));
+  const d1Wkts = Math.min(firstInn1.totalWickets, 4);
+  chronicle.push({
+    day: 1,
+    title: "Day 1: The Opening Standoff",
+    stumpsScore: `${firstBatTeam} ${d1Runs}/${d1Wkts} (Stumps, Day 1)`,
+    highlight: `${firstBatTeam} weathered testing opening sessions on a fresh wicket. ${topBat1 ? `${topBat1.name} led the resistance with a gritty ${topBat1.runs} runs (${topBat1.balls}b, ${topBat1.fours}x4).` : "The top order dug in resolutely."} ${topBowl1 && topBowl1.wickets > 0 ? `${topBowl1.name} struck for ${secondBatTeam} taking ${topBowl1.wickets} wickets.` : "Bowlers probed disciplined corridors outside off-stump."}`,
+    pitchBehavior: day1Pitch,
+  });
+
+  // DAY 2
+  chronicle.push({
+    day: 2,
+    title: "Day 2: 1st Innings War of Attrition",
+    stumpsScore: `${secondBatTeam} ${Math.round(secondInn1.totalRuns * 0.72)}/${Math.min(secondInn1.totalWickets, 4)} (Stumps, Day 2)`,
+    highlight: `${firstBatTeam} concluded their 1st innings on ${firstInn1.totalRuns} (${firstInn1.oversString} ov), with ${topBowl1 ? `${topBowl1.name} returning ${topBowl1.wickets}/${topBowl1.runs}` : "disciplined bowling"}. In reply, ${secondBatTeam} counter-punched behind ${topBat2 ? `${topBat2.name}'s ${topBat2.runs} runs` : "solid batting"}.`,
+    pitchBehavior: "Sun baked the surface through afternoon sessions; lateral movement eased as the pitch settled into its truest phase.",
+  });
+
+  // DAY 3
+  const leadTeamName = lead.team === "USER" ? "Your XI" : "AI XI";
+  chronicle.push({
+    day: 3,
+    title: "Day 3: The First Innings Lead & Turning Point",
+    stumpsScore: `${firstBatTeam} (2nd Inn) ${firstInn2.totalRuns > 0 ? `${Math.round(firstInn2.totalRuns * 0.52)}/${Math.min(firstInn2.totalWickets, 3)}` : "Innings completed"} (Stumps, Day 3)`,
+    highlight: `${secondBatTeam} finished their 1st innings on ${secondInn1.totalRuns}/${secondInn1.totalWickets}. ${leadTeamName} established a pivotal ${lead.runs}-run 1st innings lead. The match shifted into its second chapter as 2nd innings batting began under changing conditions.`,
+    pitchBehavior: day3Pitch,
+  });
+
+  // DAY 4
+  if (target <= 0) {
+    chronicle.push({
+      day: 4,
+      title: "Day 4: Innings Victory Resolution",
+      stumpsScore: "Match Finished (Innings Defeat)",
+      highlight: summary,
+      pitchBehavior: "Surface broke up completely under unrelenting bowling pressure.",
+    });
+  } else {
+    chronicle.push({
+      day: 4,
+      title: "Day 4: Setting the Target & Pitch Cracks",
+      stumpsScore: `${secondBatTeam} (Target: ${target}) ${Math.round(secondInn2.totalRuns * 0.32)}/${Math.min(secondInn2.totalWickets, 2)} (Stumps, Day 4)`,
+      highlight: `${firstBatTeam} completed their 2nd innings on ${firstInn2.totalRuns}/${firstInn2.totalWickets}${topBat3 ? ` (${topBat3.name} ${topBat3.runs}r)` : ""}, setting ${secondBatTeam} a 4th-innings target of ${target} runs to win. ${secondBatTeam} negotiated late evening overs under immense scoreboard pressure.`,
+      pitchBehavior: "Pronounced cracks opened up across length. Spinners found puffing dust and reverse swing troubled the top order.",
+    });
+
+    // DAY 5
+    chronicle.push({
+      day: 5,
+      title: "Day 5: The Final Day Climax",
+      stumpsScore: `${secondBatTeam} 2nd Inn: ${secondInn2.totalRuns}/${secondInn2.totalWickets} (${secondInn2.oversString} ov)`,
+      highlight: `${summary} ${topBat4 && topBat4.runs >= 40 ? `${topBat4.name} fought bravely with ${topBat4.runs} (${topBat4.balls}b).` : ""} ${topBowl4 && topBowl4.wickets >= 3 ? `${topBowl4.name}'s spell of ${topBowl4.wickets}/${topBowl4.runs} proved decisive on Day 5.` : ""}`,
+      pitchBehavior: day5Pitch,
+    });
+  }
+
+  return chronicle;
 }
 
 /**

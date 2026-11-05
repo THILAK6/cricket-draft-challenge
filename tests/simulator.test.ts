@@ -110,6 +110,10 @@ describe("Realistic Cricket Match Simulator", () => {
     expect(result.aiSecondInnings).toBeDefined();
     expect(result.leadFirstInnings).toBeDefined();
     expect(result.keyMoments.length).toBeGreaterThan(0);
+    expect(result.dayChronicle).toBeDefined();
+    expect(result.dayChronicle!.length).toBeGreaterThanOrEqual(4);
+    expect(result.dayChronicle![0].day).toBe(1);
+    expect(result.dayChronicle![0].pitchBehavior).toBeDefined();
   });
 
   it("simulates an ODI match with accurate overs notation, dynamic player quotes, and no canned phrases", () => {

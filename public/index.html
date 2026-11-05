@@ -868,6 +868,65 @@
       transition: width 1.8s linear;
     }
 
+    /* Test Match 5-Day Chronicle Styles */
+    .test-chronicle-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding: 0.2rem 0;
+    }
+    .test-day-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      transition: border-color 0.15s ease;
+    }
+    .test-day-card:hover {
+      border-color: rgba(212, 175, 55, 0.4);
+    }
+    .test-day-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.35rem;
+    }
+    .test-day-badge {
+      font-size: 0.65rem;
+      font-weight: 800;
+      background: var(--gold);
+      color: #0b0f14;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+    }
+    .test-day-stumps {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #38bdf8;
+      font-variant-numeric: tabular-nums;
+    }
+    .test-day-title {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 0.3rem;
+    }
+    .test-day-highlight {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      line-height: 1.45;
+      margin: 0 0 0.4rem 0;
+    }
+    .test-day-pitch {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 4px;
+      padding: 0.3rem 0.5rem;
+      line-height: 1.35;
+    }
+
     /* Responsive Rules */
     @media (max-width: 1024px) {
       .cockpit-view {
@@ -2207,19 +2266,42 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       }
 
       // Summary Scores
-      document.getElementById('sc-user-score').innerText = `${sim.userInnings.totalRuns}/${sim.userInnings.totalWickets}`;
-      document.getElementById('sc-user-overs').innerText = `(${sim.userInnings.oversString || sim.userInnings.oversCompleted} ov)`;
+      if (sim.format === 'TEST') {
+        const uInn1 = sim.userInnings;
+        const uInn2 = sim.userSecondInnings;
+        const aiInn1 = sim.aiInnings;
+        const aiInn2 = sim.aiSecondInnings;
 
-      document.getElementById('sc-ai-score').innerText = `${sim.aiInnings.totalRuns}/${sim.aiInnings.totalWickets}`;
-      document.getElementById('sc-ai-overs').innerText = `(${sim.aiInnings.oversString || sim.aiInnings.oversCompleted} ov)`;
+        const u2Score = uInn2 && uInn2.totalRuns > 0 ? (uInn2.totalWickets < 10 ? `${uInn2.totalRuns}/${uInn2.totalWickets}` : `${uInn2.totalRuns}`) : (uInn2 && uInn2.totalRuns === 0 ? '0' : '-');
+        const ai2Score = aiInn2 && aiInn2.totalRuns > 0 ? (aiInn2.totalWickets < 10 ? `${aiInn2.totalRuns}/${aiInn2.totalWickets}` : `${aiInn2.totalRuns}`) : (aiInn2 && aiInn2.totalRuns === 0 ? '0' : '-');
+
+        document.getElementById('sc-user-score').innerText = `${uInn1.totalRuns} & ${u2Score}`;
+        document.getElementById('sc-user-overs').innerText = `1st: ${uInn1.totalRuns}/${uInn1.totalWickets} (${uInn1.oversString} ov) • 2nd: ${u2Score} (${uInn2 ? uInn2.oversString : '0'} ov)`;
+
+        document.getElementById('sc-ai-score').innerText = `${aiInn1.totalRuns} & ${ai2Score}`;
+        document.getElementById('sc-ai-overs').innerText = `1st: ${aiInn1.totalRuns}/${aiInn1.totalWickets} (${aiInn1.oversString} ov) • 2nd: ${ai2Score} (${aiInn2 ? aiInn2.oversString : '0'} ov)`;
+      } else {
+        document.getElementById('sc-user-score').innerText = `${sim.userInnings.totalRuns}/${sim.userInnings.totalWickets}`;
+        document.getElementById('sc-user-overs').innerText = `(${sim.userInnings.oversString || sim.userInnings.oversCompleted} ov)`;
+
+        document.getElementById('sc-ai-score').innerText = `${sim.aiInnings.totalRuns}/${sim.aiInnings.totalWickets}`;
+        document.getElementById('sc-ai-overs').innerText = `(${sim.aiInnings.oversString || sim.aiInnings.oversCompleted} ov)`;
+      }
 
       document.getElementById('sc-match-summary').innerText = sim.summary;
 
-      // Test Match Lead Banner
+      // Test Match Lead & Target Banner
       const leadBanner = document.getElementById('lead-banner');
-      if (sim.leadFirstInnings && sim.format === 'TEST') {
+      if (sim.format === 'TEST') {
         leadBanner.style.display = 'block';
-        leadBanner.innerText = `1st Innings Lead: ${sim.leadFirstInnings.team === 'USER' ? 'Your XI' : 'AI XI'} led by ${sim.leadFirstInnings.runs} runs`;
+        let bannerText = '';
+        if (sim.leadFirstInnings) {
+          bannerText = `1st Inn Lead: ${sim.leadFirstInnings.team === 'USER' ? 'Your XI' : 'AI XI'} by ${sim.leadFirstInnings.runs} runs`;
+        }
+        if (sim.testTarget && sim.testTarget > 0) {
+          bannerText += ` • 4th Inn Target: ${sim.testTarget} runs on Day 5`;
+        }
+        leadBanner.innerText = bannerText;
       } else {
         leadBanner.style.display = 'none';
       }
@@ -2268,19 +2350,20 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
 
       document.getElementById('referee-conditions-text').innerText = sim.groundConditionsAnalysis || results.groundConditionsAnalysis || '';
 
-      // Innings Tabs setup (Support 4 innings in Test)
+      // Innings Tabs setup (Support 4 innings + 5-day chronicle in Test)
       const tabsContainer = document.getElementById('innings-tabs');
-      if (sim.format === 'TEST' && sim.userSecondInnings && sim.aiSecondInnings) {
+      if (sim.format === 'TEST') {
         tabsContainer.innerHTML = `
-          <button class="btn btn-sm ${currentScorecardInnings === 'user_1' ? '' : 'btn-secondary'}" onclick="showScorecardInnings('user_1')">Your XI (1st Inn)</button>
-          <button class="btn btn-sm ${currentScorecardInnings === 'ai_1' ? '' : 'btn-secondary'}" onclick="showScorecardInnings('ai_1')">AI XI (1st Inn)</button>
-          <button class="btn btn-sm ${currentScorecardInnings === 'user_2' ? '' : 'btn-secondary'}" onclick="showScorecardInnings('user_2')">Your XI (2nd Inn)</button>
-          <button class="btn btn-sm ${currentScorecardInnings === 'ai_2' ? '' : 'btn-secondary'}" onclick="showScorecardInnings('ai_2')">AI XI (2nd Inn)</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'user_1' ? '' : 'btn-secondary'}" id="tab-btn-user_1" onclick="showScorecardInnings('user_1')">Your XI (1st Inn)</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'ai_1' ? '' : 'btn-secondary'}" id="tab-btn-ai_1" onclick="showScorecardInnings('ai_1')">AI XI (1st Inn)</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'user_2' ? '' : 'btn-secondary'}" id="tab-btn-user_2" onclick="showScorecardInnings('user_2')">Your XI (2nd Inn)</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'ai_2' ? '' : 'btn-secondary'}" id="tab-btn-ai_2" onclick="showScorecardInnings('ai_2')">AI XI (2nd Inn)</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'chronicle' ? '' : 'btn-secondary'}" id="tab-btn-chronicle" style="border: 1px solid var(--gold); color: var(--gold);" onclick="showScorecardInnings('chronicle')">📅 5-Day Chronicle</button>
         `;
       } else {
         tabsContainer.innerHTML = `
-          <button class="btn btn-sm ${currentScorecardInnings === 'user_1' ? '' : 'btn-secondary'}" id="btn-tab-user-inng" onclick="showScorecardInnings('user_1')">Your XI Batting</button>
-          <button class="btn btn-sm ${currentScorecardInnings === 'ai_1' ? '' : 'btn-secondary'}" id="btn-tab-ai-inng" onclick="showScorecardInnings('ai_1')">AI XI Batting</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'user_1' ? '' : 'btn-secondary'}" id="tab-btn-user_1" onclick="showScorecardInnings('user_1')">Your XI Batting</button>
+          <button class="btn btn-sm ${currentScorecardInnings === 'ai_1' ? '' : 'btn-secondary'}" id="tab-btn-ai_1" onclick="showScorecardInnings('ai_1')">AI XI Batting</button>
         `;
       }
 
@@ -2291,6 +2374,39 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       currentScorecardInnings = tabId;
       const sim = draftState?.simulation || draftState?.results?.simulation;
       if (!sim) return;
+
+      // Update button active states
+      document.querySelectorAll('#innings-tabs button').forEach(b => b.classList.add('btn-secondary'));
+      const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+      if (activeBtn) activeBtn.classList.remove('btn-secondary');
+
+      const container = document.getElementById('innings-table-container');
+
+      // 5-Day Chronicle View
+      if (tabId === 'chronicle') {
+        const chronicle = sim.dayChronicle || [];
+        container.innerHTML = `
+          <div class="test-chronicle-wrap">
+            <div style="font-weight: 800; font-size: 0.85rem; color: var(--gold); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span>📅 Test Match 5-Day Chronicle & Pitch Telemetry</span>
+            </div>
+            ${chronicle.map(d => `
+              <div class="test-day-card">
+                <div class="test-day-header">
+                  <span class="test-day-badge">DAY ${d.day}</span>
+                  <span class="test-day-stumps">${d.stumpsScore}</span>
+                </div>
+                <div class="test-day-title">${d.title}</div>
+                <p class="test-day-highlight">${d.highlight}</p>
+                <div class="test-day-pitch">
+                  <strong style="color: #cbd5e1;">Pitch Telemetry:</strong> ${d.pitchBehavior}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        return;
+      }
 
       let battingInnings;
       let bowlingTeamName = '';
@@ -2312,6 +2428,15 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         battingInnings = sim.aiSecondInnings || sim.aiInnings;
         bowlingTeamName = 'Your XI';
         bowlingCard = (sim.aiSecondInnings || sim.aiInnings).bowlers || [];
+      }
+
+      if (!battingInnings || (battingInnings.totalRuns === 0 && battingInnings.totalBalls === 0 && (tabId === 'user_2' || tabId === 'ai_2'))) {
+        container.innerHTML = `
+          <div style="padding: 2rem 1rem; text-align: center; color: #94a3b8; font-weight: 600; background: rgba(15,23,42,0.4); border-radius: 8px;">
+            ${battingInnings ? battingInnings.teamName : 'Team'} did not bat in the 2nd innings (${sim.summary}).
+          </div>
+        `;
+        return;
       }
 
       const container = document.getElementById('innings-table-container');
