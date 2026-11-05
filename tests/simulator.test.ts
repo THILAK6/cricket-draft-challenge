@@ -179,5 +179,59 @@ describe("Realistic Cricket Match Simulator", () => {
     expect(bowlerIdsWhoBowled).not.toContain("u4");
     expect(bowlerIdsWhoBowled).not.toContain("u5");
   });
-});
 
+  it("never lets a bowler exceed the per-format over limit, even with only three frontline bowlers", () => {
+    // 3 frontline bowlers only: part-timers and other non-keepers must fill the remaining overs.
+    const thin = (prefix: string): (PlayerWithStats | null)[] => [
+      createMockPlayer(`${prefix}1`, "IND", "BAT", "RHB", "PACE", 8, 140, 40),
+      createMockPlayer(`${prefix}2`, "AUS", "BAT", "LHB", "SPIN", 8, 140, 36),
+      createMockPlayer(`${prefix}3`, "ENG", "BAT", "RHB", "NONE", 8, 138, 40),
+      createMockPlayer(`${prefix}4`, "RSA", "BAT", "RHB", "NONE", 8, 135, 34),
+      createMockPlayer(`${prefix}5`, "NZL", "WK", "RHB", "NONE", 8, 142, 38),
+      createMockPlayer(`${prefix}6`, "IND", "AR", "RHB", "PACE", 7.5, 150, 31),
+      createMockPlayer(`${prefix}7`, "PAK", "BAT", "RHB", "NONE", 8, 130, 28),
+      createMockPlayer(`${prefix}8`, "SL", "BAT", "RHB", "NONE", 8, 130, 25),
+      createMockPlayer(`${prefix}9`, "PAK", "BOWL", "RHB", "PACE", 7.2, 110, 15),
+      createMockPlayer(`${prefix}10`, "IND", "BOWL", "RHB", "PACE", 6.8, 90, 8),
+      createMockPlayer(`${prefix}11`, "AFG", "BOWL", "RHB", "SPIN", 6.7, 80, 6),
+    ];
+    for (const [format, quota] of [["T20", 4], ["ODI", 10]] as const) {
+      const ch: Challenge = { ...t20Challenge, format };
+      for (let seed = 1; seed <= 25; seed++) {
+        const r = simulateCricketMatch(thin("x"), thin("y"), ch, seed);
+        for (const inn of [r.userInnings, r.aiInnings]) {
+          for (const b of inn.bowlers) {
+            const [o, balls] = b.overs.split(".").map(Number);
+            expect(o + balls / 6).toBeLessThanOrEqual(quota);
+          }
+        }
+      }
+    }
+  });
+
+  it("settles level T20 scores with a super over and always names a winner or a tie", () => {
+    let superOvers = 0;
+    for (let seed = 1; seed <= 4000 && superOvers < 3; seed++) {
+      const r = simulateCricketMatch(userSquad, aiSquad, t20Challenge, seed);
+      if (r.superOver) {
+        superOvers++;
+        expect(r.userInnings.totalRuns).toBe(r.aiInnings.totalRuns);
+        expect(["USER", "AI", "TIE"]).toContain(r.winner);
+        expect(r.superOver.rounds.length).toBeGreaterThan(0);
+        expect(r.superOver.rounds.length).toBeLessThanOrEqual(3);
+        expect(r.summary).toContain("Super Over");
+        if (r.superOver.decidedBy === "RUNS") expect(r.winner).toBe(r.superOver.winner);
+      } else {
+        expect(r.winner).not.toBe("TIE");
+      }
+    }
+    expect(superOvers).toBeGreaterThan(0);
+  });
+
+  it("does not use a super over for ODIs", () => {
+    const ch: Challenge = { ...t20Challenge, format: "ODI" };
+    for (let seed = 1; seed <= 300; seed++) {
+      expect(simulateCricketMatch(userSquad, aiSquad, ch, seed).superOver).toBeUndefined();
+    }
+  });
+});

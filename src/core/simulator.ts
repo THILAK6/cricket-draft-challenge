@@ -63,6 +63,21 @@ export interface TestDayChronicle {
   pitchBehavior: string;
 }
 
+export interface SuperOverRound {
+  battingFirst: "USER" | "AI";
+  firstRuns: number;
+  firstWickets: number;
+  secondRuns: number;
+  secondWickets: number;
+}
+
+export interface SuperOverResult {
+  rounds: SuperOverRound[];
+  decidedBy: "RUNS" | "BOUNDARIES" | "NONE";
+  winner: "USER" | "AI" | "TIE";
+  summary: string;
+}
+
 export interface MatchSimulationResult {
   format: MatchFormat;
   winner: "USER" | "AI" | "TIE" | "DRAW";
@@ -72,6 +87,8 @@ export interface MatchSimulationResult {
   aiInnings: InningsScorecard;
   userSecondInnings?: InningsScorecard;
   aiSecondInnings?: InningsScorecard;
+  /** Only present when a tied T20 went to a super over. */
+  superOver?: SuperOverResult;
   leadFirstInnings?: {
     team: "USER" | "AI";
     runs: number;
@@ -182,7 +199,7 @@ export function simulateCricketMatch(
 
     let userInn2: InningsScorecard;
     let aiInn2: InningsScorecard;
-    let winner: "USER" | "AI" | "DRAW" = "DRAW";
+    let winner: "USER" | "AI" | "DRAW" | "TIE" = "DRAW";
     let summary = "";
     let testTarget = 0;
 
@@ -204,9 +221,14 @@ export function simulateCricketMatch(
           const wktsLeft = 10 - aiInn2.totalWickets;
           summary = `AI XI won by ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} on Day 5!`;
         } else if (aiInn2.totalWickets >= 10) {
-          winner = "USER";
           const margin = targetForAi - 1 - aiInn2.totalRuns;
-          summary = `Your XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
+          if (margin === 0) {
+            winner = "TIE";
+            summary = `Match Tied! AI XI were all out for exactly the score needed to level the Test (${aiInn2.totalRuns}).`;
+          } else {
+            winner = "USER";
+            summary = `Your XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
+          }
         } else {
           winner = "DRAW";
           summary = `Match Drawn! AI XI batted out Day 5 (${aiInn2.totalRuns}/${aiInn2.totalWickets} in ${aiInn2.oversString} ov).`;
@@ -230,9 +252,14 @@ export function simulateCricketMatch(
           const wktsLeft = 10 - userInn2.totalWickets;
           summary = `Your XI won by ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} on Day 5!`;
         } else if (userInn2.totalWickets >= 10) {
-          winner = "AI";
           const margin = targetForUser - 1 - userInn2.totalRuns;
-          summary = `AI XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
+          if (margin === 0) {
+            winner = "TIE";
+            summary = `Match Tied! Your XI were all out for exactly the score needed to level the Test (${userInn2.totalRuns}).`;
+          } else {
+            winner = "AI";
+            summary = `AI XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
+          }
         } else {
           winner = "DRAW";
           summary = `Match Drawn! Your XI batted out Day 5 (${userInn2.totalRuns}/${userInn2.totalWickets} in ${userInn2.oversString} ov).`;
@@ -279,10 +306,10 @@ export function simulateCricketMatch(
       over: "Day 5",
       title: "Final Innings Resolution",
       description: summary,
-      impactTeam: winner === "DRAW" ? "USER" : winner,
+      impactTeam: winner === "DRAW" || winner === "TIE" ? "USER" : winner,
     });
 
-    const potm = determinePlayerOfTheMatch(userInn1, aiInn1, winner === "DRAW" ? "USER" : winner, userInn2, aiInn2);
+    const potm = determinePlayerOfTheMatch(userInn1, aiInn1, winner === "DRAW" || winner === "TIE" ? "USER" : winner, userInn2, aiInn2);
     const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2);
 
     return {
@@ -366,6 +393,20 @@ export function simulateCricketMatch(
     summary = `Match Tied! Both sides finished level on ${firstInnings.totalRuns} runs.`;
   }
 
+  // T20 ties go to a super over (ODI ties stay ties)
+  let superOver: SuperOverResult | undefined;
+  if (winner === "TIE" && format === "T20") {
+    superOver = simulateSuperOver(userSquad, aiSquad, challenge, firstTeam, [firstInnings, secondInnings], rng);
+    keyMoments.push({
+      over: "Super Over",
+      title: "Super Over Decider",
+      description: superOver.summary,
+      impactTeam: superOver.winner === "AI" ? "AI" : "USER",
+    });
+    summary = `Match tied on ${firstInnings.totalRuns}. ${superOver.summary}`;
+    winner = superOver.winner;
+  }
+
   // Key Match Moments from real match figures
   const ppOvers = format === "T20" ? 6 : 10;
   keyMoments.push({
@@ -394,6 +435,7 @@ export function simulateCricketMatch(
     userInnings,
     aiInnings,
     keyMoments,
+    superOver,
     decisiveDifference: analysis.decisiveDifference,
     whyWinnerWon: analysis.whyWinnerWon,
     whyLoserLost: analysis.whyLoserLost,
@@ -430,8 +472,10 @@ function simulateInnings(
   target: number | undefined,
   rng: () => number,
   inningsNumber = 1,
-  isDeterioratedPitch = false
+  isDeterioratedPitch = false,
+  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH" } = {}
 ): InningsScorecard {
+  const wicketLimit = opts.wicketLimit ?? 10;
   const { pitch_type, country } = challenge.venue;
   const format = challenge.format;
   const isTest = format === "TEST";
@@ -461,9 +505,29 @@ function simulateInnings(
       p.stats.bowl_overs / Math.max(1, p.stats.matches) >= 2.0
   );
 
-  // If squad has at least 5 specialists/ARs, part-timers NEVER bowl
+  // Limited-overs rules cap each bowler at maxOvers/5, so an innings needs at least 5 bowlers, plus
+  // one spare so nobody has to bowl consecutive overs at the end. Part-timers (then any other
+  // non-keeper) fill the gap. They carry heavy selection penalties, so they only bowl when the
+  // frontline bowlers have used their quota.
   const frontlineUnits = [...specialistBowlers, ...allRounders];
-  const bowlers = frontlineUnits.length >= 5 ? frontlineUnits : (frontlineUnits.length > 0 ? [...frontlineUnits, ...partTimers] : bowlingLineup.filter((p): p is PlayerWithStats => p !== null && p.primary_role !== "WK"));
+  const minBowlers = isTest ? 5 : 6;
+  const bowlers: PlayerWithStats[] = [...frontlineUnits];
+  const addExtras = (candidates: PlayerWithStats[]) => {
+    for (const c of candidates) {
+      if (bowlers.length >= minBowlers) break;
+      if (!bowlers.includes(c)) bowlers.push(c);
+    }
+  };
+  if (bowlers.length < minBowlers) addExtras(partTimers);
+  if (bowlers.length < minBowlers) {
+    const others = bowlingLineup
+      .filter((p): p is PlayerWithStats => p !== null && p.primary_role !== "WK" && !bowlers.includes(p))
+      .sort((a, b) => b.stats.bowl_overs - a.stats.bowl_overs);
+    addExtras(others);
+  }
+  if (bowlers.length === 0) {
+    bowlers.push(...bowlingLineup.filter((p): p is PlayerWithStats => p !== null));
+  }
 
   // Initialize Scorecards
   const batterCards: BatterScorecard[] = battersInOrder.map(({ player }) => ({
@@ -501,11 +565,11 @@ function simulateInnings(
   let matchEnded = false;
 
   for (let over = 1; over <= maxOvers; over++) {
-    if (totalWickets >= 10) break;
+    if (totalWickets >= wicketLimit) break;
     if (target && totalRuns >= target) break;
 
     const phase: "PP" | "MID" | "DEATH" =
-      over <= ppEnd ? "PP" : over >= deathStart ? "DEATH" : "MID";
+      opts.phase ?? (over <= ppEnd ? "PP" : over >= deathStart ? "DEATH" : "MID");
 
     // Select Bowler for this Over (cannot be same bowler as immediate previous over)
     const bowler = selectBowlerForOver(bowlers, phase, pitch_type, country, over, maxOvers, bowlerStatsMap, lastBowlerId, rng, format);
@@ -515,7 +579,7 @@ function simulateInnings(
     let overRuns = 0;
 
     for (let ball = 1; ball <= 6; ball++) {
-      if (totalWickets >= 10 || (target && totalRuns >= target)) {
+      if (totalWickets >= wicketLimit || (target && totalRuns >= target)) {
         matchEnded = true;
         break;
       }
@@ -634,6 +698,93 @@ function simulateInnings(
       middle: middleRuns,
       death: deathRuns,
     },
+  };
+}
+
+/** Three best hitters among non-bowlers, by strike rate weighted with batting average. */
+function pickSuperOverBatters(squad: (PlayerWithStats | null)[]): PlayerWithStats[] {
+  const all = squad.filter((p): p is PlayerWithStats => p !== null);
+  const rating = (p: PlayerWithStats) => p.stats.bat_strike_rate * Math.min(45, Math.max(10, p.stats.bat_average));
+  const pool = all.filter((p) => p.primary_role !== "BOWL");
+  return (pool.length >= 3 ? pool : all).sort((a, b) => rating(b) - rating(a)).slice(0, 3);
+}
+
+/** Best economy among frontline bowlers who actually bowl. */
+function pickSuperOverBowler(squad: (PlayerWithStats | null)[]): PlayerWithStats {
+  const all = squad.filter((p): p is PlayerWithStats => p !== null);
+  const bowlers = all.filter((p) => (p.primary_role === "BOWL" || p.primary_role === "AR") && p.stats.bowl_overs > 0);
+  const econ = (p: PlayerWithStats) => (p.stats.bowl_economy > 0 ? p.stats.bowl_economy : 99);
+  return (bowlers.length ? bowlers : all).sort((a, b) => econ(a) - econ(b))[0];
+}
+
+function boundariesOf(inn: InningsScorecard): number {
+  return inn.batters.reduce((n, b) => n + b.fours + b.sixes, 0);
+}
+
+/**
+ * T20 super over: each side bats one over (best three hitters, 2 wickets ends it) against the
+ * opposition's best bowler. The side that batted second in the match bats first. A tied super over
+ * is repeated (up to 3 times), then the side with more boundaries in the match and super overs wins.
+ */
+function simulateSuperOver(
+  userSquad: (PlayerWithStats | null)[],
+  aiSquad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  firstTeamInMatch: "USER" | "AI",
+  matchInnings: [InningsScorecard, InningsScorecard],
+  rng: () => number
+): SuperOverResult {
+  const squads = { USER: userSquad, AI: aiSquad };
+  const names = { USER: "Your XI", AI: "AI XI" };
+  const rounds: SuperOverRound[] = [];
+  const boundaries = { USER: 0, AI: 0 };
+  const [inn1, inn2] = matchInnings;
+  boundaries[firstTeamInMatch] += boundariesOf(inn1);
+  boundaries[firstTeamInMatch === "USER" ? "AI" : "USER"] += boundariesOf(inn2);
+
+  let battingFirst: "USER" | "AI" = firstTeamInMatch === "USER" ? "AI" : "USER";
+  for (let round = 0; round < 3; round++) {
+    const second: "USER" | "AI" = battingFirst === "USER" ? "AI" : "USER";
+    const opts = { wicketLimit: 2, phase: "DEATH" as const };
+    const a = simulateInnings(pickSuperOverBatters(squads[battingFirst]), [pickSuperOverBowler(squads[second])], challenge, 1, names[battingFirst], undefined, rng, 1, false, opts);
+    const b = simulateInnings(pickSuperOverBatters(squads[second]), [pickSuperOverBowler(squads[battingFirst])], challenge, 1, names[second], a.totalRuns + 1, rng, 1, false, opts);
+    boundaries[battingFirst] += boundariesOf(a);
+    boundaries[second] += boundariesOf(b);
+    rounds.push({
+      battingFirst,
+      firstRuns: a.totalRuns,
+      firstWickets: a.totalWickets,
+      secondRuns: b.totalRuns,
+      secondWickets: b.totalWickets,
+    });
+
+    const line = `${names[battingFirst]} ${a.totalRuns}/${a.totalWickets}, ${names[second]} ${b.totalRuns}/${b.totalWickets}`;
+    if (a.totalRuns !== b.totalRuns) {
+      const winner = b.totalRuns > a.totalRuns ? second : battingFirst;
+      return {
+        rounds,
+        decidedBy: "RUNS",
+        winner,
+        summary: `${names[winner]} won the Super Over (${line}).`,
+      };
+    }
+    battingFirst = second; // another super over: the side that batted second now bats first
+  }
+
+  if (boundaries.USER !== boundaries.AI) {
+    const winner = boundaries.USER > boundaries.AI ? "USER" : "AI";
+    return {
+      rounds,
+      decidedBy: "BOUNDARIES",
+      winner,
+      summary: `${names[winner]} won on boundary count (${boundaries.USER} v ${boundaries.AI}) after ${rounds.length} tied Super Overs.`,
+    };
+  }
+  return {
+    rounds,
+    decidedBy: "NONE",
+    winner: "TIE",
+    summary: `The match stayed tied after ${rounds.length} Super Overs and level boundary counts.`,
   };
 }
 
@@ -942,7 +1093,7 @@ function buildTestDayChronicle(
   secondInn2: InningsScorecard,
   lead: { team: "USER" | "AI"; runs: number },
   target: number,
-  winner: "USER" | "AI" | "DRAW",
+  winner: "USER" | "AI" | "DRAW" | "TIE",
   summary: string,
   pitchType: PitchType
 ): TestDayChronicle[] {
