@@ -1416,10 +1416,6 @@
               <ul id="selection-ai-points" style="list-style: none; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
             </div>
           </div>
-          <div id="selection-tactics-wrap" style="display: none; margin-top: 0.6rem;">
-            <div style="color: var(--cyan); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.2rem;">Tactical calls during the match</div>
-            <ul id="selection-tactics" style="margin: 0; padding-left: 1rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
-          </div>
           <div id="selection-picks" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.5rem; margin-top: 0.6rem;"></div>
           <div style="margin-top: 0.6rem;">
             <div style="color: var(--gold); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.2rem;">Next time</div>
@@ -2834,15 +2830,6 @@
       };
       chip('Best pick', 'var(--emerald)', sel.bestPick);
       chip('Weakest pick', 'var(--crimson)', sel.weakestPick);
-
-      const tac = document.getElementById('selection-tactics');
-      tac.innerHTML = '';
-      (sim.tactics || []).forEach(t => {
-        const li = document.createElement('li');
-        li.innerText = t;
-        tac.appendChild(li);
-      });
-      document.getElementById('selection-tactics-wrap').style.display = tac.children.length ? 'block' : 'none';
 
       const next = document.getElementById('selection-next');
       next.innerHTML = '';
