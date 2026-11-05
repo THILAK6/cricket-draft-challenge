@@ -14,6 +14,9 @@ export const DRAFT_POOL_SIZE = 30;
 export const POOL_SOURCE_SIZE = 1000;
 /** Minimum caps to be eligible for a random pool (any player with a real record, not just the top-N). */
 export const POOL_MIN_MATCHES = 15;
+/** The most-capped players count as "top players"; at least this share of every random pool comes from them. */
+export const TOP_PLAYER_COUNT = 50;
+export const TOP_PLAYER_SHARE = 0.6;
 /** The fixed top-N pool the built-in templates are verified against (tests/templates.test.ts). */
 export const VERIFIED_POOL_SIZE = 50;
 
@@ -355,16 +358,26 @@ const shuffled = <T,>(xs: T[], rand: () => number): T[] => {
  * Draws a random pool: role quotas first (so a keeper, pace, spin and all-rounders are always
  * available), then random fill with at most a fifth of the pool from one country.
  */
-export function samplePool(source: PlayerWithStats[], size: number, rand: () => number = Math.random): PlayerWithStats[] {
+export function samplePool(
+  source: PlayerWithStats[],
+  size: number,
+  rand: () => number = Math.random,
+  topN = TOP_PLAYER_COUNT,
+  topShare = TOP_PLAYER_SHARE
+): PlayerWithStats[] {
   const order = shuffled(source, rand);
+  // The most-capped players of the format; at least topShare of every pool comes from them.
+  const topIds = new Set([...source].sort((x, y) => y.stats.matches - x.stats.matches).slice(0, topN).map((p) => p.id));
+  const topOrder = order.filter((p) => topIds.has(p.id));
+  const topTarget = Math.min(topOrder.length, Math.ceil(size * topShare));
   const picked: PlayerWithStats[] = [];
   const ids = new Set<string>();
   const add = (p: PlayerWithStats) => {
     picked.push(p);
     ids.add(p.id);
   };
-  const take = (match: (p: PlayerWithStats) => boolean, count: number) => {
-    for (const p of order) {
+  const take = (from: PlayerWithStats[], match: (p: PlayerWithStats) => boolean, count: number) => {
+    for (const p of from) {
       if (count <= 0) break;
       if (!ids.has(p.id) && match(p)) {
         add(p);
@@ -372,20 +385,36 @@ export function samplePool(source: PlayerWithStats[], size: number, rand: () => 
       }
     }
   };
-  take((p) => p.primary_role === "WK", 4);
-  take((p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", 6);
-  take((p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", 4);
-  take((p) => p.primary_role === "AR", 4);
-  take((p) => p.primary_role === "BAT", 10);
+  const quotas: [(p: PlayerWithStats) => boolean, number][] = [
+    [(p) => p.primary_role === "WK", 4],
+    [(p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", 6],
+    [(p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", 4],
+    [(p) => p.primary_role === "AR", 4],
+    [(p) => p.primary_role === "BAT", 10],
+  ];
+  // Role quotas first, with the top-player share of each taken from the top players
+  for (const [match, q] of quotas) take(topOrder, match, Math.min(q, Math.floor(q * topShare)));
+  const topCount = () => picked.filter((p) => topIds.has(p.id)).length;
+  for (const [match, q] of quotas) {
+    // Remaining slots in each role come from top players until the share is met, then from anyone
+    const need = q - picked.filter(match).length;
+    take(topOrder, match, Math.min(need, Math.max(0, topTarget - topCount())));
+    take(order, match, q - picked.filter(match).length);
+  }
   const perCountry = new Map<string, number>();
   for (const p of picked) perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
   const cap = Math.ceil(size / 5);
-  for (const p of order) {
-    if (picked.length >= size) break;
-    if (ids.has(p.id) || (perCountry.get(p.country) ?? 0) >= cap) continue;
-    add(p);
-    perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
-  }
+  const fill = (from: PlayerWithStats[], until: () => boolean) => {
+    for (const p of from) {
+      if (until()) break;
+      if (ids.has(p.id) || (perCountry.get(p.country) ?? 0) >= cap) continue;
+      add(p);
+      perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
+    }
+  };
+  // Top up the top-player share first, then fill the rest from anyone
+  fill(topOrder, () => picked.length >= size || picked.filter((p) => topIds.has(p.id)).length >= topTarget);
+  fill(order, () => picked.length >= size);
   return picked.sort((a, b) => b.stats.matches - a.stats.matches);
 }
 
