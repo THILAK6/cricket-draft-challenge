@@ -3,7 +3,7 @@ import type { InningsScorecard } from "./simulator";
 import type { MatchPerformance } from "./performance";
 import { calculateDeterministicScore } from "./scoring";
 import { playerQuality } from "./player-quality";
-import { computeContributions, type Contribution } from "./impact";
+import { computeContributions, PAR_RPO, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
 
 /**
@@ -308,13 +308,17 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     } else if (dDiff >= 2 || (lo - loOpp >= 25 && dDiff >= 0)) add(side, "good", Math.max(dDiff, 2) + 1, `Batting depth paid off: #7-#11 added ${lo} runs against ${loOpp}.`);
     else if (dDiff <= -2 || (loOpp - lo >= 25 && dDiff <= 0)) add(side, "bad", Math.max(-dDiff, 2) + 1, `The tail was exposed: #7-#11 added only ${lo} runs against ${loOpp}.`);
 
-    // A batter forced to bowl because the frontline attack was too thin
-    const partTimer = imp[side]
-      .filter((i) => i.player.primary_role === "BAT" && i.overs >= 2)
-      .sort((a, b) => b.overs - a.overs)[0];
-    if (partTimer) {
-      const econ = partTimer.conceded / partTimer.overs;
-      add(side, "bad", 3 + Math.min(4, partTimer.overs / 2), `Only ${me.frontline} frontline bowlers, so ${partTimer.player.name} (a batter) had to bowl ${ballsToOvers(partTimer.ballsBowled)} overs and went for ${r1(econ)} an over.`);
+    // Part-time bowlers (batters and keepers who bowled): judged the same way on both sides, by what they did
+    const partTimers = imp[side].filter((i) => (i.player.primary_role === "BAT" || i.player.primary_role === "WK") && i.ballsBowled >= 12);
+    for (const pt of partTimers.sort((a, b) => b.ballsBowled - a.ballsBowled).slice(0, 2)) {
+      const econ = pt.conceded / pt.overs;
+      const par = PAR_RPO[format as "T20" | "ODI" | "TEST"] ?? 6;
+      const line = `${pt.wickets}/${pt.conceded} in ${ballsToOvers(pt.ballsBowled)} ov`;
+      if (pt.wickets >= 2 || econ <= par * 0.85) {
+        add(side, "good", 2 + Math.min(3, pt.wickets), `${pt.player.name} (a part-time bowler) chipped in with ${line}.`);
+      } else if (econ > par) {
+        add(side, "bad", 3 + Math.min(4, pt.overs / 2), `Only ${me.frontline} frontline bowlers, so ${pt.player.name} (a batter) had to bowl ${ballsToOvers(pt.ballsBowled)} overs: ${line}, going for ${r1(econ)} an over.`);
+      }
     }
   }
 
@@ -357,6 +361,8 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   const bigGap = (forSide: Side) =>
     [...gaps].sort((a, b) => (forSide === "USER" ? b.gap - a.gap : a.gap - b.gap))[0];
 
+  // How one-sided the match was on the field, from the same performance scores shown on the results screen
+  const dominant = Math.abs(performance.USER.overallScore - performance.AI.overallScore) >= 25;
   let headline: string;
   let outcome: SelectionReport["outcome"];
   if (winner === "DRAW" || winner === "TIE") {
@@ -368,7 +374,9 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
       headline =
         margin >= 8
           ? `Your picks won it. You built the clearly better-balanced XI (${paper}) and it showed on the field.`
-          : `A narrow selection edge to you (${paper}), and it was enough on the day.`;
+          : dominant
+            ? `A narrow edge on paper (${paper}) turned into a heavy win: your XI was far better on the day.`
+            : `A narrow selection edge to you (${paper}), and it was enough on the day.`;
     } else if (paperEdge === "AI") {
       outcome = "UPSET";
       const g = bigGap("USER");
@@ -384,7 +392,9 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
       headline =
         -margin >= 8
           ? `Your picks cost you the match. The AI built the clearly better-balanced XI (${paper}).`
-          : `A narrow selection edge to the AI (${paper}), but the match was settled on the field.`;
+          : dominant
+            ? `A narrow edge to the AI on paper (${paper}) became a heavy defeat: it was far better on the day.`
+            : `A narrow selection edge to the AI (${paper}), but the match was settled on the field.`;
     } else if (paperEdge === "USER") {
       outcome = "UPSET";
       const g = bigGap("AI");
@@ -403,11 +413,13 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   const consider = (key: SelectionCategory["key"], ratioLimit: number, text: string) => {
     const c = cat(key);
     const deficit = c.ai - c.user;
+    // After a win, only point at categories where the AI actually had the edge
+    if (winner === "USER" && deficit <= 0) return;
     if (c.user / c.max < ratioLimit || deficit >= 2) adviceCandidates.push({ score: deficit * 2 + (c.max - c.user), text: `${text} (you ${c.user}/${c.max}, AI ${c.ai}/${c.max}).` });
   };
   consider("role", 0.8, userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher");
   consider("pitch", 0.75, `Read the pitch: on a ${pitchLabel}, ${PITCH_HINT[pitch] ?? "match your squad to the conditions"}. You picked ${pitchTraits(prof.USER, pitch)}`);
-  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your top seven had a career batting average of ${r1(prof.USER.topSevenAvg)} in this format (AI ${r1(prof.AI.topSevenAvg)})`);
+  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your picks' average rating was ${Math.round(prof.USER.avgRating)} against the AI's ${Math.round(prof.AI.avgRating)}`);
   consider("depth", 0.65, "Add batting depth: pick bowlers and all-rounders who can score down to #8");
   adviceCandidates.sort((a, b) => b.score - a.score).slice(0, 3).forEach((a) => nextTime.push(a.text));
   if (nextTime.length === 0) {

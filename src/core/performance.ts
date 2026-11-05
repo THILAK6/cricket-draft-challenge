@@ -1,6 +1,7 @@
 import type { MatchFormat } from "./types";
 import type { InningsScorecard } from "./simulator";
 import { ballsToOvers } from "./overs";
+import { phasesReached as phasesReachedFor } from "./phases";
 
 /** Everything the results screen shows for one side, derived only from the simulated scorecards. */
 export interface TeamPerformance {
@@ -90,13 +91,7 @@ function buildTeam(
     const comfort = (ballsLeft / maxBalls) * 30 + (wktsLeft / 10) * 12;
     battingScore = Math.max(battingScore, clamp(Math.round(52 + comfort + 4 * fifties + 8 * hundreds)));
   }
-  const ppBalls = (format === "T20" ? 6 : 10) * 6;
-  const deathBalls = (format === "T20" ? 15 : 40) * 6;
-  const phasesReached = {
-    powerplay: batting.some((i) => i.totalBalls > 0),
-    middle: format === "TEST" ? batting.length > 0 : batting.some((i) => i.totalBalls > ppBalls),
-    death: format === "TEST" ? batting.length > 0 : batting.some((i) => i.totalBalls > deathBalls),
-  };
+  const phasesReached = phasesReachedFor(format, batting);
 
   // ---- Bowling -----------------------------------------------------------------------------
   const wicketsTaken = bowling.reduce(

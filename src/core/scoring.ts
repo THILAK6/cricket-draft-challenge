@@ -242,29 +242,37 @@ export function calculateDeterministicScore(
   // -------------------------------------------------------------
   // 2. Pitch Suitability & Country Venue Conditions (0 - 25 points)
   // -------------------------------------------------------------
+  // Only real bowlers count towards pitch fit: a batter who bowls a few overs of seam is not a
+  // seam attack. Frontline = a specialist bowler, or an all-rounder with a real wicket record.
+  const wktsNeeded = isTest ? 40 : 25;
+  const frontline = (p: PlayerWithStats) => p.primary_role === "BOWL" || (p.primary_role === "AR" && p.stats.bowl_wickets >= wktsNeeded);
+  const fPacers = pacers.filter(frontline);
+  const fSpinners = spinners.filter(frontline);
   let pitchScore = 15; // base baseline
   const hostCountry = challenge.venue.country || "";
 
   switch (pitch_type) {
     case "GREEN_SEAMER": {
-      // Rewards 3+ pacers
-      if (pacers.length >= 3) pitchScore += 8;
-      else if (pacers.length === 2) pitchScore += 4;
+      // Rewards 3+ fPacers
+      if (fPacers.length >= 3) pitchScore += 8;
+      else if (fPacers.length === 2) pitchScore += 4;
       else pitchScore -= 5;
 
       const seamBenchmarkEcon = isT20 ? 7.8 : isOdi ? 5.2 : 3.2;
-      const goodSeam = pacers.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= seamBenchmarkEcon);
+      const goodSeam = fPacers.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= seamBenchmarkEcon);
       if (goodSeam.length >= 2) pitchScore += 2;
-      if (spinners.length >= 3) pitchScore -= 4;
+      if (fSpinners.length >= 3) pitchScore -= 4;
+      // An attack that leans on spin on a seaming pitch wastes the conditions
+      if (fSpinners.length > fPacers.length) pitchScore -= 3;
       break;
     }
 
     case "DUSTBOWL": {
-      if (spinners.length >= 3) pitchScore += 10;
-      else if (spinners.length === 2) pitchScore += 7;
-      else if (spinners.length === 1) pitchScore += 2;
+      if (fSpinners.length >= 3) pitchScore += 10;
+      else if (fSpinners.length === 2) pitchScore += 7;
+      else if (fSpinners.length === 1) pitchScore += 2;
       else pitchScore -= 8;
-      if (pacers.length >= 4) pitchScore -= 3;
+      if (fPacers.length >= 4) pitchScore -= 3;
       break;
     }
 
@@ -281,7 +289,7 @@ export function calculateDeterministicScore(
     }
 
     case "SLOW_LOW": {
-      if (spinners.length >= 2) pitchScore += 5;
+      if (fSpinners.length >= 2) pitchScore += 5;
       const slowLowEcon = isT20 ? 7.2 : isOdi ? 4.9 : 2.8;
       const accurateBowlers = nonNullSquad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon);
       if (accurateBowlers.length >= 3) pitchScore += 5;
@@ -292,20 +300,20 @@ export function calculateDeterministicScore(
   // Country-Specific Venue Conditions (Host Territory Nuances):
   if (hostCountry === "RSA") {
     const pacerWktsThreshold = isTest ? 40 : 25;
-    const expressPacers = pacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
+    const expressPacers = fPacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
     if (expressPacers.length >= 2) pitchScore += 2.5; // Steyn/Rabada pace domination in highveld
-    if (spinners.length >= 3) pitchScore -= 3.0; // Spinners struggle with altitude and lack of grip
+    if (fSpinners.length >= 3) pitchScore -= 3.0; // Spinners struggle with altitude and lack of grip
   } else if (hostCountry === "IND" || hostCountry === "BAN" || hostCountry === "SL") {
     const spinWktsThreshold = isTest ? 40 : 25;
-    const eliteSpinners = spinners.filter((p) => p.stats.bowl_wickets >= spinWktsThreshold);
+    const eliteSpinners = fSpinners.filter((p) => p.stats.bowl_wickets >= spinWktsThreshold);
     if (eliteSpinners.length >= 2) pitchScore += 2.5; // Ashwin/Jadeja/Narine subcontinental mastery
   } else if (hostCountry === "ENG") {
     const swingEconThreshold = isT20 ? 7.8 : isOdi ? 5.2 : 3.2;
-    const swingBowlers = pacers.filter((p) => p.stats.bowl_economy <= swingEconThreshold);
+    const swingBowlers = fPacers.filter((p) => p.stats.bowl_economy <= swingEconThreshold);
     if (swingBowlers.length >= 2) pitchScore += 2.0; // Anderson/Woakes seam & swing mastery
   } else if (hostCountry === "AUS") {
     const pacerWktsThreshold = isTest ? 40 : 25;
-    const paceBounce = pacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
+    const paceBounce = fPacers.filter((p) => p.stats.bowl_wickets >= pacerWktsThreshold);
     if (paceBounce.length >= 2) pitchScore += 2.0; // Starc/Cummins true bounce mastery
   }
 

@@ -1,5 +1,6 @@
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
+import { phasesReached, collapsedEarly, PHASE_BOUNDS } from "./phases";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
 import { buildSelectionReport, type SelectionReport } from "./selection-report";
@@ -53,6 +54,8 @@ export interface InningsScorecard {
   fielders?: FielderScorecard[];
   /** Catches the fielding side put down in this innings (does not change the score). */
   droppedCatches?: number;
+  /** Who put down which batter, for the catches counted in droppedCatches. */
+  drops?: { fielder: string; batter: string; bowler: string }[];
   phaseRuns: {
     powerplay: number;
     middle: number;
@@ -374,6 +377,9 @@ export function simulateCricketMatch(
     const testContribs = computeContributions({ format: "TEST", userInnings: testUserInns, aiInnings: testAiInns, winner });
     const potm = determinePlayerOfTheMatch(testContribs, winner);
     const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2, testContribs);
+  for (const d of dropsNarrative([aiInn1, aiInn2].filter((x): x is InningsScorecard => !!x), [userInn1, userInn2].filter((x): x is InningsScorecard => !!x))) {
+    if (winner !== d.side) analysis.whyLoserLost.push(d.text);
+  }
     const testPerf = computeMatchPerformance("TEST", testUserInns, testAiInns);
     const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf, contributions: testContribs });
 
@@ -475,27 +481,60 @@ export function simulateCricketMatch(
     winner = superOver.winner;
   }
 
-  // Key Match Moments from real match figures
+  // Key Match Moments from real match figures. Phases a side never reached are not compared.
   const ppOvers = format === "T20" ? 6 : 10;
+  const reachedFirst = phasesReached(format, [firstInnings]);
+  const reachedSecond = phasesReached(format, [secondInnings]);
+  const sideOf = (inn: InningsScorecard): "USER" | "AI" => (inn === userInnings ? "USER" : "AI");
+  const firstSide = sideOf(firstInnings);
+  const secondSide = sideOf(secondInnings);
+  const outText = (inn: InningsScorecard) => `${inn.teamName} were bowled out for ${inn.totalRuns} in ${inn.oversString} overs`;
   keyMoments.push({
     over: `1 - ${ppOvers}`,
     title: "Powerplay Clashes",
     description: `${firstInnings.teamName} posted ${firstInnings.phaseRuns.powerplay} in their Powerplay, while ${secondInnings.teamName} answered with ${secondInnings.phaseRuns.powerplay}.`,
-    impactTeam: firstInnings.phaseRuns.powerplay >= secondInnings.phaseRuns.powerplay ? (firstTeam === "USER" ? "USER" : "AI") : (firstTeam === "USER" ? "AI" : "USER"),
+    impactTeam: firstInnings.phaseRuns.powerplay >= secondInnings.phaseRuns.powerplay ? firstSide : secondSide,
   });
 
   const deathPhaseText = format === "T20" ? "16 - 20" : "41 - 50";
-  keyMoments.push({
-    over: deathPhaseText,
-    title: "Closing Phase Duel",
-    description: `${firstInnings.teamName} scored ${firstInnings.phaseRuns.death} in the final overs, while ${secondInnings.teamName} produced ${secondInnings.phaseRuns.death}.`,
-    impactTeam: winner === "TIE" ? "USER" : winner,
-  });
+  const bothDeath = reachedFirst.death && reachedSecond.death;
+  const earlyOut = [firstInnings, secondInnings].find((i) => collapsedEarly(format, i));
+  if (bothDeath) {
+    keyMoments.push({
+      over: deathPhaseText,
+      title: "Closing Phase Duel",
+      description: `${firstInnings.teamName} scored ${firstInnings.phaseRuns.death} in the final overs, while ${secondInnings.teamName} produced ${secondInnings.phaseRuns.death}.`,
+      impactTeam: winner === "TIE" ? "USER" : winner,
+    });
+  } else if (earlyOut) {
+    const other = earlyOut === firstInnings ? secondInnings : firstInnings;
+    const otherDeath = earlyOut === firstInnings ? reachedSecond.death : reachedFirst.death;
+    keyMoments.push({
+      over: "Collapse",
+      title: "Innings Collapse",
+      description: `${outText(earlyOut)}, never reaching the closing overs${otherDeath ? `, while ${other.teamName} scored ${other.phaseRuns.death} in theirs` : ""}.`,
+      impactTeam: sideOf(other),
+    });
+  } else {
+    // Chase ended before the closing phase (target reached early)
+    const chaserEnded = secondInnings.totalRuns > firstInnings.totalRuns && !reachedSecond.death;
+    keyMoments.push({
+      over: deathPhaseText,
+      title: "Closing Phase",
+      description: chaserEnded
+        ? `${secondInnings.teamName} reached the target in ${secondInnings.oversString} overs, before the closing overs began.`
+        : `The closing overs were not reached by both sides.`,
+      impactTeam: winner === "TIE" ? "USER" : winner,
+    });
+  }
 
   const chase = { team: (firstTeam === "USER" ? "AI" : "USER") as "USER" | "AI", target: firstInnings.totalRuns + 1 };
   const limitedContribs = computeContributions({ format, userInnings: [userInnings], aiInnings: [aiInnings], winner, chase });
   const potm = determinePlayerOfTheMatch(limitedContribs, winner);
   const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst, undefined, undefined, limitedContribs);
+  for (const d of dropsNarrative([aiInnings], [userInnings])) {
+    if (winner !== d.side) analysis.whyLoserLost.push(d.text);
+  }
 
   const limitedPerf = computeMatchPerformance(format, [userInnings], [aiInnings], chase);
   const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf, contributions: limitedContribs, chase });
@@ -666,6 +705,7 @@ function simulateInnings(
   const fielderMap = new Map<string, FielderScorecard>();
   for (const f of fieldingSide) fielderMap.set(f.id, { playerId: f.id, name: f.name, catches: 0, runOuts: 0, stumpings: 0 });
   let droppedCatches = 0;
+  const drops: { fielder: string; batter: string; bowler: string }[] = [];
 
   for (let over = 1; over <= maxOvers; over++) {
     if (totalWickets >= wicketLimit) break;
@@ -743,7 +783,12 @@ function simulateInnings(
           else card.catches++;
         }
         // A catch put down before this wicket: roughly one in six caught dismissals has a miss too
-        if ((how.kind === "CAUGHT" || how.kind === "CAUGHT_BEHIND") && (totalBallsBowled * 31 + totalRuns) % 6 === 0) droppedCatches++;
+        if ((how.kind === "CAUGHT" || how.kind === "CAUGHT_BEHIND") && (totalBallsBowled * 31 + totalRuns) % 6 === 0) {
+          droppedCatches++;
+          const others = fieldingSide.filter((f) => f.id !== how.fielder?.id && f.id !== bowler.id);
+          const dropper = others[(totalBallsBowled * 17 + totalRuns) % Math.max(1, others.length)];
+          if (dropper) drops.push({ fielder: dropper.name, batter: striker.name, bowler: bowler.name });
+        }
 
         ballsSinceWicket = 0;
         if (nextBatterIdx < batterCards.length) {
@@ -839,6 +884,7 @@ function simulateInnings(
     bowlers: bowlerCards,
     fielders: [...fielderMap.values()].filter((f) => f.catches + f.runOuts + f.stumpings > 0),
     droppedCatches,
+    drops,
     phaseRuns: {
       powerplay: powerplayRuns,
       middle: middleRuns,
@@ -853,6 +899,23 @@ type DismissalKind = "BOWLED" | "LBW" | "CAUGHT" | "CAUGHT_BEHIND" | "CAUGHT_AND
  * Decides how a wicket fell. Uses its own hash-based roll so the main simulation's random stream
  * (and therefore every score and result) is untouched.
  */
+/** One line naming who put down whom, for the side that fielded worse; appended to the match story. */
+function dropsNarrative(userBowlInnings: InningsScorecard[], aiBowlInnings: InningsScorecard[]): { side: "USER" | "AI"; text: string }[] {
+  const out: { side: "USER" | "AI"; text: string }[] = [];
+  // userBowlInnings = innings in which the user's side fielded (the AI batted)
+  for (const [side, list] of [["USER", userBowlInnings], ["AI", aiBowlInnings]] as const) {
+    const drops = list.flatMap((i) => i.drops ?? []);
+    if (drops.length === 0) continue;
+    const first = drops[0];
+    const label = side === "USER" ? "Your XI" : "AI XI";
+    out.push({
+      side,
+      text: `${label} put down ${drops.length === 1 ? "a catch" : `${drops.length} catches`}: ${first.fielder} dropped ${first.batter} off ${first.bowler}${drops.length > 1 ? ` (and ${drops.length - 1} more)` : ""}.`,
+    });
+  }
+  return out;
+}
+
 function rollDismissal(
   salt: number,
   bowler: PlayerWithStats,
@@ -1241,6 +1304,10 @@ function resolveBall(
   // Pitch Condition impact
   if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "PACE") {
     wktChance *= phase === "PP" ? 1.45 : 1.25;
+  } else if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "SPIN") {
+    wktChance *= 0.8; // spin gets no help from a seaming surface
+  } else if (pitch === "DUSTBOWL" && bowler.bowling_category === "PACE") {
+    wktChance *= 0.88;
   } else if (pitch === "DUSTBOWL" && bowler.bowling_category === "SPIN") {
     wktChance *= isDeterioratedPitch ? 1.6 : 1.35;
   } else if (country === "RSA" && bowler.bowling_category === "PACE") {
@@ -1600,7 +1667,11 @@ function deriveMatchAnalysis(
       const runMargin = winningInnings.totalRuns - losingInnings.totalRuns;
       const bowlLed = !!bestBowl && (!bestBat || bestBowl.bowlImpact >= bestBat.batImpact);
 
-      if (bestBowl && bestBowl.wickets >= 2 && bowlLed) {
+      if (collapsedEarly(format, losingInnings)) {
+        const collapseBowler = bestBowl && bestBowl.wickets >= 2 ? ` ${bestBowl.name} took ${bestBowl.wickets}/${bestBowl.conceded} in ${ballsToOvers(bestBowl.ballsBowled)} ov.` : "";
+        decisiveDifference = `${loserName} collapsed: bowled out for ${losingInnings.totalRuns} in ${losingInnings.oversString} overs chasing ${winningInnings.totalRuns + 1}, never getting near the target.${collapseBowler}`;
+        if (bestBowl && bestBowl.wickets >= 2) whyWinnerWon.push(`${bestBowl.name} took ${bestBowl.wickets}/${bestBowl.conceded}, and the chase fell apart.`);
+      } else if (bestBowl && bestBowl.wickets >= 2 && bowlLed) {
         decisiveDifference = `${winnerName} defended ${winningInnings.totalRuns}, holding ${loserName} to ${losingInnings.totalRuns}/${losingInnings.totalWickets}, with ${bestBowl.name}'s ${bestBowl.wickets}/${bestBowl.conceded} in ${ballsToOvers(bestBowl.ballsBowled)} ov the biggest contribution.`;
         whyWinnerWon.push(`${bestBowl.name} took ${bestBowl.wickets}/${bestBowl.conceded}, breaking key partnerships.`);
       } else if (bestBat && bestBat.runs >= 40) {
@@ -1623,22 +1694,25 @@ function deriveMatchAnalysis(
         whyLoserLost.push(`Boundary release: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
       }
 
-      // Name the phase that produced the margin, but only phases BOTH sides actually batted in.
-      const maxOvers = format === "T20" ? 20 : 50;
-      const ppEnd = (format === "T20" ? 6 : 10) * 6;
-      const deathStart = (format === "T20" ? 15 : 40) * 6;
-      const reached = (inn: InningsScorecard, key: "powerplay" | "middle" | "death") =>
-        key === "powerplay" ? inn.totalBalls > 0 : key === "middle" ? inn.totalBalls > ppEnd : inn.totalBalls > deathStart && maxOvers > 0;
+      // Name the phase that produced the margin, but only phases BOTH sides batted through in full.
+      // When a side was bowled out early the story is the collapse, not a phase-by-phase comparison.
+      const rw = phasesReached(format, [winningInnings]);
+      const rl = phasesReached(format, [losingInnings]);
+      const completed = {
+        powerplay: rw.middle && rl.middle,
+        middle: rw.death && rl.death,
+        death: rw.death && rl.death && !collapsedEarly(format, losingInnings) && !collapsedEarly(format, winningInnings),
+      };
       const t20 = format === "T20";
       const phases = [
         { key: "powerplay" as const, label: t20 ? "powerplay (overs 1-6)" : "powerplay (overs 1-10)" },
         { key: "middle" as const, label: t20 ? "middle overs (7-15)" : "middle overs (11-40)" },
         { key: "death" as const, label: t20 ? "death overs (16-20)" : "death overs (41-50)" },
       ]
-        .filter((ph) => reached(winningInnings, ph.key) && reached(losingInnings, ph.key))
+        .filter((ph) => completed[ph.key])
         .map((ph) => ({ ...ph, win: winningInnings.phaseRuns[ph.key], lose: losingInnings.phaseRuns[ph.key] }));
       const top = [...phases].sort((x, y) => (y.win - y.lose) - (x.win - x.lose))[0];
-      if (top && runMargin > 0) {
+      if (top && runMargin > 0 && !collapsedEarly(format, losingInnings)) {
         const gain = top.win - top.lose;
         if (gain >= 10 && gain >= runMargin * 0.5) {
           const share = Math.min(100, Math.round((gain / runMargin) * 100));

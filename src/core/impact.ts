@@ -44,7 +44,7 @@ export const expectedRunsAtSlot = (format: MatchFormat, slot: number): number =>
   (SLOT_SHARE[Math.min(slot, 10)] ?? 0.01) * PAR_TOTAL[format];
 
 const wicketValue = (format: MatchFormat, slot: number, runsMade: number): number =>
-  4 + 0.7 * expectedRunsAtSlot(format, slot) + (runsMade < 5 ? 3 : 0);
+  6 + 0.4 * expectedRunsAtSlot(format, slot) + (runsMade < 5 ? 2 : 0);
 
 export interface ContributionInput {
   format: MatchFormat;
@@ -91,7 +91,14 @@ export function computeContributions(input: ContributionInput): Contribution[] {
         c.fours += b.fours;
         c.sixes += b.sixes;
         if (!b.isOut) c.notOut = true;
-        let v = b.runs - (b.balls * rpo) / 6;
+        // Runs, less a share of what the balls faced would normally have produced. Staying in only
+        // partly offsets that, so an anchor is credited without a quick fifty being undervalued.
+        const slot = inn.batters.indexOf(b);
+        const exp = expectedRunsAtSlot(format, slot);
+        let v = b.runs - 0.45 * ((b.balls * rpo) / 6);
+        if (b.isOut && b.runs < 0.4 * exp) v -= (0.4 * exp - b.runs) * 0.6; // an early dismissal costs the side
+        if (b.runs >= 100) v += 20;
+        else if (b.runs >= 50) v += 8;
         if (chase && chase.team === team && winner === team) {
           v += (b.runs / Math.max(1, chase.target)) * 20; // a share of the chase
           if (!b.isOut) v += 5; // finished the job
@@ -124,6 +131,15 @@ export function computeContributions(input: ContributionInput): Contribution[] {
   }
 
   const out = [...map.values()];
+  // A score that rivals the opposition's whole innings total swung the match on its own
+  const totals: Record<Side, number> = {
+    USER: input.userInnings.reduce((n, i) => n + i.totalRuns, 0),
+    AI: input.aiInnings.reduce((n, i) => n + i.totalRuns, 0),
+  };
+  for (const c of out) {
+    const oppTotal = totals[c.team === "USER" ? "AI" : "USER"];
+    if (c.batted && c.runs >= 30 && c.runs >= 0.7 * oppTotal) c.batImpact += 0.3 * c.runs;
+  }
   for (const c of out) c.impact = c.batImpact + c.bowlImpact + c.fieldImpact;
   return out;
 }
