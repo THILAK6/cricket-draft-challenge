@@ -1382,13 +1382,18 @@
     }
 
     // Toast Notification System
+    // Escape any server- or data-derived text before it goes into an innerHTML template.
+    function esc(v) {
+      return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     function showToast(message, type = 'info') {
       const container = document.getElementById('toast-container');
       if (!container) return;
       const toast = document.createElement('div');
       toast.className = `toast-pill toast-${type}`;
       const icon = type === 'success' ? '✓' : type === 'warning' ? '⚠️' : type === 'error' ? '✕' : 'ℹ️';
-      toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+      toast.innerHTML = `<span>${icon}</span><span>${esc(message)}</span>`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = '0';
@@ -2016,7 +2021,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
 
       if (selectedPoolPlayer) {
         banner.classList.add('active-selection');
-        bannerText.innerHTML = `<span>🎯 Selected: <strong style="color: var(--gold);">${selectedPoolPlayer.name}</strong> (${selectedPoolPlayer.country} • ${selectedPoolPlayer.primary_role}) — <em>Tap any slot to place</em></span>`;
+        bannerText.innerHTML = `<span>🎯 Selected: <strong style="color: var(--gold);">${esc(selectedPoolPlayer.name)}</strong> (${esc(selectedPoolPlayer.country)} • ${esc(selectedPoolPlayer.primary_role)}) — <em>Tap any slot to place</em></span>`;
         btnCancel.style.display = 'inline-flex';
       } else {
         banner.classList.remove('active-selection');
@@ -2119,7 +2124,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
           <div class="player-card-top">
             <span class="p-name">
               ${isLegal ? '<span class="drag-handle" style="font-size:0.75rem; margin-right:2px;" title="Drag & drop into slot">⋮⋮</span>' : ''}
-              ${p.name} <span class="p-meta">(${p.country})</span>
+              ${esc(p.name)} <span class="p-meta">(${esc(p.country)})</span>
             </span>
             <div style="display: flex; align-items: center; gap: 0.35rem;">
               ${isSelected ? '<span style="font-size: 0.65rem; font-weight: 800; background: var(--gold); color: #0b0f14; padding: 0.08rem 0.35rem; border-radius: 3px;">READY TO DROP</span>' : ''}
@@ -2247,8 +2252,8 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
               <span class="slot-tag">#${i+1} ${slotDef.shortRole}</span>
               <div class="slot-content">
                 <div class="slot-player-title">
-                  <span>${p.name}</span>
-                  <span style="color: var(--text-dim); font-size: 0.7rem;">(${p.country})</span>
+                  <span>${esc(p.name)}</span>
+                  <span style="color: var(--text-dim); font-size: 0.7rem;">(${esc(p.country)})</span>
                   ${caps}
                 </div>
                 <div class="slot-player-sub">
@@ -2277,7 +2282,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
           }
 
           const emptyText = selectedPoolPlayer && isUser
-            ? `⬇ Tap to drop ${selectedPoolPlayer.name} into Slot #${i+1} (${slotDef.name})`
+            ? `⬇ Tap to drop ${esc(selectedPoolPlayer.name)} into Slot #${i+1} (${slotDef.name})`
             : (isUser ? `Slot #${i+1}: ${slotDef.name} — Empty` : `Vacant Slot #${i+1}`);
 
           row.innerHTML = `
@@ -2382,7 +2387,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
 
         const div = document.createElement('div');
         div.className = 'chk-item';
-        div.innerHTML = `<span class="${ok ? 'chk-icon-ok' : 'chk-icon-fail'}">${ok ? '✓' : '⚠️'}</span><span>${desc}</span>`;
+        div.innerHTML = `<span class="${ok ? 'chk-icon-ok' : 'chk-icon-fail'}">${ok ? '✓' : '⚠️'}</span><span>${esc(desc)}</span>`;
         container.appendChild(div);
       });
     }
@@ -2470,7 +2475,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         const item = document.createElement('div');
         item.style.padding = '0.25rem 0';
         item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.04)';
-        item.innerHTML = `<strong style="color: var(--cyan);">${m.over} — ${m.title}:</strong> ${m.description}`;
+        item.innerHTML = `<strong style="color: var(--cyan);">${esc(m.over)} — ${esc(m.title)}:</strong> ${esc(m.description)}`;
         momentsList.appendChild(item);
       });
 
@@ -2547,12 +2552,12 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
               <div class="test-day-card">
                 <div class="test-day-header">
                   <span class="test-day-badge">DAY ${d.day}</span>
-                  <span class="test-day-stumps">${d.stumpsScore}</span>
+                  <span class="test-day-stumps">${esc(d.stumpsScore)}</span>
                 </div>
-                <div class="test-day-title">${d.title}</div>
-                <p class="test-day-highlight">${d.highlight}</p>
+                <div class="test-day-title">${esc(d.title)}</div>
+                <p class="test-day-highlight">${esc(d.highlight)}</p>
                 <div class="test-day-pitch">
-                  <strong style="color: #cbd5e1;">Pitch Telemetry:</strong> ${d.pitchBehavior}
+                  <strong style="color: #cbd5e1;">Pitch Telemetry:</strong> ${esc(d.pitchBehavior)}
                 </div>
               </div>
             `).join('')}
@@ -2586,7 +2591,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       if (!battingInnings || (battingInnings.totalRuns === 0 && battingInnings.totalBalls === 0 && (tabId === 'user_2' || tabId === 'ai_2'))) {
         container.innerHTML = `
           <div style="padding: 2rem 1rem; text-align: center; color: #94a3b8; font-weight: 600; background: rgba(15,23,42,0.4); border-radius: 8px;">
-            ${battingInnings ? battingInnings.teamName : 'Team'} did not bat in the 2nd innings (${sim.summary}).
+            ${esc(battingInnings ? battingInnings.teamName : 'Team')} did not bat in the 2nd innings (${esc(sim.summary)}).
           </div>
         `;
         return;
@@ -2594,7 +2599,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
 
       container.innerHTML = `
         <div style="font-weight: 800; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 0.3rem;">
-          Batting Card — ${battingInnings.teamName} (${battingInnings.totalRuns}/${battingInnings.totalWickets} in ${battingInnings.oversString || battingInnings.oversCompleted} ov)
+          Batting Card — ${esc(battingInnings.teamName)} (${battingInnings.totalRuns}/${battingInnings.totalWickets} in ${battingInnings.oversString || battingInnings.oversCompleted} ov)
         </div>
         <table class="cricket-table" style="margin-bottom: 0.8rem;">
           <thead>
@@ -2611,8 +2616,8 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
           <tbody>
             ${battingInnings.batters.map(b => `
               <tr>
-                <td style="font-weight: 700; color: #fff;">${b.name} ${!b.isOut && b.balls > 0 ? '*' : ''}</td>
-                <td style="color: #94a3b8; font-size: 0.7rem;">${b.isOut ? (b.dismissal || 'c & b') : b.balls > 0 ? 'not out' : 'did not bat'}</td>
+                <td style="font-weight: 700; color: #fff;">${esc(b.name)} ${!b.isOut && b.balls > 0 ? '*' : ''}</td>
+                <td style="color: #94a3b8; font-size: 0.7rem;">${b.isOut ? esc(b.dismissal || 'c & b') : b.balls > 0 ? 'not out' : 'did not bat'}</td>
                 <td style="text-align: right; font-weight: 800; color: #fff;">${b.runs}</td>
                 <td style="text-align: right;">${b.balls}</td>
                 <td style="text-align: right;">${b.fours}</td>
@@ -2640,7 +2645,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
           <tbody>
             ${bowlingCard.map(b => `
               <tr>
-                <td style="font-weight: 700; color: #fff;">${b.name}</td>
+                <td style="font-weight: 700; color: #fff;">${esc(b.name)}</td>
                 <td style="text-align: right;">${b.overs}</td>
                 <td style="text-align: right;">${b.maidens}</td>
                 <td style="text-align: right;">${b.runs}</td>
