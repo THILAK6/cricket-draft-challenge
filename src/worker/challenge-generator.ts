@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core/types";
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
+import { generateScenario } from "./scenario-generator";
 
 /**
  * Players in each draft room. Every draft gets a fresh random 30 drawn from the most-capped
@@ -439,6 +440,12 @@ export async function buildRandomDraft(
   });
   for (let attempt = 0; attempt < 8; attempt++) {
     const pool = samplePool(source, DRAFT_POOL_SIZE, rand);
+    // A freshly generated ground, conditions and selection rules, checked against this very pool
+    for (let tries = 0; tries < 12; tries++) {
+      const challenge = make(generateScenario(format, rand));
+      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool };
+    }
+    // Otherwise one of the hand-written scenarios
     for (const t of shuffled(templates, rand)) {
       const challenge = make(t);
       if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool };

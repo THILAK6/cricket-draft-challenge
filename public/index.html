@@ -1660,6 +1660,8 @@
         if (c.type === 'max_per_country') span.innerText = `Max ${c.value}/Country`;
         else if (c.type === 'min_category') span.innerText = `Min ${c.count} ${c.category}`;
         else if (c.type === 'batting_hand_order') span.innerText = `Slots ${c.positions.join(',')} ${c.hand}`;
+        else if (c.type === 'min_strike_rate_top_order') span.innerText = `2+ batters SR ${c.threshold}+`;
+        else if (c.type === 'min_bowlers_economy_under') span.innerText = `${c.min_count}+ bowlers econ ≤ ${c.threshold}`;
         else span.innerText = c.type;
         badgesContainer.appendChild(span);
       });
@@ -2542,6 +2544,14 @@
           else if (c.category === 'AR') catCount = squad.filter(p => p.primary_role === 'AR').length;
           ok = catCount >= c.count;
           desc = `Min ${c.count} ${c.category} (${catCount}/${c.count})`;
+        } else if (c.type === 'min_strike_rate_top_order') {
+          const n = squad.filter(p => p.stats && p.stats.bat_strike_rate >= c.threshold).length;
+          ok = n >= 2;
+          desc = `2+ batters with SR ${c.threshold}+ (${n}/2)`;
+        } else if (c.type === 'min_bowlers_economy_under') {
+          const n = squad.filter(p => (p.primary_role === 'BOWL' || p.primary_role === 'AR') && p.stats && p.stats.bowl_economy > 0 && p.stats.bowl_economy <= c.threshold).length;
+          ok = n >= c.min_count;
+          desc = `${c.min_count}+ bowlers with economy ≤ ${c.threshold} (${n}/${c.min_count})`;
         } else if (c.type === 'batting_hand_order') {
           desc = `Slots ${c.positions.join(',')} ${c.hand}`;
           c.positions.forEach(slotNum => {

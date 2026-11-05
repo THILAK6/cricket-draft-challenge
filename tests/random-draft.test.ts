@@ -46,4 +46,29 @@ describe("random drafts", () => {
       }
     });
   }
+
+  for (const format of ["T20", "ODI", "TEST"] as MatchFormat[]) {
+    it(`${format}: grounds, conditions and rules differ from draft to draft, and stay cheap`, async () => {
+      const venues = new Set<string>();
+      const pitches = new Set<string>();
+      const rules = new Set<string>();
+      const titles = new Set<string>();
+      let worst = 0;
+      for (let i = 0; i < 40; i++) {
+        const t0 = performance.now();
+        const { challenge } = await buildRandomDraft(d1, format);
+        worst = Math.max(worst, performance.now() - t0);
+        venues.add(challenge.venue.name);
+        pitches.add(challenge.venue.pitch_type);
+        titles.add(challenge.title);
+        rules.add(JSON.stringify(challenge.constraints));
+      }
+      expect(venues.size).toBeGreaterThanOrEqual(8);
+      expect(pitches.size).toBeGreaterThanOrEqual(3);
+      expect(titles.size).toBeGreaterThanOrEqual(15);
+      expect(rules.size).toBeGreaterThanOrEqual(10);
+      // generous bound for CI noise; the Worker budget is 10 ms CPU and the DB read is separate
+      expect(worst).toBeLessThan(150);
+    });
+  }
 });
