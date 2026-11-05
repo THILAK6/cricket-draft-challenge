@@ -502,7 +502,8 @@ export function canPickPlayer(
   player: PlayerWithStats,
   currentSquad: (PlayerWithStats | null)[],
   challenge: Challenge,
-  targetSlotIndex?: number
+  targetSlotIndex?: number,
+  ctx?: PickContext
 ): PickLegalityResult {
   const filledPlayers = currentSquad.filter((p): p is PlayerWithStats => p !== null);
 
@@ -649,6 +650,99 @@ export function canPickPlayer(
     }
   }
 
+  // 5d. At most two wicketkeepers in an XI (a second keeper must earn a place as a batter)
+  if (keepersWithThisPick > 2) {
+    return { allowed: false, reason: "At most 2 wicketkeepers allowed in an XI" };
+  }
+
+  // 6. Shared-pool reserve: both sides draw from one pool, so a pick must not leave
+  // either side unable to fill its remaining required roles.
+  if (ctx) {
+    const reserve = checkPoolReserve(player, currentSquad, challenge, targetSlotIndex, slotIndex, ctx);
+    if (reserve) return { allowed: false, reason: reserve };
+  }
+
   return { allowed: true };
 }
 
+export interface PickContext {
+  /** Players still available to both sides (may include the candidate). */
+  pool: PlayerWithStats[];
+  /** The other side's current squad. */
+  opponentSquad: (PlayerWithStats | null)[];
+}
+
+interface RoleNeed {
+  label: string;
+  required: number;
+  matches: (p: PlayerWithStats) => boolean;
+}
+
+function roleNeeds(challenge: Challenge): RoleNeed[] {
+  const needs: RoleNeed[] = [
+    { label: "Wicketkeeper", required: 1, matches: (p) => p.primary_role === "WK" },
+    {
+      label: "bowling option",
+      required: 5,
+      matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
+    },
+  ];
+  for (const c of challenge.constraints) {
+    if (c.type !== "min_category") continue;
+    needs.push({
+      label: c.category,
+      required: c.count,
+      matches: (p) =>
+        c.category === "PACE" ? p.bowling_category === "PACE"
+        : c.category === "SPIN" ? p.bowling_category === "SPIN"
+        : c.category === "WK" ? p.primary_role === "WK"
+        : p.primary_role === "AR",
+    });
+  }
+  return needs;
+}
+
+function countryCap(challenge: Challenge, country: string): number {
+  let cap = Infinity;
+  for (const c of challenge.constraints) {
+    if (c.type === "max_per_country") cap = Math.min(cap, c.exceptions?.[country] ?? c.value);
+  }
+  return cap;
+}
+
+/** Returns a reason string if the pick would strand either side, otherwise null. */
+function checkPoolReserve(
+  player: PlayerWithStats,
+  squad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  replacedIndex: number | undefined,
+  slotIndex: number,
+  ctx: PickContext
+): string | null {
+  const mine = squad.filter((p, i): p is PlayerWithStats => p !== null && i !== replacedIndex);
+  mine.push(player);
+  const theirs = ctx.opponentSquad.filter((p): p is PlayerWithStats => p !== null);
+  const pool = ctx.pool.filter((p) => p.id !== player.id);
+
+  const eligibleFor = (squadPlayers: PlayerWithStats[], need: RoleNeed) => {
+    const counts = new Map<string, number>();
+    for (const p of squadPlayers) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+    return pool.filter((p) => need.matches(p) && (counts.get(p.country) || 0) < countryCap(challenge, p.country)).length;
+  };
+
+  for (const need of roleNeeds(challenge)) {
+    const myNeed = Math.max(0, need.required - mine.filter(need.matches).length);
+    const theirNeed = Math.max(0, need.required - theirs.filter(need.matches).length);
+    if (myNeed > 0 && eligibleFor(mine, need) < myNeed) {
+      return `Taking this player would leave too few ${need.label} options in the pool for your squad`;
+    }
+    if (theirNeed > 0 && eligibleFor(theirs, need) < theirNeed) {
+      return `Taking this player would leave too few ${need.label} options in the pool for your opponent`;
+    }
+    if (myNeed + theirNeed > 0 && pool.filter(need.matches).length < myNeed + theirNeed) {
+      return `Not enough ${need.label} options left in the pool for both squads`;
+    }
+  }
+  void slotIndex;
+  return null;
+}

@@ -1,5 +1,5 @@
 import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from "../core/types";
-import { validateSquad, canPickPlayer } from "../core/validator";
+import { validateSquad, canPickPlayer, type PickContext } from "../core/validator";
 import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
 import { evaluateGroundConditionsWithGemini } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
@@ -333,7 +333,7 @@ export class DraftRoom implements DurableObject {
       }
     }
 
-    const check = canPickPlayer(candidate, squad, this.draftState.challenge, slotIdx);
+    const check = canPickPlayer(candidate, squad, this.draftState.challenge, slotIdx, this.poolContext(squad));
     if (!check.allowed) {
       return { success: false, error: check.reason || "Illegal pick" };
     }
@@ -368,6 +368,13 @@ export class DraftRoom implements DurableObject {
    * pair in the pool. It snipes generational stars (Bumrah, Kohli, Cummins, etc.) early,
    * matches them to their optimal slot, and counters pitch conditions ruthlessly.
    */
+  /** Pool + opponent squad, so legality checks can protect the shared pool. */
+  private poolContext(squad: (PlayerWithStats | null)[]): PickContext {
+    const state = this.draftState!;
+    const opponentSquad = squad === state.aiPicks ? state.userPicks : state.aiPicks;
+    return { pool: state.pool, opponentSquad };
+  }
+
   private executeAiPick() {
     if (!this.draftState || this.draftState.pool.length === 0) return;
 
@@ -487,7 +494,7 @@ export class DraftRoom implements DurableObject {
 
       // Test each vacant slot for positional legality and tactical fit
       for (const slotIdx of emptyIndices) {
-        const legalCheck = canPickPlayer(p, squad, challenge, slotIdx);
+        const legalCheck = canPickPlayer(p, squad, challenge, slotIdx, this.poolContext(squad));
         if (!legalCheck.allowed) continue;
 
         let slotFit = 0;
@@ -665,7 +672,7 @@ export class DraftRoom implements DurableObject {
       // Fallback: pick first legal player into first empty slot
       const fallbackSlot = emptyIndices[0];
       const legal = this.draftState.pool.filter(
-        (p) => canPickPlayer(p, squad, challenge, fallbackSlot).allowed
+        (p) => canPickPlayer(p, squad, challenge, fallbackSlot, this.poolContext(squad)).allowed
       );
       const chosen = legal.length > 0 ? legal[0] : this.draftState.pool[0];
       const pIdx = this.draftState.pool.findIndex((p) => p.id === chosen.id);

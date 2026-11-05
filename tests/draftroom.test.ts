@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
-import { checkChallengeFeasibility, checkDraftFeasibility, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
+import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import type { Challenge, DraftState, PlayerWithStats } from "../src/core/types";
 
 function mockPlayer(
@@ -224,5 +224,43 @@ describe("Feasibility search safeguards", () => {
     const draft = checkDraftFeasibility(pool, noHandRule, 5);
     expect(draft.isFeasible).toBe(false);
     expect(draft.reasons[0]).toMatch(/two disjoint XIs/);
+  });
+});
+
+describe("Role rules while drafting", () => {
+  const open: Challenge = { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] };
+
+  it("rejects a third wicketkeeper", () => {
+    const pool = buildPool();
+    const squad = [pool.find((p) => p.id === "IND_wk")!, pool.find((p) => p.id === "AUS_wk")!, ...Array(9).fill(null)];
+    const res = canPickPlayer(pool.find((p) => p.id === "ENG_wk")!, squad, open, 2);
+    expect(res.allowed).toBe(false);
+    expect(res.reason).toMatch(/wicketkeepers/);
+  });
+
+  it("won't hoard the last bowlers the opponent still needs", () => {
+    const all = buildPool();
+    const byId = (id: string) => all.find((p) => p.id === id)!;
+    // I already have 5 bowling options; the opponent has none and needs 5.
+    const mine = ["IND_pace", "AUS_pace", "ENG_pace", "RSA_spin", "NZL_spin", "PAK_wk"].map(byId);
+    const squad = [...mine, ...Array(5).fill(null)];
+    const opp = [byId("SL_wk"), ...Array(10).fill(null)];
+    const bowlers = ["WI_pace", "WI_spin", "SL_pace", "SL_spin", "BAN_pace"].map(byId);
+    const pool = [...bowlers, byId("AFG_rhb")];
+    const ctx = { pool, opponentSquad: opp };
+    // A 6th bowler for me would leave only 4 for an opponent who needs 5
+    const hoard = canPickPlayer(bowlers[0], squad, open, 6, ctx);
+    expect(hoard.allowed).toBe(false);
+    expect(hoard.reason).toMatch(/bowling option/);
+    // A batter is fine
+    expect(canPickPlayer(byId("AFG_rhb"), squad, open, 6, ctx).allowed).toBe(true);
+  });
+
+  it("never strands a naive batter-first drafter", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    await call(room, "/init", initState());
+    const drafted = await draftToCompletion(room);
+    expect(drafted.userPicks.filter(Boolean)).toHaveLength(11);
+    expect(drafted.aiPicks.filter(Boolean)).toHaveLength(11);
   });
 });
