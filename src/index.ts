@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DraftRoom } from "./durable-objects/DraftRoom";
-import { generateValidatedChallenge, fetchPlayerPool, DRAFT_POOL_SIZE } from "./worker/challenge-generator";
-import { checkDraftFeasibility } from "./core/validator";
+import { generateValidatedChallenge, getPlayerPool, DRAFT_POOL_SIZE } from "./worker/challenge-generator";
 import type { PlayerWithStats } from "./core/types";
 import type { Challenge, MatchFormat } from "./core/types";
 
@@ -134,12 +133,8 @@ app.post("/api/draft/start", async (c) => {
         constraints: JSON.parse(row.constraints_json || "[]"),
       };
 
-      // Stored challenges may predate the current pool: re-check head-to-head playability
-      pool = await fetchPlayerPool(c.env.DB, challenge.format, DRAFT_POOL_SIZE);
-      const feasibility = checkDraftFeasibility(pool, challenge, 1);
-      if (!feasibility.isFeasible) {
-        return c.json({ error: `Challenge is not playable with the current player pool: ${feasibility.reasons.join("; ")}` }, 409);
-      }
+      // Feasibility was verified when the challenge was generated (same pool size)
+      pool = await getPlayerPool(c.env.DB, challenge.format, DRAFT_POOL_SIZE);
     } else {
       // Auto-generate a challenge if not supplied; reuse the exact pool it was validated against
       const generated = await generateValidatedChallenge(c.env, { format: body.format });

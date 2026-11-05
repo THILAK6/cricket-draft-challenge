@@ -10,6 +10,8 @@ export interface FeasibilityResult {
   validCombinationsFound: number;
   sampleSquad?: PlayerWithStats[];
   reasons: string[];
+  /** Backtracking nodes visited, so callers can share one CPU budget across several searches. */
+  nodesVisited?: number;
 }
 
 /**
@@ -133,10 +135,11 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
 }
 
 /**
- * Upper bound on backtracking nodes visited. The combination space is C(pool, 11), so without
- * a budget a near-impossible challenge can burn through a Worker's CPU limit.
+ * Upper bound on backtracking nodes visited per feasibility search. With pruning, realistic
+ * challenges need under ~10k nodes (a few ms); impossible ones fail at the root. The cap
+ * keeps worst-case CPU inside the Workers free plan's 10 ms-per-request limit.
  */
-export const DEFAULT_SEARCH_NODE_BUDGET = 1_500_000; // ~1M nodes (~170ms) finds 50 XIs on a typical pool
+export const DEFAULT_SEARCH_NODE_BUDGET = 20_000;
 
 /**
  * Fast backtracking constraint satisfaction checker.
@@ -248,6 +251,50 @@ export function checkChallengeFeasibility(
     return 0;
   });
 
+  // Necessary-condition pruning: every squad-level rule is a "need >= N players matching X".
+  // Track how many matching players are selected and how many remain in the unexplored suffix;
+  // a branch that can no longer reach any requirement is cut immediately instead of being
+  // enumerated to a full 11 players. Keeps worst-case CPU tiny (Workers free plan: 10 ms).
+  const requirements: { matches: (p: PlayerWithStats) => boolean; need: number }[] = [
+    { matches: (p) => p.primary_role === "WK", need: 1 },
+    {
+      matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
+      need: 5,
+    },
+  ];
+  for (const c of challenge.constraints) {
+    if (c.type === "min_category") {
+      const cat = c.category;
+      requirements.push({
+        matches: (p) =>
+          cat === "PACE" ? p.bowling_category === "PACE"
+          : cat === "SPIN" ? p.bowling_category === "SPIN"
+          : cat === "WK" ? p.primary_role === "WK"
+          : p.primary_role === "AR",
+        need: c.count,
+      });
+    } else if (c.type === "batting_hand_order") {
+      requirements.push({ matches: (p) => p.batting_hand === c.hand, need: c.positions.length });
+    } else if (c.type === "min_bowlers_economy_under") {
+      requirements.push({
+        matches: (p) =>
+          (p.primary_role === "BOWL" || p.primary_role === "AR") &&
+          p.stats.bowl_economy > 0 &&
+          p.stats.bowl_economy <= c.threshold,
+        need: c.min_count,
+      });
+    } else if (c.type === "min_strike_rate_top_order") {
+      requirements.push({ matches: (p) => p.stats.bat_strike_rate >= c.threshold, need: 2 });
+    }
+  }
+  // suffixAvail[r][i] = players in sortedPool[i..] that satisfy requirement r
+  const suffixAvail = requirements.map((r) => {
+    const arr = new Array<number>(sortedPool.length + 1).fill(0);
+    for (let i = sortedPool.length - 1; i >= 0; i--) arr[i] = arr[i + 1] + (r.matches(sortedPool[i]) ? 1 : 0);
+    return arr;
+  });
+  const have = requirements.map(() => 0);
+
   let solutionsFound = 0;
   let sampleSquad: PlayerWithStats[] | undefined;
   const currentSelection: PlayerWithStats[] = [];
@@ -278,6 +325,13 @@ export function checkChallengeFeasibility(
     const needed = 11 - currentSelection.length;
     if (sortedPool.length - startIndex < needed) return;
 
+    // Prune if any squad-level requirement is already unreachable
+    for (let r = 0; r < requirements.length; r++) {
+      const stillNeeded = requirements[r].need - have[r];
+      if (stillNeeded > needed) return; // not enough open slots left to reach this quota
+      if (stillNeeded > suffixAvail[r][startIndex]) return; // not enough matching players left
+    }
+
     if (currentSelection.length === 11) {
       const result = validateSquad(currentSelection, challenge);
       if (result.valid) {
@@ -302,6 +356,7 @@ export function checkChallengeFeasibility(
       // Choose
       currentSelection.push(candidate);
       countryUsage.set(candidate.country, curCountryCount + 1);
+      for (let r = 0; r < requirements.length; r++) if (requirements[r].matches(candidate)) have[r]++;
 
       // Recurse
       backtrack(i + 1);
@@ -309,6 +364,7 @@ export function checkChallengeFeasibility(
       // Unchoose
       currentSelection.pop();
       countryUsage.set(candidate.country, curCountryCount);
+      for (let r = 0; r < requirements.length; r++) if (requirements[r].matches(candidate)) have[r]--;
     }
   }
 
@@ -328,14 +384,17 @@ export function checkChallengeFeasibility(
     validCombinationsFound: solutionsFound,
     sampleSquad,
     reasons,
+    nodesVisited,
   };
 }
 
 /**
- * The user and the AI draft from one shared pool, so a challenge is only playable if
- * two disjoint legal XIs exist. Verifies the pool supports `targetSolutions` XIs, then
- * removes one sample XI and checks that a second legal XI can still be formed.
- * Passing guarantees two disjoint XIs exist (sufficient, not necessary).
+ * The user and the AI draft from one shared pool, so a challenge is only playable if two
+ * disjoint legal XIs exist. Cheap necessary conditions run first (each team needs its own
+ * keeper, bowlers, category and handedness quota, and the country caps must allow 22 players),
+ * then one XI is searched for and removed from the pool and a second must still be found.
+ * Passing guarantees two disjoint XIs exist (sufficient, not necessary). `maxNodes` is shared
+ * across both searches so total CPU stays bounded.
  */
 export function checkDraftFeasibility(
   pool: PlayerWithStats[],
@@ -343,23 +402,91 @@ export function checkDraftFeasibility(
   targetSolutions = 50,
   maxNodes = DEFAULT_SEARCH_NODE_BUDGET
 ): FeasibilityResult {
+  const fail = (reason: string): FeasibilityResult => ({
+    isFeasible: false,
+    validCombinationsFound: 0,
+    reasons: [reason],
+  });
+
+  // --- Two-team necessary conditions (O(pool), no search) ---
+  const isBowlingOption = (p: PlayerWithStats) =>
+    p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0;
+  if (pool.filter((p) => p.primary_role === "WK").length < 2) {
+    return fail("Pool cannot support two disjoint XIs: fewer than 2 wicketkeepers.");
+  }
+  if (pool.filter(isBowlingOption).length < 10) {
+    return fail("Pool cannot support two disjoint XIs: fewer than 10 bowling options.");
+  }
+  for (const c of challenge.constraints) {
+    if (c.type === "min_category") {
+      const available = pool.filter((p) =>
+        c.category === "PACE" ? p.bowling_category === "PACE"
+        : c.category === "SPIN" ? p.bowling_category === "SPIN"
+        : c.category === "WK" ? p.primary_role === "WK"
+        : p.primary_role === "AR"
+      ).length;
+      if (available < 2 * c.count) {
+        return fail(`Pool cannot support two disjoint XIs: ${available} ${c.category} players, ${2 * c.count} needed.`);
+      }
+    } else if (c.type === "batting_hand_order") {
+      const available = pool.filter((p) => p.batting_hand === c.hand).length;
+      if (available < 2 * c.positions.length) {
+        return fail(`Pool cannot support two disjoint XIs: ${available} ${c.hand} batters, ${2 * c.positions.length} needed.`);
+      }
+    } else if (c.type === "max_per_country") {
+      const counts = new Map<string, number>();
+      for (const p of pool) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+      let capacity = 0;
+      for (const [country, count] of counts) {
+        capacity += Math.min(2 * (c.exceptions?.[country] ?? c.value), count);
+      }
+      if (capacity < 22) {
+        return fail(`Pool cannot support two disjoint XIs: country caps allow only ${capacity} of 22 players.`);
+      }
+    }
+  }
+
+  // --- Search ---
+  // Strategy 1 (greedy): find an XI in the full pool, remove it, find a second from the rest.
   const first = checkChallengeFeasibility(pool, challenge, targetSolutions, maxNodes);
   if (!first.isFeasible || !first.sampleSquad) return first;
 
+  let used = first.nodesVisited ?? 0;
   const takenIds = new Set(first.sampleSquad.map((p) => p.id));
   const remaining = pool.filter((p) => !takenIds.has(p.id));
-  const second = checkChallengeFeasibility(remaining, challenge, 1, maxNodes);
-  if (!second.isFeasible) {
-    return {
-      isFeasible: false,
-      validCombinationsFound: first.validCombinationsFound,
-      sampleSquad: first.sampleSquad,
-      reasons: [
-        `Pool cannot support two disjoint XIs for a head-to-head draft: ${second.reasons.join("; ")}`,
-      ],
-    };
+  const second = checkChallengeFeasibility(remaining, challenge, 1, Math.max(2_000, maxNodes - used));
+  used += second.nodesVisited ?? 0;
+  if (second.isFeasible) return { ...first, nodesVisited: used };
+
+  // Strategy 2 (dealt halves): the greedy XI may have hoarded a scarce role (e.g. both keepers).
+  // Deal the pool like cards by role/category/hand/country so each half holds an even share of
+  // every scarce group; an XI found in each half independently proves two disjoint XIs exist.
+  const dealt = [...pool].sort(
+    (a, b) =>
+      a.primary_role.localeCompare(b.primary_role) ||
+      a.bowling_category.localeCompare(b.bowling_category) ||
+      a.batting_hand.localeCompare(b.batting_hand) ||
+      a.country.localeCompare(b.country)
+  );
+  const halfA: PlayerWithStats[] = [];
+  const halfB: PlayerWithStats[] = [];
+  dealt.forEach((p, i) => (i % 2 === 0 ? halfA : halfB).push(p));
+  const perHalf = Math.max(2_000, Math.floor((maxNodes - used) / 2));
+  const resA = checkChallengeFeasibility(halfA, challenge, 1, perHalf);
+  used += resA.nodesVisited ?? 0;
+  if (resA.isFeasible) {
+    const resB = checkChallengeFeasibility(halfB, challenge, 1, perHalf);
+    used += resB.nodesVisited ?? 0;
+    if (resB.isFeasible) return { ...first, nodesVisited: used };
   }
-  return first;
+
+  return {
+    isFeasible: false,
+    validCombinationsFound: first.validCombinationsFound,
+    sampleSquad: first.sampleSquad,
+    reasons: [`Pool cannot support two disjoint XIs for a head-to-head draft: ${second.reasons.join("; ")}`],
+    nodesVisited: used,
+  };
 }
 
 export interface PickLegalityResult {

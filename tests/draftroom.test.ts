@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
-import { checkChallengeFeasibility, checkDraftFeasibility } from "../src/core/validator";
+import { checkChallengeFeasibility, checkDraftFeasibility, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import type { Challenge, DraftState, PlayerWithStats } from "../src/core/types";
 
 function mockPlayer(
@@ -192,16 +192,28 @@ describe("DraftRoom endpoint hardening", () => {
 });
 
 describe("Feasibility search safeguards", () => {
-  it("stops at the node budget instead of exhausting CPU on impossible constraints", () => {
+  it("fails impossible constraints at the root instead of searching", () => {
     const impossible: Challenge = {
       ...challenge,
       constraints: [{ type: "min_strike_rate_top_order", threshold: 999 }],
     };
-    const start = Date.now();
-    const result = checkChallengeFeasibility(buildPool(), impossible, 1, 20_000);
+    const result = checkChallengeFeasibility(buildPool(), impossible, 1);
+    expect(result.isFeasible).toBe(false);
+    expect(result.nodesVisited).toBeLessThanOrEqual(2);
+  });
+
+  it("stops at the node budget instead of exhausting CPU", () => {
+    const easy: Challenge = { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] };
+    const result = checkChallengeFeasibility(buildPool(), easy, 50, 25);
     expect(result.isFeasible).toBe(false);
     expect(result.reasons[0]).toMatch(/budget/);
-    expect(Date.now() - start).toBeLessThan(5_000);
+    expect(result.nodesVisited).toBeLessThanOrEqual(26);
+  });
+
+  it("finds a realistic challenge well inside the free-plan CPU budget", () => {
+    const result = checkDraftFeasibility(buildPool(), { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] }, 1);
+    expect(result.isFeasible).toBe(true);
+    expect(result.nodesVisited).toBeLessThan(DEFAULT_SEARCH_NODE_BUDGET);
   });
 
   it("rejects pools that can only support one XI in a head-to-head draft", () => {

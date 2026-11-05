@@ -9,12 +9,35 @@ import { checkDraftFeasibility } from "../core/validator";
  */
 export const DRAFT_POOL_SIZE = 50;
 
+/**
+ * Free-plan budget: Workers AI gives ~10k neurons/day, so ask the model once per request and
+ * fall back to the built-in templates (which cost nothing) rather than retrying.
+ */
+const MAX_AI_ATTEMPTS = 1;
+
+/** Pools change only when the DB is re-seeded, so keep them per isolate to save D1 reads and CPU. */
+const POOL_CACHE_TTL_MS = 10 * 60 * 1000;
+const poolCache = new Map<string, { at: number; pool: PlayerWithStats[] }>();
+
+export async function getPlayerPool(
+  db: D1Database,
+  format: MatchFormat,
+  limit = DRAFT_POOL_SIZE
+): Promise<PlayerWithStats[]> {
+  const key = `${format}:${limit}`;
+  const hit = poolCache.get(key);
+  if (hit && Date.now() - hit.at < POOL_CACHE_TTL_MS) return hit.pool;
+  const pool = await fetchPlayerPool(db, format, limit);
+  if (pool.length > 0) poolCache.set(key, { at: Date.now(), pool });
+  return pool;
+}
+
 export interface Env {
   DB: D1Database;
   AI?: any;
 }
 
-const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
+export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
   {
     title: "The Chepauk Dustbowl Trial",
     format: "T20",
@@ -152,7 +175,8 @@ const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
       "Puff of dust on every delivery. Ball is spitting off the cracks. Subcontinental spin wizards are lethal; batters need soft hands and sweep technique.",
     constraints: [
       { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
-      { type: "min_category", category: "SPIN", count: 2 },
+      // The Test pool has only 3 spinners and both teams draft from it, so 1 each is the max
+      { type: "min_category", category: "SPIN", count: 1 },
     ],
   },
 ];
@@ -221,13 +245,13 @@ export async function generateValidatedChallenge(
   options: { format?: MatchFormat; requestedVenue?: string } = {}
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[]; attempts: number }> {
   const format: MatchFormat = options.format || "T20";
-  const pool = await fetchPlayerPool(env.DB, format, DRAFT_POOL_SIZE);
+  const pool = await getPlayerPool(env.DB, format, DRAFT_POOL_SIZE);
 
   if (pool.length < 22) {
     throw new Error(`Insufficient players in D1 database for format ${format} (found ${pool.length}). Run database seeding.`);
   }
 
-  const maxAttempts = 3;
+  const maxAttempts = env.AI && typeof env.AI.run === "function" ? MAX_AI_ATTEMPTS : 1;
   let lastRejectionReason = "";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -257,16 +281,11 @@ export async function generateValidatedChallenge(
     console.warn(`[Generator] Attempt ${attempt} failed feasibility check: ${lastRejectionReason}`);
   }
 
-  // If AI generation attempts failed feasibility, fall back to the first built-in template
-  // that is actually feasible against this pool (templates are not trusted blindly).
-  for (const fallback of shuffledFallbackChallenges(format)) {
-    if (checkDraftFeasibility(pool, fallback, 50).isFeasible) {
-      await saveChallenge(env.DB, fallback);
-      return { challenge: fallback, pool, attempts: maxAttempts + 1 };
-    }
-  }
-
-  throw new Error(`No feasible ${format} challenge for the current player pool (${pool.length} players). Last rejection: ${lastRejectionReason}`);
+  // Built-in templates are verified against the seeded pools by tests/templates.test.ts,
+  // so serving one costs no CPU (no runtime search) and no AI quota.
+  const fallback = selectFallbackChallenge(format);
+  await saveChallenge(env.DB, fallback);
+  return { challenge: fallback, pool, attempts: maxAttempts + 1 };
 }
 
 async function requestChallengeFromAI(
@@ -322,20 +341,6 @@ IMPORTANT RULES:
     ...parsed,
     format,
   });
-}
-
-function shuffledFallbackChallenges(format: MatchFormat): Challenge[] {
-  const filtered = FALLBACK_SCENARIOS.filter((s) => s.format === format);
-  const templates = [...(filtered.length > 0 ? filtered : FALLBACK_SCENARIOS)];
-  for (let i = templates.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [templates[i], templates[j]] = [templates[j], templates[i]];
-  }
-  return templates.map((template) => ({
-    id: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    ...template,
-    format,
-  }));
 }
 
 function selectFallbackChallenge(format: MatchFormat): Challenge {

@@ -17,6 +17,16 @@ export interface RefereeEvaluationResult {
 /** Override per deployment with the GEMINI_MODEL var when Google retires a model. */
 export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
+/**
+ * Gemini's free tier is rate limited (requests per minute and per day). After a 429 we skip
+ * the API for a cooldown and serve the deterministic referee instead of hammering a closed door.
+ * The match result never depends on Gemini: the simulator decides the winner, Gemini only
+ * adds commentary and a bounded +/-10 adjustment.
+ */
+const GEMINI_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const GEMINI_TIMEOUT_MS = 8_000;
+let geminiBackoffUntil = 0;
+
 export async function evaluateGroundConditionsWithGemini(
   userSquad: (PlayerWithStats | null)[],
   aiSquad: (PlayerWithStats | null)[],
@@ -37,8 +47,8 @@ export async function evaluateGroundConditionsWithGemini(
       ? "AI"
       : "TIE";
 
-  // Fallback if no Gemini API key provided
-  if (!apiKey) {
+  // Fallback if no Gemini API key provided, or while cooling down after a rate-limit response
+  if (!apiKey || Date.now() < geminiBackoffUntil) {
     return {
       user_score: userBreakdown.deterministic_total,
       ai_score: aiBreakdown.deterministic_total,
@@ -162,12 +172,16 @@ Return JSON in this exact structure:
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: "application/json" },
       }),
     });
 
+    if (res.status === 429) {
+      geminiBackoffUntil = Date.now() + GEMINI_RATE_LIMIT_COOLDOWN_MS;
+    }
     if (!res.ok) {
       throw new Error(`Gemini API HTTP ${res.status}`);
     }
