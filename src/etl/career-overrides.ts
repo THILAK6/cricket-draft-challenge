@@ -28,6 +28,18 @@ interface CareerLine {
   bowlAvg: number;
 }
 type Career = Partial<Record<Fmt, CareerLine>>;
+interface Entry {
+  /** Wikipedia article title, e.g. "Thisara Perera"; used as the display name. */
+  title?: string;
+  career: Career;
+}
+
+/** "Sachin Tendulkar (cricketer)" -> "Sachin Tendulkar"; null if it does not look like a person's name. */
+export function displayName(title: string | undefined): string | null {
+  if (!title) return null;
+  const t = title.replace(/\s*\(.*?\)\s*$/, "").trim();
+  return /^[\p{L}.'’ -]{3,40}$/u.test(t) && t.includes(" ") ? t : null;
+}
 
 const num = (v: string | undefined): number => {
   if (!v) return NaN;
@@ -131,6 +143,8 @@ interface SeedRow {
   finisher: number;
   bowlInnings: number;
   sr: number;
+  /** Cricsheet bowling columns, restored when the infobox has too little bowling to trust. */
+  bowl: number[];
 }
 
 function readSeed() {
@@ -143,7 +157,7 @@ function readSeed() {
   for (const m of sql.matchAll(/INSERT OR REPLACE INTO player_format_stats \([^)]*\) VALUES \('([^']+)', '([^']+)', ([^;]*)\);/g)) {
     const v = m[3].split(",").map((x) => parseFloat(x.trim()));
     // matches, bat_innings, bat_runs, bat_balls, bat_average, bat_strike_rate, top, middle, finisher, bowl_innings, ...
-    stats.set(`${m[1]}|${m[2]}`, { matches: v[0], batInnings: v[1], top: v[6], middle: v[7], finisher: v[8], bowlInnings: v[9], sr: v[5] });
+    stats.set(`${m[1]}|${m[2]}`, { matches: v[0], batInnings: v[1], top: v[6], middle: v[7], finisher: v[8], bowlInnings: v[9], sr: v[5], bowl: v.slice(10, 15) });
   }
   return { players, stats };
 }
@@ -155,15 +169,17 @@ async function main() {
   const ids = [...new Set([...players.values()].map((p) => p.cricinfo))];
   console.log(`${players.size} players, ${stats.size} format rows`);
 
-  let cache: Record<string, Career> = {};
+  let cache: Record<string, Entry> = {};
   if (fs.existsSync(cachePath) && !process.argv.includes("--refresh")) cache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+  // Older caches stored the career object directly; refetch those.
+  for (const [k, v] of Object.entries(cache)) if (!v || typeof v !== "object" || !("career" in v)) delete cache[k];
   const missing = ids.filter((id) => !(id in cache));
   if (missing.length) {
     const titles = await wikiTitles(missing);
     const careers = await fetchCareers([...new Set(titles.values())]);
     for (const id of missing) {
       const t = titles.get(id);
-      cache[id] = (t && careers.get(t)) || {};
+      cache[id] = { title: t, career: (t && careers.get(t)) || {} };
     }
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
     fs.writeFileSync(cachePath, JSON.stringify(cache));
@@ -173,8 +189,11 @@ async function main() {
   let applied = 0;
   const report: string[] = [];
   for (const [pid, p] of players) {
-    const career = cache[p.cricinfo];
-    if (!career) continue;
+    const entry = cache[p.cricinfo];
+    if (!entry) continue;
+    const career = entry.career;
+    const nice = displayName(entry.title);
+    if (nice && nice !== p.name) lines.push(`UPDATE players SET name = '${nice.replace(/'/g, "''")}' WHERE id = '${pid}';`);
     for (const fmt of ["TEST", "ODI", "T20"] as Fmt[]) {
       const c = career[fmt];
       const s = stats.get(`${pid}|${fmt}`);
@@ -195,10 +214,14 @@ async function main() {
         `finisher_innings = ${Math.round(s.finisher * ratio)}`,
         `bowl_innings = ${Math.round(s.bowlInnings * ratio)}`,
       ];
-      if (c.deliveries > 0 && c.wickets > 0 && c.bowlAvg > 0) {
+      // Part-timers bowl too little for the infobox figures to mean anything (e.g. 20 overs in 300 matches).
+      if (c.deliveries >= 300 && c.wickets >= 5 && c.bowlAvg > 0) {
         const overs = c.deliveries / 6;
         const conceded = Math.round(c.wickets * c.bowlAvg);
         set.push(`bowl_overs = ${r2(overs)}`, `bowl_wickets = ${c.wickets}`, `bowl_runs_conceded = ${conceded}`, `bowl_average = ${r2(c.bowlAvg)}`, `bowl_economy = ${r2(conceded / overs)}`);
+      } else if (s.bowl.length === 5 && s.bowl.every((x) => Number.isFinite(x))) {
+        const [bo, bw, br, ba, be] = s.bowl;
+        set.push(`bowl_overs = ${bo}`, `bowl_wickets = ${bw}`, `bowl_runs_conceded = ${br}`, `bowl_average = ${ba}`, `bowl_economy = ${be}`);
       }
       lines.push(`UPDATE player_format_stats SET ${set.join(", ")} WHERE player_id = '${pid}' AND format = '${fmt}';`);
       applied++;
@@ -206,7 +229,7 @@ async function main() {
     }
   }
   fs.writeFileSync(outPath, lines.join("\n") + "\n");
-  const covered = Object.values(cache).filter((c) => Object.keys(c).length > 0).length;
+  const covered = Object.values(cache).filter((c) => Object.keys(c.career).length > 0).length;
   console.log(`Wikipedia career data found for ${covered}/${ids.length} players; ${applied} format rows overridden`);
   console.log(report.join("\n"));
 }

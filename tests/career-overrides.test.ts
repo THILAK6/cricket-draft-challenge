@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseInfobox } from "../src/etl/career-overrides";
+import { parseInfobox, displayName } from "../src/etl/career-overrides";
 
 const sample = `{{Infobox cricketer
 | name = Test Player
@@ -34,5 +34,15 @@ describe("career infobox parser", () => {
 
   it("returns nothing when there is no cricketer infobox", () => {
     expect(parseInfobox("{{Infobox person | name = X }}")).toEqual({});
+  });
+});
+
+describe("display names", () => {
+  it("uses the article title without disambiguation and rejects non-names", () => {
+    expect(displayName("Sachin Tendulkar")).toBe("Sachin Tendulkar");
+    expect(displayName("Thisara Perera (cricketer)")).toBe("Thisara Perera");
+    expect(displayName("Cricket")).toBeNull();
+    expect(displayName(undefined)).toBeNull();
+    expect(displayName("List of Test records 2020")).toBeNull();
   });
 });
