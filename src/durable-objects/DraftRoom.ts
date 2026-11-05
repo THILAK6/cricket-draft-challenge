@@ -90,7 +90,7 @@ export class DraftRoom implements DurableObject {
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "UPDATE", state: this.draftState });
 
-      return Response.json({ success: true, state: this.draftState });
+      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
     }
 
     if (url.pathname.endsWith("/referee") && request.method === "POST") {
@@ -137,7 +137,7 @@ export class DraftRoom implements DurableObject {
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "UPDATE", state: this.draftState });
 
-      return Response.json({ success: true, state: this.draftState });
+      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
     }
 
     if (url.pathname.endsWith("/reorder") && request.method === "POST") {
@@ -159,7 +159,7 @@ export class DraftRoom implements DurableObject {
       await this.state.storage.put("draftState", this.draftState);
       this.broadcast({ type: "UPDATE", state: this.draftState });
 
-      return Response.json({ success: true, state: this.draftState });
+      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
     }
 
     return new Response("Not found", { status: 404 });
@@ -323,11 +323,18 @@ export class DraftRoom implements DurableObject {
     const disallowMoreSpinners =
       (pitchType === "HIGH_SCORING_FLAT" || pitchType === "GREEN_SEAMER") && spinnerCount >= 1;
 
+    // Analyze User's Latest Draft Action for Counter-Sniping
+    const userNonNull = this.draftState.userPicks.filter((p): p is PlayerWithStats => p !== null);
+    const lastUserPick = userNonNull.length > 0 ? userNonNull[userNonNull.length - 1] : null;
+    const userHasKeeper = userNonNull.some((p) => p.primary_role === "WK");
+    const userBowlersCount = userNonNull.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").length;
+
     // Evaluate every legal (candidate, slot) combination
     interface ScoredPair {
       player: PlayerWithStats;
       slotIndex: number;
       score: number;
+      reason: string;
     }
 
     const candidatePairs: ScoredPair[] = [];
@@ -483,8 +490,74 @@ export class DraftRoom implements DurableObject {
           urgency += emptyIndices.length <= 4 ? 120 : 50;
         }
 
-        const totalScore = quality + pitchBonus + slotFit + urgency;
-        candidatePairs.push({ player: p, slotIndex: slotIdx, score: totalScore });
+        // Strategic Counter-Sniping & Rival Anticipation
+        let counterSnipeBonus = 0;
+        let snipeReason = "";
+
+        if (lastUserPick) {
+          // 1. Nationality Synergy Sniping (e.g., if User took Kohli, AI snipes Rohit / Dhoni / Tendulkar / Bumrah)
+          if (p.country === lastUserPick.country && p.country === "IND") {
+            const isMarquee = p.name.includes("Rohit") || p.name.includes("Dhoni") || p.name.includes("Tendulkar") || p.name.includes("Bumrah") || p.name.includes("Kohli");
+            if (isMarquee) {
+              counterSnipeBonus += 140;
+              snipeReason = `AI anticipated your next move and snatched ${p.name} before you could pair them with ${lastUserPick.name}!`;
+            } else {
+              counterSnipeBonus += 50;
+              snipeReason = `AI counter-drafted ${p.name} to restrict your Indian combinations!`;
+            }
+          } else if (p.country === lastUserPick.country && p.country === "AUS") {
+            const isMarquee = p.name.includes("Warner") || p.name.includes("Smith") || p.name.includes("Starc") || p.name.includes("Maxwell") || p.name.includes("Cummins");
+            if (isMarquee) {
+              counterSnipeBonus += 130;
+              snipeReason = `AI intercepted ${p.name} to deny you an Australian powerhouse pairing with ${lastUserPick.name}!`;
+            }
+          } else if (p.country === lastUserPick.country && p.country === "ENG") {
+            const isMarquee = p.name.includes("Root") || p.name.includes("Stokes") || p.name.includes("Buttler") || p.name.includes("Anderson");
+            if (isMarquee) {
+              counterSnipeBonus += 130;
+              snipeReason = `AI struck back by seizing ${p.name} before you could expand your English core!`;
+            }
+          } else if (p.country === lastUserPick.country && p.country === "RSA") {
+            const isMarquee = p.name.includes("Villiers") || p.name.includes("Kallis") || p.name.includes("Steyn") || p.name.includes("Rabada");
+            if (isMarquee) {
+              counterSnipeBonus += 130;
+              snipeReason = `AI poached ${p.name} to deny you South Africa's premier match-winner!`;
+            }
+          }
+
+          // 2. Role Rivalry Counter: User took top anchor/batter -> AI snipes strike bowler
+          if ((lastUserPick.primary_role === "BAT" || lastUserPick.primary_role === "WK") && (isBowl && (p.stats.bowl_wickets >= 30 || p.stats.bowl_economy <= 5.2))) {
+            counterSnipeBonus += 90;
+            if (!snipeReason) snipeReason = `AI counter-drafted strike weapon ${p.name} to neutralize ${lastUserPick.name}!`;
+          }
+
+          // 3. Wicketkeeper Starvation
+          if (!userHasKeeper && isWK && (p.name.includes("Dhoni") || p.name.includes("Gilchrist") || p.name.includes("Sangakkara") || p.name.includes("Buttler") || p.name.includes("Pant"))) {
+            counterSnipeBonus += 125;
+            snipeReason = `AI sniped premier wicketkeeper ${p.name}, applying massive squad pressure!`;
+          }
+
+          // 4. Bowling Starvation
+          if (userBowlersCount < 3 && userNonNull.length >= 6 && isBowl) {
+            counterSnipeBonus += 80;
+            if (!snipeReason) snipeReason = `AI secured ${p.name} to starve your remaining bowling slots!`;
+          }
+        } else {
+          // Round 1 Marquee Star Sniping
+          const isMarqueeIcon = p.name.includes("Kohli") || p.name.includes("Rohit") || p.name.includes("Dhoni") || p.name.includes("Bumrah") || p.name.includes("Kallis") || p.name.includes("Smith") || p.name.includes("Root") || p.name.includes("Villiers") || p.name.includes("Malinga") || p.name.includes("Warne");
+          if (isMarqueeIcon) {
+            counterSnipeBonus += 150;
+            snipeReason = `AI opened the draft aggressively by locking down generational superstar ${p.name}!`;
+          }
+        }
+
+        const totalScore = quality + pitchBonus + slotFit + urgency + counterSnipeBonus;
+        candidatePairs.push({
+          player: p,
+          slotIndex: slotIdx,
+          score: totalScore,
+          reason: snipeReason || `AI strategically secured ${p.name} for Slot #${slotIdx + 1}.`,
+        });
       }
     }
 
@@ -499,6 +572,11 @@ export class DraftRoom implements DurableObject {
       if (pIdx !== -1) {
         const [picked] = this.draftState.pool.splice(pIdx, 1);
         squad[fallbackSlot] = picked;
+        this.draftState.lastAiSnipe = {
+          player: picked,
+          slotIndex: fallbackSlot,
+          reason: `AI picked ${picked.name} into Slot #${fallbackSlot + 1}.`,
+        };
         this.draftState.currentTurn = "USER";
         this.draftState.round += 1;
         this.draftState.lastActionTimestamp = Date.now();
@@ -514,6 +592,11 @@ export class DraftRoom implements DurableObject {
     if (pIdx !== -1) {
       const [picked] = this.draftState.pool.splice(pIdx, 1);
       squad[best.slotIndex] = picked;
+      this.draftState.lastAiSnipe = {
+        player: picked,
+        slotIndex: best.slotIndex,
+        reason: best.reason,
+      };
       this.draftState.currentTurn = "USER";
       this.draftState.round += 1;
       this.draftState.lastActionTimestamp = Date.now();

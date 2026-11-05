@@ -104,6 +104,12 @@ export interface ScoringBreakdown {
 }
 
 // Draft Room State for Durable Objects
+export interface AiSnipeInfo {
+  player: PlayerWithStats;
+  slotIndex: number;
+  reason: string;
+}
+
 export interface DraftState {
   roomId: string;
   challenge: Challenge;
@@ -117,6 +123,7 @@ export interface DraftState {
   lastActionTimestamp: number;
   simulation?: MatchSimulationResult;
   results?: any;
+  lastAiSnipe?: AiSnipeInfo;
 }
 
 export interface SlotDefinition {

@@ -771,6 +771,103 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* AI Snipe Panic Overlay */
+    .ai-snipe-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(4, 7, 12, 0.88);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.15s ease-out;
+    }
+    .ai-snipe-box {
+      background: linear-gradient(145deg, #18101a 0%, #0d121c 60%, #150d18 100%);
+      border: 2px solid #ef4444;
+      box-shadow: 0 0 50px rgba(239, 68, 68, 0.35), 0 20px 40px rgba(0, 0, 0, 0.8);
+      border-radius: 16px;
+      padding: 1.4rem 1.6rem;
+      max-width: 460px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+      animation: popInSnipe 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes popInSnipe {
+      0% { transform: scale(0.7) translateY(20px); opacity: 0; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    .ai-snipe-badge {
+      display: inline-block;
+      background: #ef4444;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+      margin-bottom: 0.65rem;
+      text-transform: uppercase;
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+      animation: pulseBadge 0.8s infinite alternate;
+    }
+    @keyframes pulseBadge {
+      from { transform: scale(1); }
+      to { transform: scale(1.05); box-shadow: 0 0 22px rgba(239, 68, 68, 0.9); }
+    }
+    .ai-snipe-player-name {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #fff;
+      margin: 0 0 0.2rem 0;
+      letter-spacing: -0.02em;
+    }
+    .ai-snipe-country-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+      display: block;
+      margin-bottom: 0.75rem;
+    }
+    .ai-snipe-narrative-card {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      margin: 0.75rem 0;
+      font-size: 0.82rem;
+      color: #fca5a5;
+      line-height: 1.45;
+      text-align: left;
+    }
+    .ai-snipe-reason-text {
+      margin: 0;
+      font-style: italic;
+      font-weight: 600;
+    }
+    .ai-snipe-slot-target {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      margin-bottom: 0.6rem;
+      font-weight: 600;
+    }
+    .ai-snipe-progress {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .ai-snipe-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #ef4444;
+      transition: width 1.8s linear;
+    }
+
     /* Responsive Rules */
     @media (max-width: 1024px) {
       .cockpit-view {
@@ -955,6 +1052,28 @@
 
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toast-container"></div>
+
+  <!-- AI Counter-Snipe Panic Modal -->
+  <div id="ai-snipe-modal" class="ai-snipe-overlay" style="display: none;" onclick="dismissAiSnipeModal()">
+    <div class="ai-snipe-box" onclick="event.stopPropagation()">
+      <div class="ai-snipe-badge">⚠️ AI COUNTER-SNIPE!</div>
+      <div class="ai-snipe-hero">
+        <h2 id="snipe-player-name" class="ai-snipe-player-name">ROHIT SHARMA</h2>
+        <span id="snipe-country-tag" class="ai-snipe-country-tag">🇮🇳 INDIA • BATTING STAR</span>
+      </div>
+      <div class="ai-snipe-stats" id="snipe-stats-container" style="margin-bottom: 0.6rem;"></div>
+      <div class="ai-snipe-narrative-card">
+        <p id="snipe-reason-text" class="ai-snipe-reason-text">AI anticipated your next move and snatched Rohit Sharma before you could pair him with Virat Kohli!</p>
+      </div>
+      <div class="ai-snipe-slot-target" id="snipe-slot-target">
+        Dropping into AI XI Slot #1 (Opening Anchor)...
+      </div>
+      <div class="ai-snipe-progress"><div class="ai-snipe-progress-fill"></div></div>
+      <button class="btn btn-sm btn-secondary" onclick="dismissAiSnipeModal()" style="margin-top: 0.5rem; width: 100%; font-weight: 700;">
+        Acknowledge Snipe ⚡
+      </button>
+    </div>
+  </div>
 
   <!-- Authentic Cricket Match Scorecard Modal -->
   <div class="scorecard-modal-backdrop" id="scorecard-modal" style="display: none;">
@@ -1416,6 +1535,121 @@
       renderDraftBoard();
     }
 
+    function getRoleStatsHtml(p) {
+      const batAvg = (p.stats.bat_average || 0).toFixed(1);
+      const batSr = (p.stats.bat_strike_rate || 0).toFixed(1);
+      const bowlEcon = p.stats.bowl_overs > 0 ? (p.stats.bowl_economy || 0).toFixed(2) : '-';
+      const bowlWkts = p.stats.bowl_overs > 0 ? p.stats.bowl_wickets : 0;
+      const bowlAvg = p.stats.bowl_average ? p.stats.bowl_average.toFixed(1) : '-';
+      const runs = p.stats.bat_runs || 0;
+
+      if (p.primary_role === 'BAT') {
+        return `
+          <span>Role: <strong class="stat-val">BAT</strong> (${p.batting_hand})</span>
+          <span>Bat: <strong class="stat-val-highlight">${batAvg}</strong> avg • <span class="stat-val">${batSr}</span> SR</span>
+          <span style="color: #94a3b8; font-size: 0.68rem;">${runs}r (${p.stats.matches}m)</span>
+        `;
+      } else if (p.primary_role === 'WK') {
+        return `
+          <span>Role: <strong class="stat-val">🧤 WK</strong> (${p.batting_hand})</span>
+          <span>Bat: <strong class="stat-val-highlight">${batAvg}</strong> avg • <span class="stat-val">${batSr}</span> SR</span>
+          <span style="color: #94a3b8; font-size: 0.68rem;">${runs}r</span>
+        `;
+      } else if (p.primary_role === 'BOWL') {
+        return `
+          <span>Role: <strong class="stat-val">BOWL</strong> (${p.bowling_category})</span>
+          <span>Bowl: <strong class="stat-val-highlight">${bowlWkts}w</strong> • <span class="stat-val">${bowlEcon}</span> ec</span>
+          <span style="color: #94a3b8; font-size: 0.68rem;">Avg: ${bowlAvg}</span>
+        `;
+      } else {
+        // AR
+        return `
+          <span>Role: <strong class="stat-val">AR</strong> (${p.bowling_category})</span>
+          <span>Bat: <strong class="stat-val-highlight">${batAvg}</strong> (<span class="stat-val">${batSr}</span> SR)</span>
+          <span>Bowl: <strong class="stat-val">${bowlWkts}w</strong> (${bowlEcon} ec)</span>
+        `;
+      }
+    }
+
+    function getPlayerTooltipAttr(p) {
+      if (!p || !p.stats) return p ? p.name : '';
+      const batAvg = (p.stats.bat_average || 0).toFixed(1);
+      const batSr = (p.stats.bat_strike_rate || 0).toFixed(1);
+      const bowlEcon = p.stats.bowl_overs > 0 ? (p.stats.bowl_economy || 0).toFixed(2) : '-';
+      const bowlAvg = p.stats.bowl_average ? p.stats.bowl_average.toFixed(1) : '-';
+      const bowlOvers = p.stats.bowl_overs ? p.stats.bowl_overs.toFixed(1) : '0';
+
+      return `${p.name} (${p.country})
+Role: ${p.primary_role} • Bat: ${p.batting_hand} • Bowl: ${p.bowling_category}
+Matches: ${p.stats.matches} | Bat Inns: ${p.stats.bat_innings} | Bowl Inns: ${p.stats.bowl_innings}
+Batting: ${p.stats.bat_runs || 0} runs | Avg: ${batAvg} | SR: ${batSr}
+Bowling: ${p.stats.bowl_wickets || 0} wkts | ${bowlOvers} ov | Avg: ${bowlAvg} | Econ: ${bowlEcon}
+Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings || 0} Mid | ${p.stats.finisher_innings || 0} Finisher`;
+    }
+
+    let snipeTimeout = null;
+    function triggerAiSnipePanic(snipe) {
+      if (!snipe || !snipe.player) {
+        renderDraftBoard();
+        return;
+      }
+
+      const p = snipe.player;
+      const modal = document.getElementById('ai-snipe-modal');
+      if (!modal) {
+        renderDraftBoard();
+        return;
+      }
+
+      document.getElementById('snipe-player-name').innerText = p.name;
+      document.getElementById('snipe-country-tag').innerText = `${p.country} • ${p.primary_role} (${p.batting_hand}${p.bowling_category !== 'NONE' ? ' • ' + p.bowling_category : ''})`;
+      document.getElementById('snipe-reason-text').innerText = snipe.reason || `AI strategically seized ${p.name}!`;
+
+      const slotDefs = getSlotDefinitions(currentFormat);
+      const targetSlotDef = slotDefs[snipe.slotIndex] || { name: `Slot #${snipe.slotIndex + 1}` };
+      document.getElementById('snipe-slot-target').innerText = `Dropping into AI XI Slot #${snipe.slotIndex + 1} (${targetSlotDef.name})...`;
+
+      const statsEl = document.getElementById('snipe-stats-container');
+      const batAvg = (p.stats.bat_average || 0).toFixed(1);
+      const batSr = (p.stats.bat_strike_rate || 0).toFixed(1);
+      const bowlWkts = p.stats.bowl_wickets || 0;
+      const bowlEcon = (p.stats.bowl_economy || 0).toFixed(2);
+
+      let statDisplay = '';
+      if (p.primary_role === 'BOWL') {
+        statDisplay = `Bowling: <strong style="color: #38bdf8;">${bowlWkts} wkts</strong> • <strong style="color: #fcd34d;">${bowlEcon} ec</strong> (${p.stats.matches} caps)`;
+      } else if (p.primary_role === 'AR') {
+        statDisplay = `All-Round: <strong style="color: #34d399;">${batAvg} avg</strong> (${batSr} SR) • <strong style="color: #38bdf8;">${bowlWkts}w</strong>`;
+      } else {
+        statDisplay = `Batting: <strong style="color: #34d399;">${batAvg} avg</strong> • <strong style="color: #fcd34d;">${batSr} SR</strong> (${p.stats.bat_runs || 0} runs)`;
+      }
+      statsEl.innerHTML = `<span style="font-size: 0.8rem; color: #e2e8f0; font-weight: 600;">${statDisplay}</span>`;
+
+      modal.style.display = 'flex';
+      const fillBar = modal.querySelector('.ai-snipe-progress-fill');
+      if (fillBar) {
+        fillBar.style.width = '0%';
+        setTimeout(() => {
+          fillBar.style.width = '100%';
+        }, 50);
+      }
+
+      if (snipeTimeout) clearTimeout(snipeTimeout);
+      snipeTimeout = setTimeout(() => {
+        dismissAiSnipeModal();
+      }, 2100);
+    }
+
+    function dismissAiSnipeModal() {
+      if (snipeTimeout) clearTimeout(snipeTimeout);
+      const modal = document.getElementById('ai-snipe-modal');
+      if (modal) modal.style.display = 'none';
+      renderDraftBoard();
+      if (draftState && draftState.status === 'COMPLETED') {
+        showScorecard();
+      }
+    }
+
     // Pick / Drop player into a specific slot in Your XI
     async function pickPlayerIntoSlot(playerId, targetIndex) {
       if (!currentRoomId || draftState.currentTurn !== 'USER') {
@@ -1436,28 +1670,21 @@
         });
         const data = await res.json();
         if (data.success) {
-          const prevAiPicksCount = draftState.aiPicks.filter(Boolean).length;
           draftState = data.state;
           selectedPoolPlayer = null;
 
           const slotDefs = getSlotDefinitions(currentFormat);
           showToast(`✓ Placed into Slot #${targetIndex + 1} (${slotDefs[targetIndex].name})`, "success");
 
-          // Check if AI picked
-          const newAiPicksCount = draftState.aiPicks.filter(Boolean).length;
-          if (newAiPicksCount > prevAiPicksCount) {
-            // Find which player AI picked
-            for (let i = 0; i < 11; i++) {
-              if (draftState.aiPicks[i]) {
-                window.lastAiPickedSlot = i;
-              }
+          // Check if AI performed a Counter-Snipe
+          const snipe = data.aiPick || (data.state && data.state.lastAiSnipe);
+          if (snipe && snipe.player) {
+            triggerAiSnipePanic(snipe);
+          } else {
+            renderDraftBoard();
+            if (draftState.status === 'COMPLETED') {
+              showScorecard();
             }
-          }
-
-          renderDraftBoard();
-
-          if (draftState.status === 'COMPLETED') {
-            showScorecard();
           }
         } else {
           showToast(data.error || "Cannot pick this player", "error");
@@ -1676,10 +1903,7 @@
         }
 
         const caps = getCapsBadge(p.stats.matches);
-        const batAvg = (p.stats.bat_average || 0).toFixed(1);
-        const batSr = (p.stats.bat_strike_rate || 0).toFixed(1);
-        const bowlEcon = p.stats.bowl_overs > 0 ? (p.stats.bowl_economy || 0).toFixed(2) : '-';
-        const bowlWkts = p.stats.bowl_overs > 0 ? p.stats.bowl_wickets : 0;
+        card.title = getPlayerTooltipAttr(p);
 
         card.innerHTML = `
           <div class="player-card-top">
@@ -1693,9 +1917,7 @@
             </div>
           </div>
           <div class="p-stats-row">
-            <span>Role: <strong class="stat-val">${p.primary_role}</strong> (${p.batting_hand}${p.bowling_category !== 'NONE' ? ' • ' + p.bowling_category : ''})</span>
-            <span>Bat: <strong class="stat-val-highlight">${batAvg}</strong> (<span class="stat-val">${batSr}</span> SR)</span>
-            ${p.stats.bowl_overs > 0 ? `<span>Bowl: <strong class="stat-val">${bowlWkts}w</strong> (${bowlEcon} ec)</span>` : ''}
+            ${getRoleStatsHtml(p)}
           </div>
         `;
         poolList.appendChild(card);
@@ -1798,6 +2020,16 @@
 
           const fitBadge = isUser ? getSlotFitBadge(p, i, format) : '';
           const caps = getCapsBadge(p.stats.matches);
+          row.title = getPlayerTooltipAttr(p);
+
+          let slotSubStats = '';
+          if (p.primary_role === 'BOWL') {
+            slotSubStats = `<span>Bowl: <strong style="color: #38bdf8;">${p.stats.bowl_wickets || 0}w</strong> • <strong style="color: #fcd34d;">${(p.stats.bowl_economy || 0).toFixed(2)}</strong> ec</span>`;
+          } else if (p.primary_role === 'AR') {
+            slotSubStats = `<span>Bat: <strong style="color: #34d399;">${(p.stats.bat_average || 0).toFixed(1)}</strong> | Bowl: <strong style="color: #38bdf8;">${p.stats.bowl_wickets || 0}w</strong></span>`;
+          } else {
+            slotSubStats = `<span>Bat: <strong style="color: #34d399;">${(p.stats.bat_average || 0).toFixed(1)}</strong> avg • <strong style="color: #fcd34d;">${(p.stats.bat_strike_rate || 0).toFixed(1)}</strong> SR</span>`;
+          }
 
           row.innerHTML = `
             <div style="display: flex; align-items: center; gap: 0.35rem; min-width: 0; flex: 1;">
@@ -1811,8 +2043,7 @@
                 </div>
                 <div class="slot-player-sub">
                   <span>${p.primary_role} • ${p.batting_hand}${p.bowling_category !== 'NONE' ? ' • ' + p.bowling_category : ''}</span>
-                  <span>Avg: <strong style="color: #34d399;">${(p.stats.bat_average || 0).toFixed(1)}</strong></span>
-                  ${p.stats.bowl_overs > 0 ? `<span>Wkts: <strong style="color: #38bdf8;">${p.stats.bowl_wickets}</strong></span>` : ''}
+                  ${slotSubStats}
                   ${fitBadge}
                 </div>
               </div>
@@ -2062,20 +2293,25 @@
       if (!sim) return;
 
       let battingInnings;
-      let bowlingInnings;
+      let bowlingTeamName = '';
+      let bowlingCard = [];
 
       if (tabId === 'user_1') {
         battingInnings = sim.userInnings;
-        bowlingInnings = sim.aiInnings;
+        bowlingTeamName = 'AI XI';
+        bowlingCard = sim.userInnings.bowlers || [];
       } else if (tabId === 'ai_1') {
         battingInnings = sim.aiInnings;
-        bowlingInnings = sim.userInnings;
+        bowlingTeamName = 'Your XI';
+        bowlingCard = sim.aiInnings.bowlers || [];
       } else if (tabId === 'user_2') {
         battingInnings = sim.userSecondInnings || sim.userInnings;
-        bowlingInnings = sim.aiSecondInnings || sim.aiInnings;
+        bowlingTeamName = 'AI XI';
+        bowlingCard = (sim.userSecondInnings || sim.userInnings).bowlers || [];
       } else if (tabId === 'ai_2') {
         battingInnings = sim.aiSecondInnings || sim.aiInnings;
-        bowlingInnings = sim.userSecondInnings || sim.userInnings;
+        bowlingTeamName = 'Your XI';
+        bowlingCard = (sim.aiSecondInnings || sim.aiInnings).bowlers || [];
       }
 
       const container = document.getElementById('innings-table-container');
@@ -2111,7 +2347,7 @@
         </table>
 
         <div style="font-weight: 800; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 0.3rem;">
-          Bowling Figures — ${bowlingInnings.teamName}
+          Bowling Figures — ${bowlingTeamName}
         </div>
         <table class="cricket-table">
           <thead>
@@ -2125,7 +2361,7 @@
             </tr>
           </thead>
           <tbody>
-            ${(bowlingInnings.bowlers || []).map(b => `
+            ${bowlingCard.map(b => `
               <tr>
                 <td style="font-weight: 700; color: #fff;">${b.name}</td>
                 <td style="text-align: right;">${b.overs}</td>

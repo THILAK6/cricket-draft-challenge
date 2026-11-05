@@ -141,5 +141,27 @@ describe("Realistic Cricket Match Simulator", () => {
       expect(result.whyLoserLost.join(" ")).not.toContain("sub-7.8");
     }
   });
+
+  it("strictly prohibits pure batters and keepers from bowling when 5 specialist bowlers are present", () => {
+    const odiChallenge: Challenge = {
+      id: "ch_sim_ahmedabad",
+      title: "Ahmedabad ODI Duel",
+      format: "ODI",
+      venue: { name: "Narendra Modi Stadium, Ahmedabad", country: "IND", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "50-over match.",
+      constraints: [],
+    };
+
+    const result = simulateCricketMatch(userSquad, aiSquad, odiChallenge, 777);
+
+    // userSquad has 6 genuine bowlers: u6 (AR), u7 (AR), u8 (BOWL), u9 (BOWL), u10 (BOWL), u11 (BOWL)
+    // Pure batters: u1, u2, u3, u4 and WK u5 must NOT bowl against AI XI!
+    const bowlerIdsWhoBowled = result.aiInnings.bowlers.map((b) => b.playerId);
+    expect(bowlerIdsWhoBowled).not.toContain("u1");
+    expect(bowlerIdsWhoBowled).not.toContain("u2");
+    expect(bowlerIdsWhoBowled).not.toContain("u3");
+    expect(bowlerIdsWhoBowled).not.toContain("u4");
+    expect(bowlerIdsWhoBowled).not.toContain("u5");
+  });
 });
 

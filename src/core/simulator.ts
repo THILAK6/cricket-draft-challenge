@@ -405,9 +405,29 @@ function simulateInnings(
     .map((p, idx) => ({ player: p, slotIndex: idx }))
     .filter((item): item is { player: PlayerWithStats; slotIndex: number } => item.player !== null);
 
-  // Valid bowlers
-  const bowlers = bowlingLineup
-    .filter((p): p is PlayerWithStats => p !== null && (p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0));
+  // Valid bowlers selection:
+  // 1. Frontline bowlers & All-Rounders
+  const specialistBowlers = bowlingLineup.filter(
+    (p): p is PlayerWithStats => p !== null && p.primary_role === "BOWL"
+  );
+  const allRounders = bowlingLineup.filter(
+    (p): p is PlayerWithStats => p !== null && p.primary_role === "AR"
+  );
+
+  // 2. Part-timers (pure batters who bowl occasionally; WKs NEVER bowl)
+  const partTimers = bowlingLineup.filter(
+    (p): p is PlayerWithStats =>
+      p !== null &&
+      p.primary_role === "BAT" &&
+      p.bowling_category !== "NONE" &&
+      p.stats.bowl_innings > 0 &&
+      p.stats.bowl_innings / Math.max(1, p.stats.matches) >= 0.25 &&
+      p.stats.bowl_overs / Math.max(1, p.stats.matches) >= 2.0
+  );
+
+  // If squad has at least 5 specialists/ARs, part-timers NEVER bowl
+  const frontlineUnits = [...specialistBowlers, ...allRounders];
+  const bowlers = frontlineUnits.length >= 5 ? frontlineUnits : (frontlineUnits.length > 0 ? [...frontlineUnits, ...partTimers] : bowlingLineup.filter((p): p is PlayerWithStats => p !== null && p.primary_role !== "WK"));
 
   // Initialize Scorecards
   const batterCards: BatterScorecard[] = battersInOrder.map(({ player }) => ({
@@ -614,31 +634,48 @@ function selectBowlerForOver(
     let weight = 10;
     const isPacer = b.bowling_category === "PACE";
     const isSpinner = b.bowling_category === "SPIN";
+    const isSpecialist = b.primary_role === "BOWL";
+    const isAR = b.primary_role === "AR";
+    const isPartTimer = b.primary_role === "BAT";
 
-    if (phase === "PP") {
-      if (isPacer) weight += isTest ? 35 : 25;
-      if (pitch === "GREEN_SEAMER") weight += 25;
+    // Role Hierarchy: Specialists & All-Rounders heavily favored
+    if (isSpecialist) weight += 140;
+    else if (isAR) weight += 80;
+    else if (isPartTimer) weight -= 150;
+
+    // Opening Spell (Overs 1 & 2): Must be spearhead opening pacers
+    if (over <= 2) {
+      if (isSpecialist && isPacer) weight += 300;
+      else if (isSpecialist) weight += 150;
+      else if (isAR && isPacer) weight += 100;
+      else weight -= 1000; // Never open with part-timers
+    } else if (phase === "PP") {
+      if (isSpecialist && isPacer) weight += isTest ? 60 : 45;
+      else if (isSpecialist) weight += 30;
+      if (pitch === "GREEN_SEAMER" && isPacer) weight += 35;
+      if (isPartTimer) weight -= 500;
     }
 
     if (phase === "DEATH") {
       if (format === "T20") {
-        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 7.8) weight += 35;
-        if (isPacer) weight += 15;
+        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 7.8) weight += 50;
+        if (isPacer) weight += 25;
       } else if (format === "ODI") {
-        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 5.5) weight += 30;
-        if (isPacer) weight += 15;
+        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 5.5) weight += 45;
+        if (isPacer) weight += 25;
       } else {
-        if (isPacer) weight += 30;
+        if (isPacer) weight += 40;
       }
+      if (isPartTimer) weight -= 800; // Never bowl part-timer in death overs
     }
 
     if (phase === "MID") {
-      if (isSpinner && (pitch === "DUSTBOWL" || pitch === "SLOW_LOW")) weight += 35;
-      else if (isSpinner) weight += 20;
+      if (isSpinner && (pitch === "DUSTBOWL" || pitch === "SLOW_LOW")) weight += 45;
+      else if (isSpinner) weight += 25;
     }
 
-    if (country === "RSA" && isPacer) weight += 15;
-    if ((country === "IND" || country === "BAN" || country === "SL") && isSpinner) weight += 15;
+    if (country === "RSA" && isPacer) weight += 20;
+    if ((country === "IND" || country === "BAN" || country === "SL") && isSpinner) weight += 20;
 
     return { bowler: b, weight: weight + rng() * 10 };
   });
@@ -723,7 +760,7 @@ function resolveBall(
 
   const wicketsInHand = 10 - totalWicketsDown;
 
-  // Realistic Phase Tempo based on Wickets in Hand
+  // Realistic Phase Tempo based on Wickets in Hand and Batter Calibre
   if (isTest) {
     if (phase === "PP") expectedRunsPerBall *= 0.82; // Leaving the swinging ball
     else expectedRunsPerBall *= 0.98;
@@ -731,50 +768,58 @@ function resolveBall(
     if (phase === "PP") {
       expectedRunsPerBall *= 1.05; // 10 overs field restrictions
     } else if (phase === "MID") {
-      expectedRunsPerBall *= 0.96; // Strike rotation
+      // If team has preserved 7+ wickets in hand, start accelerating earlier
+      if (wicketsInHand >= 7) expectedRunsPerBall *= 1.12;
+      else expectedRunsPerBall *= 0.98;
     } else if (phase === "DEATH") {
-      // Overs 41-50 in ODI: If wickets in hand, teams explode!
+      // Overs 41-50 in ODI: If wickets in hand, unleash onslaught!
       if (wicketsInHand >= 6) {
-        expectedRunsPerBall *= 1.38; // 8-10 RPO death onslaught
+        expectedRunsPerBall *= 1.58; // 9-12 RPO death onslaught
       } else if (wicketsInHand >= 4) {
-        expectedRunsPerBall *= 1.18;
+        expectedRunsPerBall *= 1.30;
       } else {
-        expectedRunsPerBall *= 0.88; // Tail consolidation
+        expectedRunsPerBall *= 0.92; // Tail consolidation
       }
 
-      // Set batter bonus
-      if (batterRunsSoFar >= 40) expectedRunsPerBall *= 1.15;
+      // Dynamic finisher & power hitter boost (e.g. AB de Villiers, Dhoni, Buttler, Maxwell)
+      const isAggressive = batSr >= 95 || batter.stats.finisher_innings >= 4;
+      if (isAggressive) {
+        expectedRunsPerBall *= 1.26;
+      }
+
+      // Set batter launch bonus
+      if (batterRunsSoFar >= 25) expectedRunsPerBall *= 1.20;
     }
   } else {
     // T20
     if (phase === "PP") {
-      expectedRunsPerBall *= 1.18;
+      expectedRunsPerBall *= 1.22;
     } else if (phase === "MID") {
-      expectedRunsPerBall *= 1.0;
+      expectedRunsPerBall *= wicketsInHand >= 7 ? 1.15 : 1.02;
     } else if (phase === "DEATH") {
       if (wicketsInHand >= 5) {
-        expectedRunsPerBall *= 1.42;
+        expectedRunsPerBall *= 1.60;
       } else {
-        expectedRunsPerBall *= 1.10;
+        expectedRunsPerBall *= 1.20;
       }
       const isFinisher = batter.stats.finisher_innings >= 5 || batSr >= 135;
-      if (isFinisher) expectedRunsPerBall *= 1.25;
-      else expectedRunsPerBall *= 0.88;
+      if (isFinisher) expectedRunsPerBall *= 1.30;
+      if (batterRunsSoFar >= 20) expectedRunsPerBall *= 1.20;
     }
   }
 
   // Pitch modifier on runs
-  if (pitch === "HIGH_SCORING_FLAT") expectedRunsPerBall *= 1.18;
-  if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.88;
+  if (pitch === "HIGH_SCORING_FLAT") expectedRunsPerBall *= 1.20;
+  if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.92;
   if (isDeterioratedPitch) expectedRunsPerBall *= 0.82;
 
   const benchmark = isTest ? 0.65 : isOdi ? 1.05 : 1.25;
-  const rFactor = Math.max(0.65, Math.min(1.85, expectedRunsPerBall / benchmark));
+  const rFactor = Math.max(0.65, Math.min(2.35, expectedRunsPerBall / benchmark));
 
-  const dotProb = Math.max(0.18, (isTest ? 0.60 : isOdi ? 0.44 : 0.38) / rFactor);
-  const singleProb = dotProb + Math.min(0.44, (isTest ? 0.28 : 0.34) * rFactor);
-  const doubleProb = singleProb + (isTest ? 0.06 : 0.11);
-  const fourProb = doubleProb + Math.min(0.18, (isTest ? 0.05 : 0.09) * rFactor);
+  const dotProb = Math.max(0.12, (isTest ? 0.60 : isOdi ? 0.40 : 0.32) / rFactor);
+  const singleProb = dotProb + Math.min(0.40, (isTest ? 0.28 : 0.33) * (rFactor >= 1.25 ? 0.82 : 1.0));
+  const doubleProb = singleProb + (isTest ? 0.06 : 0.10);
+  const fourProb = doubleProb + Math.min(0.24, (isTest ? 0.05 : 0.10) * rFactor);
 
   const roll = rng();
 
