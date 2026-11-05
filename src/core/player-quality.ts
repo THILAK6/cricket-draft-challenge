@@ -1,7 +1,10 @@
-import type { PlayerWithStats } from "./types";
+import type { MatchFormat, PlayerWithStats } from "./types";
+import { eraAdjusted } from "./era";
 
 /** Format-specific base quality from career stats only (no names, no reputation). */
-export function playerQuality(p: PlayerWithStats, format: string): number {
+export function playerQuality(raw: PlayerWithStats, format: string): number {
+    // Stats are scaled to the league average of the player's era first
+    const p = eraAdjusted(raw, format as MatchFormat);
     const isTest = format === "TEST";
     const isOdi = format === "ODI";
     const isAR = p.primary_role === "AR";

@@ -1,4 +1,5 @@
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats, ScoringBreakdown } from "./types";
+import { eraAdjusted } from "./era";
 
 /**
  * Deterministic cricket scoring engine (0 - 100 points).
@@ -8,10 +9,17 @@ import type { Challenge, MatchFormat, PitchType, PlayerWithStats, ScoringBreakdo
  * 3. Statistical player quality (35 pts): Format batting average, strike rate, bowling economy/wickets
  * 4. Batting depth (15 pts): Capability to score runs down to positions 7-9
  */
+/** Plain medium pace (not fast): the cutter / slower-ball type. */
+export const isCutter = (p: PlayerWithStats): boolean =>
+  p.bowling_category === "PACE" && /medium/i.test(p.bowling_style || "") && !/fast/i.test(p.bowling_style || "");
+
 export function calculateDeterministicScore(
-  squad: (PlayerWithStats | null)[],
-  challenge: Challenge
+  rawSquad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  opts: { precise?: boolean } = {}
 ): Omit<ScoringBreakdown, "llm_adjustment" | "final_score" | "verdict_summary"> {
+  // Strike rates, averages and economies are judged against the league average of each player's era
+  const squad = rawSquad.map((p) => (p ? eraAdjusted(p, challenge.format || "T20") : null));
   const nonNullSquad = squad.filter((p): p is PlayerWithStats => p !== null);
   const { pitch_type } = challenge.venue;
   const format = challenge.format || "T20";
@@ -273,7 +281,9 @@ export function calculateDeterministicScore(
       else if (fSpinners.length === 2) pitchScore += 7;
       else if (fSpinners.length === 1) pitchScore -= 2; // below the two-spinner minimum
       else pitchScore -= 8;
-      if (fPacers.length >= 4) pitchScore -= 3;
+      // Mirror of the green seamer: a third frontline pacer, or an attack that leans on seam, wastes the turn
+      if (fPacers.length >= 3) pitchScore -= 4;
+      if (fPacers.length > fSpinners.length) pitchScore -= 3;
       break;
     }
 
@@ -297,6 +307,9 @@ export function calculateDeterministicScore(
       const slowLowEcon = isT20 ? 7.2 : isOdi ? 4.9 : 2.8;
       const accurateBowlers = nonNullSquad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon);
       if (accurateBowlers.length >= 3) pitchScore += 5;
+      // Cutters and slower-ball pacers (plain medium pace) grip a slow surface the way spinners do
+      const cutters = fPacers.filter((p) => isCutter(p) && p.stats.bowl_economy > 0 && p.stats.bowl_economy <= slowLowEcon + 0.4);
+      pitchScore += Math.min(3, cutters.length * 1.5);
       break;
     }
   }
@@ -394,7 +407,8 @@ export function calculateDeterministicScore(
     }
   }
 
-  const player_quality_score = Math.max(10, Math.min(35, Math.round(qualityTotal * 0.55)));
+  const qualityRaw = Math.max(10, Math.min(35, qualityTotal * 0.55));
+  const player_quality_score = opts.precise ? qualityRaw : Math.round(qualityRaw);
 
   // -------------------------------------------------------------
   // 4. Batting Depth Score (0 - 15 points)
@@ -427,9 +441,8 @@ export function calculateDeterministicScore(
 
   const batting_depth_score = Math.min(15, depthPoints);
 
-  const deterministic_total = Math.round(
-    role_balance_score + pitch_suitability_score + player_quality_score + batting_depth_score
-  );
+  const rawTotal = role_balance_score + pitch_suitability_score + player_quality_score + batting_depth_score;
+  const deterministic_total = opts.precise ? rawTotal : Math.round(rawTotal);
 
   return {
     role_balance_score,
