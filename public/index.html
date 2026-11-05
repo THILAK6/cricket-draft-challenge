@@ -1977,10 +1977,10 @@
 
       // Summary Scores
       document.getElementById('sc-user-score').innerText = `${sim.userInnings.totalRuns}/${sim.userInnings.totalWickets}`;
-      document.getElementById('sc-user-overs').innerText = `(${sim.userInnings.oversCompleted} ov)`;
+      document.getElementById('sc-user-overs').innerText = `(${sim.userInnings.oversString || sim.userInnings.oversCompleted} ov)`;
 
       document.getElementById('sc-ai-score').innerText = `${sim.aiInnings.totalRuns}/${sim.aiInnings.totalWickets}`;
-      document.getElementById('sc-ai-overs').innerText = `(${sim.aiInnings.oversCompleted} ov)`;
+      document.getElementById('sc-ai-overs').innerText = `(${sim.aiInnings.oversString || sim.aiInnings.oversCompleted} ov)`;
 
       document.getElementById('sc-match-summary').innerText = sim.summary;
 
@@ -2081,7 +2081,7 @@
       const container = document.getElementById('innings-table-container');
       container.innerHTML = `
         <div style="font-weight: 800; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 0.3rem;">
-          Batting Card — ${battingInnings.teamName} (${battingInnings.totalRuns}/${battingInnings.totalWickets} in ${battingInnings.oversCompleted} ov)
+          Batting Card — ${battingInnings.teamName} (${battingInnings.totalRuns}/${battingInnings.totalWickets} in ${battingInnings.oversString || battingInnings.oversCompleted} ov)
         </div>
         <table class="cricket-table" style="margin-bottom: 0.8rem;">
           <thead>

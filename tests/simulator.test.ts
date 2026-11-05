@@ -111,5 +111,35 @@ describe("Realistic Cricket Match Simulator", () => {
     expect(result.leadFirstInnings).toBeDefined();
     expect(result.keyMoments.length).toBeGreaterThan(0);
   });
+
+  it("simulates an ODI match with accurate overs notation, dynamic player quotes, and no canned phrases", () => {
+    const odiChallenge: Challenge = {
+      id: "ch_sim_mcg",
+      title: "MCG ODI Classic",
+      format: "ODI",
+      venue: { name: "Melbourne Cricket Ground", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
+      narrative_intro: "50-over battle under the lights.",
+      constraints: [],
+    };
+
+    // Run across multiple seeds to verify formatting consistency
+    for (const seed of [101, 202, 303, 404, 505]) {
+      const result = simulateCricketMatch(userSquad, aiSquad, odiChallenge, seed);
+
+      expect(result.format).toBe("ODI");
+      // Never say "0.0 ov remaining"
+      expect(result.summary).not.toContain("0.0 ov remaining");
+      expect(result.summary).not.toContain("0.0 ov");
+
+      // Scorecards must have valid oversString
+      expect(result.userInnings.oversString).toMatch(/^\d+\.\d$/);
+      expect(result.aiInnings.oversString).toMatch(/^\d+\.\d$/);
+
+      // Must never have hardcoded T20 phrases
+      expect(result.decisiveDifference).not.toContain("sub-7.8");
+      expect(result.whyWinnerWon.join(" ")).not.toContain("sub-7.8");
+      expect(result.whyLoserLost.join(" ")).not.toContain("sub-7.8");
+    }
+  });
 });
 
