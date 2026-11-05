@@ -1212,7 +1212,6 @@
     <div class="scorecard-modal">
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 1.1rem;">🏆</span>
           <h3 id="winner-headline" style="font-size: 0.95rem; font-weight: 800; color: #fff;">
             Match Completed
           </h3>
@@ -2568,10 +2567,10 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       }
 
       const notes = {
-        overview: 'Scores run 0-100 and 50 is an even contest. Overall = 40% batting, 40% bowling, 20% fielding.',
+        overview: 'Each side is scored 0-100 on its own numbers against a typical score for the format (50 = typical). They are not head-to-head. Overall = 40% batting, 40% bowling, 20% fielding.',
         batting: 'Batting score compares runs per innings with a par for the format, plus credit for 50s and 100s.',
         bowling: 'Bowling score blends wickets taken with economy against par. Run outs are not credited to bowlers.',
-        fielding: 'Fielding is read from the simulated dismissals (catches, run outs, stumpings) minus dropped chances. It does not change the score.',
+        fielding: 'Fielding is read from catches, run outs and stumpings minus dropped chances. With fewer than 3 chances there is nothing to judge, so it stays at 50.',
         phases: 'Runs scored in each phase of the innings.',
       };
       document.getElementById('team-report-note').innerText = notes[teamReportTab] || '';

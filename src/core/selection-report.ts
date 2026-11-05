@@ -68,7 +68,7 @@ const PITCH_LABEL: Record<string, string> = {
 const PITCH_HINT: Record<string, string> = {
   GREEN_SEAMER: "it rewards three or more seamers",
   DUSTBOWL: "it rewards two or three spinners",
-  HIGH_SCORING_FLAT: "it rewards hard hitters and control bowlers",
+  HIGH_SCORING_FLAT: "it rewards hard hitters and economical bowlers, and seam vs spin matters little",
   SLOW_LOW: "it rewards spinners and accurate bowlers",
 };
 
@@ -88,6 +88,10 @@ interface Profile {
   topSevenAvg: number;
   /** Mean bowling economy (limited overs) or average (Tests) of the frontline bowlers. */
   attackMetric: number;
+  /** Players meeting the same pitch thresholds the selection score uses. */
+  hitters: number;
+  controlBowlers: number;
+  accurateBowlers: number;
   /** Mean stats-only rating of the XI and its three highest-rated picks. */
   avgRating: number;
   topPicks: string[];
@@ -101,9 +105,17 @@ function profile(squad: Squad, format: string): Profile {
   const metric = bowlers
     .map((p) => (isTest ? p.stats.bowl_average : p.stats.bowl_economy))
     .filter((v) => v > 0);
+  const t20 = format === "T20";
+  const test = format === "TEST";
+  const hitSr = t20 ? 135 : test ? 55 : 92;
+  const controlEcon = t20 ? 7.5 : test ? 3.0 : 5.0;
+  const accurateEcon = t20 ? 7.2 : test ? 2.8 : 4.9;
   return {
     squad,
     all,
+    hitters: all.filter((p) => p.stats.bat_strike_rate >= hitSr).length,
+    controlBowlers: all.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= controlEcon).length,
+    accurateBowlers: all.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= accurateEcon).length,
     pacers: bowlers.filter((p) => p.bowling_category === "PACE").length,
     spinners: bowlers.filter((p) => p.bowling_category === "SPIN").length,
     bowlingOptions: all.filter(isBowlingOption).length,
@@ -113,6 +125,22 @@ function profile(squad: Squad, format: string): Profile {
     avgRating: mean(rated.map((r) => r.q)),
     topPicks: rated.slice(0, 3).map((r) => r.p.name),
   };
+}
+
+/** The squad traits the pitch-fit score actually rewards on this surface, in words. */
+function pitchTraits(p: Profile, pitch: string): string {
+  switch (pitch) {
+    case "GREEN_SEAMER":
+      return `${p.pacers} seam option${p.pacers === 1 ? "" : "s"}`;
+    case "DUSTBOWL":
+      return `${p.spinners} spin option${p.spinners === 1 ? "" : "s"}`;
+    case "HIGH_SCORING_FLAT":
+      return `${p.hitters} hard hitter${p.hitters === 1 ? "" : "s"} and ${p.controlBowlers} economical bowler${p.controlBowlers === 1 ? "" : "s"}`;
+    case "SLOW_LOW":
+      return `${p.spinners} spinner${p.spinners === 1 ? "" : "s"} and ${p.accurateBowlers} accurate bowler${p.accurateBowlers === 1 ? "" : "s"}`;
+    default:
+      return `${p.pacers} seam and ${p.spinners} spin options`;
+  }
 }
 
 /** Concrete composition problems that cost role-balance points. */
@@ -158,7 +186,10 @@ interface PlayerImpact {
   impact: number;
 }
 
-function impacts(squad: Squad, batting: InningsScorecard[], bowling: InningsScorecard[]): PlayerImpact[] {
+/** Typical runs per over for the format; impact is measured against it, so expensive overs count against a bowler. */
+const PAR_RPO: Record<string, number> = { T20: 9.0, ODI: 5.6, TEST: 3.7 };
+
+function impacts(squad: Squad, format: string, batting: InningsScorecard[], bowling: InningsScorecard[]): PlayerImpact[] {
   const out: PlayerImpact[] = [];
   squad.forEach((p, slot) => {
     if (!p) return;
@@ -186,7 +217,12 @@ function impacts(squad: Squad, batting: InningsScorecard[], bowling: InningsScor
         row.stumpings += f.stumpings;
       }
     }
-    row.impact = row.runs + row.wickets * 22 + row.catches * 8 + row.runOuts * 12 + row.stumpings * 10;
+    // Net contribution against par: runs above what the balls faced would normally yield, plus
+    // wickets and the runs a bowler saved (or leaked) against par, plus fielding.
+    const parRpo = PAR_RPO[format] ?? 6;
+    const batNet = row.runs - (row.balls * parRpo) / 6;
+    const bowlNet = row.wickets * 22 + (row.overs * parRpo - row.conceded);
+    row.impact = batNet + bowlNet + row.catches * 8 + row.runOuts * 12 + row.stumpings * 10;
     out.push(row);
   });
   return out;
@@ -217,8 +253,8 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   };
   const prof = { USER: profile(userSquad, format), AI: profile(aiSquad, format) };
   const imp = {
-    USER: impacts(userSquad, userInnings, aiInnings),
-    AI: impacts(aiSquad, aiInnings, userInnings),
+    USER: impacts(userSquad, format, userInnings, aiInnings),
+    AI: impacts(aiSquad, format, aiInnings, userInnings),
   };
 
   const categories: SelectionCategory[] = [
@@ -247,9 +283,9 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
 
     // Pitch fit
     const pitchDiff = catFor(cat("pitch"), side) - catFor(cat("pitch"), opp);
-    const mix = `${me.pacers} seam and ${me.spinners} spin`;
-    if (pitchDiff >= 3) add(side, "good", pitchDiff + 2, `The attack suited the ${pitchLabel}: ${mix} options against ${them.pacers} seam and ${them.spinners} spin.`);
-    else if (pitchDiff <= -3) add(side, "bad", -pitchDiff + 2, `The ${mix} attack did not suit the ${pitchLabel}, where ${PITCH_HINT[pitch] ?? "conditions matter"}.`);
+    const mine = pitchTraits(me, pitch);
+    if (pitchDiff >= 3) add(side, "good", pitchDiff + 2, `The squad suited the ${pitchLabel}: ${mine}, against ${pitchTraits(them, pitch)}.`);
+    else if (pitchDiff <= -3) add(side, "bad", -pitchDiff + 2, `The squad was a poorer fit for the ${pitchLabel}: ${mine} (${PITCH_HINT[pitch] ?? "conditions matter"}).`);
 
     // Role balance
     const roleDiff = catFor(cat("role"), side) - catFor(cat("role"), opp);
@@ -263,8 +299,8 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     const qDiff = catFor(cat("quality"), side) - catFor(cat("quality"), opp);
     if (Math.abs(qDiff) >= 3) {
       const rating = `average pick rating ${Math.round(me.avgRating)} against ${Math.round(them.avgRating)}`;
-      if (qDiff > 0) add(side, "good", qDiff + 1, `Higher-calibre players (${rating}), led by ${me.topPicks.slice(0, 2).join(" and ")}.`);
-      else add(side, "bad", -qDiff + 1, `Lower-calibre picks (${rating}). The opposition's best were ${them.topPicks.slice(0, 2).join(" and ")}.`);
+      if (qDiff > 0) add(side, "good", qDiff + 1, `Higher-rated players on career numbers (${rating}), led by ${me.topPicks.slice(0, 2).join(" and ")}.`);
+      else add(side, "bad", -qDiff + 1, `Lower-rated picks on career numbers (${rating}). The opposition's top-rated were ${them.topPicks.slice(0, 2).join(" and ")}.`);
     }
 
     // Batting depth, backed by what the lower order actually scored
@@ -291,7 +327,9 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     const perf = performance[side];
     const oppPerf = performance[other(side)];
     const best = [...imp[side]].sort((a, b) => b.impact - a.impact)[0];
-    if (best && best.impact >= 40) add(side, "good", 4 + Math.min(4, best.impact / 30), `${best.player.name} (#${best.slot + 1}) delivered: ${describe(best)}.`);
+    if (best && best.impact >= 25) add(side, "good", 4 + Math.min(4, best.impact / 30), `${best.player.name} (#${best.slot + 1}) delivered: ${describe(best)}.`);
+    const worst = [...imp[side]].filter((i) => i.batted || i.overs > 0).sort((a, b) => a.impact - b.impact)[0];
+    if (worst && worst.impact <= -15 && worst !== best) add(side, "bad", 3 + Math.min(4, -worst.impact / 15), `${worst.player.name} (#${worst.slot + 1}) cost the side: ${describe(worst)}.`);
     const bowlGap = perf.bowlingScore - oppPerf.bowlingScore;
     const batGap = perf.battingScore - oppPerf.battingScore;
     if (bowlGap >= 20) add(side, "good", 3 + bowlGap / 10, `The bowling unit rated ${perf.bowlingScore} against ${oppPerf.bowlingScore}.`);
@@ -309,9 +347,10 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   const involved = imp.USER.filter((i) => i.batted || i.overs > 0);
   const bestI = [...involved].sort((a, b) => b.impact - a.impact)[0];
   const weakI = [...involved].sort((a, b) => a.impact - b.impact)[0];
-  const bestPick: PickHighlight | null = bestI ? { name: bestI.player.name, slot: bestI.slot + 1, detail: describe(bestI) } : null;
+  // Only name a best or weakest pick when someone genuinely beat or fell short of par.
+  const bestPick: PickHighlight | null = bestI && bestI.impact >= 10 ? { name: bestI.player.name, slot: bestI.slot + 1, detail: describe(bestI) } : null;
   const weakestPick: PickHighlight | null =
-    weakI && weakI !== bestI ? { name: weakI.player.name, slot: weakI.slot + 1, detail: describe(weakI) } : null;
+    weakI && weakI !== bestI && weakI.impact <= -8 ? { name: weakI.player.name, slot: weakI.slot + 1, detail: describe(weakI) } : null;
 
   // ---- Headline: tie the result back to the picks ---------------------------------------------
   const paper = `${totals.USER} v ${totals.AI} on selection`;
@@ -330,7 +369,10 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   } else if (winner === "USER") {
     if (paperEdge === "USER") {
       outcome = "PICKS_DECIDED";
-      headline = `Your picks won it. You built the better-balanced XI (${paper}) and it showed on the field.`;
+      headline =
+        margin >= 8
+          ? `Your picks won it. You built the clearly better-balanced XI (${paper}) and it showed on the field.`
+          : `A narrow selection edge to you (${paper}), and it was enough on the day.`;
     } else if (paperEdge === "AI") {
       outcome = "UPSET";
       const g = bigGap("USER");
@@ -343,7 +385,10 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   } else {
     if (paperEdge === "AI") {
       outcome = "PICKS_DECIDED";
-      headline = `Your picks cost you the match. The AI built the better-balanced XI (${paper}).`;
+      headline =
+        -margin >= 8
+          ? `Your picks cost you the match. The AI built the clearly better-balanced XI (${paper}).`
+          : `A narrow selection edge to the AI (${paper}), but the match was settled on the field.`;
     } else if (paperEdge === "USER") {
       outcome = "UPSET";
       const g = bigGap("AI");
@@ -355,24 +400,26 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     }
   }
 
-  // ---- Advice from the categories where the user left the most points on the table ------------
+  // ---- Advice: rank categories by what you trailed the AI by, then by points left unclaimed ----
   const nextTime: string[] = [];
   const userIssues = roleIssues(prof.USER, format);
-  const gapFor = (key: SelectionCategory["key"]) => {
+  const adviceCandidates: { score: number; text: string }[] = [];
+  const consider = (key: SelectionCategory["key"], ratioLimit: number, text: string) => {
     const c = cat(key);
-    return { c, lost: c.max - c.user, ratio: c.user / c.max };
+    const deficit = c.ai - c.user;
+    if (c.user / c.max < ratioLimit || deficit >= 2) adviceCandidates.push({ score: deficit * 2 + (c.max - c.user), text: `${text} (you ${c.user}/${c.max}, AI ${c.ai}/${c.max}).` });
   };
-  const adviceCandidates: { lost: number; text: string }[] = [];
-  const role = gapFor("role");
-  if (role.ratio < 0.8) adviceCandidates.push({ lost: role.lost, text: userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher.` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher." });
-  const pitchGap = gapFor("pitch");
-  if (pitchGap.ratio < 0.75) adviceCandidates.push({ lost: pitchGap.lost, text: `Read the pitch: on a ${pitchLabel}, ${PITCH_HINT[pitch] ?? "match your attack to the conditions"}. You picked ${prof.USER.pacers} seam and ${prof.USER.spinners} spin.` });
-  const qual = gapFor("quality");
-  if (qual.ratio < 0.7) adviceCandidates.push({ lost: qual.lost, text: `Raise the quality: favour players with strong career numbers in this format. Your top seven averaged ${r1(prof.USER.topSevenAvg)}.` });
-  const depth = gapFor("depth");
-  if (depth.ratio < 0.65) adviceCandidates.push({ lost: depth.lost, text: "Add batting depth: pick bowlers and all-rounders who can score down to #8." });
-  adviceCandidates.sort((a, b) => b.lost - a.lost).slice(0, 3).forEach((a) => nextTime.push(a.text));
-  if (nextTime.length === 0) nextTime.push("A strong, balanced selection. Keep the same template and look for a stronger player at your weakest slot.");
+  consider("role", 0.8, userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher");
+  consider("pitch", 0.75, `Read the pitch: on a ${pitchLabel}, ${PITCH_HINT[pitch] ?? "match your squad to the conditions"}. You picked ${pitchTraits(prof.USER, pitch)}`);
+  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your top seven averaged ${r1(prof.USER.topSevenAvg)}`);
+  consider("depth", 0.65, "Add batting depth: pick bowlers and all-rounders who can score down to #8");
+  adviceCandidates.sort((a, b) => b.score - a.score).slice(0, 3).forEach((a) => nextTime.push(a.text));
+  if (nextTime.length === 0) {
+    if (winner === "AI") nextTime.push("Your selection matched the AI's, so the loss came on the field. Look for the best pick at each slot and pace-vs-spin balance for this pitch.");
+    else nextTime.push("A strong, balanced selection. Keep the same template and look for a stronger player at your weakest slot.");
+  }
+  // Never tell the user the selection was fine when the same report says the AI's was clearly better.
+  if (outcome === "PICKS_DECIDED" && winner === "AI" && nextTime.length === 0) nextTime.push("Close the gap in the categories above.");
 
   return {
     headline,

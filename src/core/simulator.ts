@@ -990,7 +990,7 @@ function resolveBall(
   const isT20 = format === "T20";
 
   // Base Wicket Probability
-  let wktChance = isT20 ? 0.038 : isOdi ? 0.024 : 0.016;
+  let wktChance = isT20 ? 0.038 : isOdi ? 0.024 : 0.012;
 
   // Tailender penalty
   if (batter.primary_role === "BOWL") {
@@ -1097,7 +1097,7 @@ function resolveBall(
   if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.90;
   if (isDeterioratedPitch) expectedRunsPerBall *= 0.82;
 
-  const benchmark = isTest ? 0.56 : isOdi ? 0.92 : 1.08;
+  const benchmark = isTest ? 0.65 : isOdi ? 0.92 : 1.08;
   // Strictly clamp rFactor so total match boundary percentage matches genuine ICC T20 stats
   const rFactor = Math.max(0.65, Math.min(1.6, expectedRunsPerBall / benchmark));
 
@@ -1432,6 +1432,29 @@ function deriveMatchAnalysis(
         decisiveDifference = `Superior all-round execution across ${spanLabel} on this ${pitch.replace(/_/g, " ")} surface separated the sides.`;
         whyWinnerWon.push(`Consistent strike rotation and boundary finding throughout the innings.`);
         whyLoserLost.push(`High dot-ball tally during the middle overs.`);
+      }
+    }
+  }
+
+  // Limited overs, defended total: name the phase that actually produced the margin (computed
+  // from the scorecards, not assumed), instead of crediting whichever bowler had the best figures.
+  if (!isTest && (winner === "USER" || winner === "AI")) {
+    const chased = (winner === "USER" && !userBatsFirst) || (winner === "AI" && userBatsFirst);
+    const margin = winningInnings.totalRuns - losingInnings.totalRuns;
+    if (!chased && margin > 0) {
+      const t20 = format === "T20";
+      const phases = [
+        { key: "powerplay" as const, label: t20 ? "powerplay (overs 1-6)" : "powerplay (overs 1-10)" },
+        { key: "middle" as const, label: t20 ? "middle overs (7-15)" : "middle overs (11-40)" },
+        { key: "death" as const, label: t20 ? "death overs (16-20)" : "death overs (41-50)" },
+      ].map((ph) => ({ ...ph, win: winningInnings.phaseRuns[ph.key], lose: losingInnings.phaseRuns[ph.key] }));
+      const top = [...phases].sort((x, y) => (y.win - y.lose) - (x.win - x.lose))[0];
+      const gain = top.win - top.lose;
+      if (gain >= 10 && gain >= margin * 0.5) {
+        const share = Math.min(100, Math.round((gain / margin) * 100));
+        decisiveDifference = `The match turned in the ${top.label}: ${winnerName} scored ${top.win} to ${top.lose} there, ${gain >= margin ? "more than the whole" : `${share}% of the`} ${margin}-run margin.`;
+        whyWinnerWon.unshift(`Won the ${top.label} ${top.win} to ${top.lose}.`);
+        whyLoserLost.unshift(`Lost the ${top.label}, scoring ${top.lose} to ${top.win}.`);
       }
     }
   }

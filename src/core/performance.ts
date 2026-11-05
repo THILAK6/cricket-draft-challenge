@@ -30,6 +30,8 @@ export interface TeamPerformance {
     runOuts: number;
     stumpings: number;
     droppedCatches: number;
+    /** Catches, run-outs, stumpings and drops: how much there was to judge the fielding on. */
+    fieldingChances: number;
   };
 }
 
@@ -40,9 +42,10 @@ export interface MatchPerformance {
 
 const PAR: Record<MatchFormat, { runsPerInnings: number; economy: number }> = {
   // Par values sit at what the match engine produces for an even contest, so 50 means "par".
-  T20: { runsPerInnings: 125, economy: 6.1 },
-  ODI: { runsPerInnings: 190, economy: 4.0 },
-  TEST: { runsPerInnings: 200, economy: 2.6 },
+  // Each side is scored on its own numbers against par; the scores are not head-to-head.
+  T20: { runsPerInnings: 165, economy: 9.0 },
+  ODI: { runsPerInnings: 260, economy: 5.6 },
+  TEST: { runsPerInnings: 245, economy: 3.8 },
 };
 
 const clamp = (v: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, v));
@@ -81,9 +84,9 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
   const runsConceded = bowling.reduce((n, i) => n + i.bowlers.reduce((m, b) => m + b.runs, 0), 0);
   const economy = ballsBowled > 0 ? runsConceded / (ballsBowled / 6) : 0;
   const bowlInnings = Math.max(1, bowling.length);
-  // Up to 50 points for wickets (3 of 10 per innings earns nothing, all ten earns full marks)
-  // and up to 50 for economy (par earns 25, a 40% tighter economy earns full marks).
-  const wicketPart = 50 * clamp((wicketsTaken / (10 * bowlInnings) - 0.3) / 0.7, 0, 1);
+  // Up to 50 points for wickets (taking all ten earns full marks, five of ten earns 25) and up to
+  // 50 for economy (par earns 25, a 40% tighter economy earns full marks).
+  const wicketPart = 50 * clamp(wicketsTaken / (10 * bowlInnings), 0, 1);
   const econPart = economy > 0 ? 50 * clamp((par.economy / economy - 0.6) / 0.8, 0, 1) : 0;
   const bowlerRows = bowling.flatMap((i) => i.bowlers);
   const fiveFors = bowlerRows.filter((b) => b.wickets >= 5).length;
@@ -100,8 +103,13 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
   const stumpings = fielders.reduce((n, f) => n + f.stumpings, 0);
   const droppedCatches = bowling.reduce((n, i) => n + (i.droppedCatches ?? 0), 0);
   const dismissals = Math.max(1, bowling.reduce((n, i) => n + i.totalWickets, 0));
-  // Share of wickets that needed a fielder, weighted by difficulty, minus the chances put down.
-  const fieldingScore = clamp(Math.round(40 + (catches * 2.5 + runOuts * 5 + stumpings * 4 - droppedCatches * 4) * (10 / dismissals) * 1.0));
+  // With almost no chances (e.g. every wicket was bowled or lbw) there is nothing to judge the
+  // fielders on, so the score stays neutral instead of reflecting noise.
+  const fieldingChances = catches + runOuts + stumpings + droppedCatches;
+  const fieldingScore =
+    fieldingChances < 3
+      ? 50
+      : clamp(Math.round(50 + (catches * 2.5 + runOuts * 5 + stumpings * 4 - droppedCatches * 6) * (10 / dismissals) * 0.6));
 
   const overallScore = Math.round(battingScore * 0.4 + bowlingScore * 0.4 + fieldingScore * 0.2);
 
@@ -132,6 +140,7 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
       runOuts,
       stumpings,
       droppedCatches,
+      fieldingChances,
     },
   };
 }
