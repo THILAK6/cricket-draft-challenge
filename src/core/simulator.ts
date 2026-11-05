@@ -1097,9 +1097,9 @@ function resolveBall(
   if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.90;
   if (isDeterioratedPitch) expectedRunsPerBall *= 0.82;
 
-  const benchmark = isTest ? 0.65 : isOdi ? 1.05 : 1.35;
+  const benchmark = isTest ? 0.56 : isOdi ? 0.92 : 1.08;
   // Strictly clamp rFactor so total match boundary percentage matches genuine ICC T20 stats
-  const rFactor = Math.max(0.65, Math.min(1.35, expectedRunsPerBall / benchmark));
+  const rFactor = Math.max(0.65, Math.min(1.6, expectedRunsPerBall / benchmark));
 
   // Authentic dot ball floor: minimum 32% dots in T20, 36% in ODI, 44% in Tests
   const dotProb = Math.max(isTest ? 0.44 : isOdi ? 0.36 : 0.32, (isTest ? 0.60 : isOdi ? 0.48 : 0.42) / rFactor);

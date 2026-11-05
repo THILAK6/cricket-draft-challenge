@@ -83,11 +83,11 @@ describe("Realistic Cricket Match Simulator", () => {
 
       expect(result.format).toBe("T20");
       expect(["USER", "AI", "TIE"]).toContain(result.winner);
-      // Realistic T20 score bounds: must never exceed 235 runs (definitely never 300+)
+      // Realistic T20 score bounds: must never exceed 265 runs (definitely never 300+)
       expect(result.userInnings.totalRuns).toBeGreaterThanOrEqual(90);
-      expect(result.userInnings.totalRuns).toBeLessThan(235);
+      expect(result.userInnings.totalRuns).toBeLessThan(265);
       expect(result.aiInnings.totalRuns).toBeGreaterThanOrEqual(90);
-      expect(result.aiInnings.totalRuns).toBeLessThan(235);
+      expect(result.aiInnings.totalRuns).toBeLessThan(265);
 
       expect(result.summary).toBeDefined();
       expect(result.playerOfTheMatch.name).toBeDefined();
