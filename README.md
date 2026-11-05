@@ -42,7 +42,9 @@ npm run db:migrate:local
 npm run db:seed:local
 ```
 
-`db:seed:local` loads the player pool from `data/seed.sql`; without it there are no players to draft.
+`db:seed:local` loads the player pool from `data/seed.sql`, then applies `data/career-overrides.sql`; without it there are no players to draft.
+
+**Career totals.** Cricsheet only covers matches from 2001-2002, so players with earlier careers (Tendulkar, Ponting, ...) would have truncated totals. `npm run etl:career` reads full-career matches, runs, averages, balls bowled and wickets from Wikipedia's cricketer infobox (found through the ESPNcricinfo id on Wikidata) and writes `data/career-overrides.sql`. Strike rate and batting-order shares still come from Cricsheet.
 
 ### 3. Run Dev Server
 ```bash
