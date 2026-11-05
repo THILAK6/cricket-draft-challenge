@@ -245,13 +245,13 @@ describe("Role rules while drafting", () => {
     const mine = ["IND_pace", "AUS_pace", "ENG_pace", "RSA_spin", "NZL_spin", "PAK_wk"].map(byId);
     const squad = [...mine, ...Array(5).fill(null)];
     const opp = [byId("SL_wk"), ...Array(10).fill(null)];
-    const bowlers = ["WI_pace", "WI_spin", "SL_pace", "SL_spin", "BAN_pace"].map(byId);
-    const pool = [...bowlers, byId("AFG_rhb")];
+    const bowlers = ["WI_pace", "WI_spin", "SL_pace", "SL_spin", "BAN_pace", "BAN_spin"].map(byId);
+    const pool = [...bowlers, byId("AFG_rhb"), byId("AFG_lhb")];
     const ctx = { pool, opponentSquad: opp };
     // A 6th bowler for me would leave only 4 for an opponent who needs 5
     const hoard = canPickPlayer(bowlers[0], squad, open, 6, ctx);
     expect(hoard.allowed).toBe(false);
-    expect(hoard.reason).toMatch(/bowling option/);
+    expect(hoard.reason).toMatch(/Not enough|too few/);
     // A batter is fine
     expect(canPickPlayer(byId("AFG_rhb"), squad, open, 6, ctx).allowed).toBe(true);
   });

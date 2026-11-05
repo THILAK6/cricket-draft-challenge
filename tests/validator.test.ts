@@ -301,45 +301,67 @@ describe("Constraint Validator - Proactive In-Draft Checks (canPickPlayer)", () 
   });
 
   it("blocks non-WK on final pick if 0 WKs currently drafted", () => {
-    // 10 players drafted, 0 WKs
-    const squad: PlayerWithStats[] = [];
-    for (let i = 1; i <= 10; i++) {
-      squad.push(createMockPlayer(`p${i}`, `C${i}`, i <= 5 ? "BOWL" : "BAT", "RHB", i <= 2 ? "SPIN" : "PACE"));
+    // 10 drafted, 0 WKs; the only empty slot is a middle-order slot (index 5)
+    const squad: (PlayerWithStats | null)[] = [];
+    for (let i = 0; i < 11; i++) {
+      if (i === 5) squad.push(null);
+      else squad.push(createMockPlayer(`p${i}`, `C${i}`, i < 5 ? "BAT" : "BOWL", "RHB", i < 5 ? "NONE" : i < 8 ? "SPIN" : "PACE"));
     }
-
     const batter = createMockPlayer("p11", "ENG", "BAT", "RHB");
     const keeper = createMockPlayer("p11_wk", "ENG", "WK", "RHB");
 
-    const batterResult = canPickPlayer(batter, squad, challenge);
+    const batterResult = canPickPlayer(batter, squad, challenge, 5);
     expect(batterResult.allowed).toBe(false);
     expect(batterResult.reason).toContain("Must pick a Wicketkeeper for remaining slot");
 
-    const keeperResult = canPickPlayer(keeper, squad, challenge);
-    expect(keeperResult.allowed).toBe(true);
+    expect(canPickPlayer(keeper, squad, challenge, 5).allowed).toBe(true);
+  });
+
+  it("blocks a keeper from being the only way to fill a tail slot", () => {
+    // 10 drafted without a keeper, only slot 11 (a tail slot) empty: no legal pick exists.
+    const squad: (PlayerWithStats | null)[] = [];
+    for (let i = 0; i < 10; i++) {
+      squad.push(createMockPlayer(`p${i}`, `C${i}`, i < 6 ? "BAT" : "BOWL", "RHB", i < 6 ? "NONE" : "PACE"));
+    }
+    squad.push(null);
+    const keeper = createMockPlayer("k", "ENG", "WK", "RHB");
+    const res = canPickPlayer(keeper, squad, challenge, 10);
+    expect(res.allowed).toBe(false);
+    expect(res.reason).toContain("Slot 11 needs a bowler or all-rounder");
   });
 
   it("blocks non-bowlers when remaining slots must all be bowlers to satisfy 5 bowling options", () => {
-    // 8 players drafted, only 2 bowlers (needs 3 more, exactly 3 slots remaining: picks 9, 10, 11)
-    const squad: PlayerWithStats[] = [
+    // 8 drafted, only 2 bowlers (needs 3 more); empty: slot 6 (middle), slots 10 and 11 (tail)
+    const squad: (PlayerWithStats | null)[] = [
       createMockPlayer("p1", "C1", "BAT", "LHB"),
       createMockPlayer("p2", "C2", "BAT", "LHB"),
       createMockPlayer("p3", "C3", "BAT", "RHB"),
       createMockPlayer("p4", "C4", "BAT", "RHB"),
       createMockPlayer("p5", "C5", "BAT", "RHB"),
+      null,
       createMockPlayer("p6", "C6", "WK", "RHB"),
       createMockPlayer("p7", "C7", "BOWL", "RHB", "SPIN"),
       createMockPlayer("p8", "C8", "BOWL", "RHB", "SPIN"),
+      null,
+      null,
     ];
-
     const nonBowler = createMockPlayer("p9_bat", "C9", "BAT", "RHB");
     const bowler = createMockPlayer("p9_bowl", "C9", "BOWL", "RHB", "PACE");
 
-    const nonBowlerResult = canPickPlayer(nonBowler, squad, challenge);
+    const nonBowlerResult = canPickPlayer(nonBowler, squad, challenge, 5);
     expect(nonBowlerResult.allowed).toBe(false);
     expect(nonBowlerResult.reason).toContain("Must pick a bowler");
 
-    const bowlerResult = canPickPlayer(bowler, squad, challenge);
-    expect(bowlerResult.allowed).toBe(true);
+    expect(canPickPlayer(bowler, squad, challenge, 5).allowed).toBe(true);
+  });
+
+  it("enforces slot roles: openers are batters/keepers, slots 9-11 are bowlers/all-rounders", () => {
+    const empty: (PlayerWithStats | null)[] = Array(11).fill(null);
+    const bowler = createMockPlayer("b", "C1", "BOWL", "RHB", "PACE");
+    const batter = createMockPlayer("x", "C2", "BAT", "RHB");
+    expect(canPickPlayer(bowler, empty, challenge, 0).reason).toContain("open");
+    expect(canPickPlayer(batter, empty, challenge, 9).reason).toContain("bowler or all-rounder");
+    expect(canPickPlayer(bowler, empty, challenge, 9).allowed).toBe(true);
+    expect(canPickPlayer(batter, empty, challenge, 2).allowed).toBe(true);
   });
 });
-

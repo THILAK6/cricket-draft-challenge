@@ -494,7 +494,7 @@ export class DraftRoom implements DurableObject {
 
       // Test each vacant slot for positional legality and tactical fit
       for (const slotIdx of emptyIndices) {
-        const legalCheck = canPickPlayer(p, squad, challenge, slotIdx, this.poolContext(squad));
+        const legalCheck = canPickPlayer(p, squad, challenge, slotIdx); // cheap screen; pool reserve is checked on the chosen pair
         if (!legalCheck.allowed) continue;
 
         let slotFit = 0;
@@ -668,7 +668,14 @@ export class DraftRoom implements DurableObject {
       }
     }
 
-    if (candidatePairs.length === 0) {
+    // Best-scoring pair that also keeps the shared pool completable for both squads
+    candidatePairs.sort((a, b) => b.score - a.score);
+    const poolCtx = this.poolContext(squad);
+    const best = candidatePairs.find(
+      (c) => canPickPlayer(c.player, squad, challenge, c.slotIndex, poolCtx).allowed
+    );
+
+    if (!best) {
       // Fallback: pick first legal player into first empty slot
       const fallbackSlot = emptyIndices[0];
       const legal = this.draftState.pool.filter(
@@ -690,10 +697,6 @@ export class DraftRoom implements DurableObject {
       }
       return;
     }
-
-    // Sort by grandmaster score descending
-    candidatePairs.sort((a, b) => b.score - a.score);
-    const best = candidatePairs[0];
 
     const pIdx = this.draftState.pool.findIndex((p) => p.id === best.player.id);
     if (pIdx !== -1) {

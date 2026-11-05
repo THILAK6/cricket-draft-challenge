@@ -18,6 +18,24 @@ export interface FeasibilityResult {
  * Validates whether an individual 11-player squad satisfies all cricket rules
  * and challenge-specific constraints.
  */
+/** Batting-order slots (0-based) that need specific kinds of player. */
+export const OPENER_SLOTS = [0, 1];
+export const TAIL_SLOTS = [8, 9, 10];
+
+/** Specialist batter or keeper, or an all-rounder with a genuine top-order record. */
+export function isOpenerCapable(p: PlayerWithStats): boolean {
+  return (
+    p.primary_role === "BAT" ||
+    p.primary_role === "WK" ||
+    (p.primary_role === "AR" && p.stats.top_order_innings >= 6)
+  );
+}
+
+/** Frontline bowler or all-rounder: the only players who may bat 9-11. */
+export function isTailCapable(p: PlayerWithStats): boolean {
+  return p.primary_role === "BOWL" || p.primary_role === "AR";
+}
+
 export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Challenge): SquadValidationResult {
   const violations: string[] = [];
   const nonNullSquad = squad.filter((p): p is PlayerWithStats => p !== null);
@@ -45,6 +63,14 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
   );
   if (bowlingOptions.length < 5) {
     violations.push(`Squad must have at least 5 bowling options (currently ${bowlingOptions.length}).`);
+  }
+
+  // Slot-role rule (set level): need 2 opener-capable and 3 tail-capable players
+  if (nonNullSquad.filter(isOpenerCapable).length < OPENER_SLOTS.length) {
+    violations.push("Squad needs at least 2 specialist batters or keepers to open the innings.");
+  }
+  if (nonNullSquad.filter(isTailCapable).length < TAIL_SLOTS.length) {
+    violations.push("Squad needs at least 3 bowlers or all-rounders for batting slots 9-11.");
   }
 
   // 2. Challenge Specific Constraints
@@ -261,6 +287,8 @@ export function checkChallengeFeasibility(
       matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
       need: 5,
     },
+    { matches: isOpenerCapable, need: OPENER_SLOTS.length },
+    { matches: isTailCapable, need: TAIL_SLOTS.length },
   ];
   for (const c of challenge.constraints) {
     if (c.type === "min_category") {
@@ -417,6 +445,12 @@ export function checkDraftFeasibility(
   if (pool.filter(isBowlingOption).length < 10) {
     return fail("Pool cannot support two disjoint XIs: fewer than 10 bowling options.");
   }
+  if (pool.filter(isOpenerCapable).length < 2 * OPENER_SLOTS.length) {
+    return fail("Pool cannot support two disjoint XIs: fewer than 4 openers.");
+  }
+  if (pool.filter(isTailCapable).length < 2 * TAIL_SLOTS.length) {
+    return fail("Pool cannot support two disjoint XIs: fewer than 6 bowlers or all-rounders for slots 9-11.");
+  }
   for (const c of challenge.constraints) {
     if (c.type === "min_category") {
       const available = pool.filter((p) =>
@@ -563,6 +597,14 @@ export function canPickPlayer(
 
   const targetSlot = slotIndex + 1; // 1-based slot index (1 to 11)
 
+  // 3b. Slot-role rules: openers must be batters/keepers, slots 9-11 bowlers/all-rounders
+  if (OPENER_SLOTS.includes(slotIndex) && !isOpenerCapable(player)) {
+    return { allowed: false, reason: `Slot ${targetSlot} needs a specialist batter or keeper to open` };
+  }
+  if (TAIL_SLOTS.includes(slotIndex) && !isTailCapable(player)) {
+    return { allowed: false, reason: `Slot ${targetSlot} needs a bowler or all-rounder` };
+  }
+
   // 4. Batting Hand Order (Slot-specific constraint)
   for (const constraint of challenge.constraints) {
     if (constraint.type === "batting_hand_order") {
@@ -583,6 +625,15 @@ export function canPickPlayer(
     11 - (filledPlayers.length + (isReplacing ? 0 : 1))
   );
 
+  // Which empty slots can still take each kind of player (slot-role rules)
+  const emptyAfter: number[] = [];
+  for (let i = 0; i < 11; i++) {
+    if (i === slotIndex) continue;
+    if (!currentSquad[i]) emptyAfter.push(i);
+  }
+  const keeperSlots = emptyAfter.filter((i) => !TAIL_SLOTS.includes(i)).length; // keepers can't bat 9-11
+  const bowlerSlots = emptyAfter.filter((i) => !OPENER_SLOTS.includes(i)).length; // bowlers can't open
+
   // 5. Critical Slot Guards (Pigeonhole principle on minimum required roles)
   const isWK = player.primary_role === "WK";
   const isBowler =
@@ -596,7 +647,7 @@ export function canPickPlayer(
   ).length;
   const keepersWithThisPick = otherKeepers + (isWK ? 1 : 0);
   const neededKeepers = Math.max(0, 1 - keepersWithThisPick);
-  if (remainingSlotsAfterThisPick < neededKeepers) {
+  if (keeperSlots < neededKeepers) {
     return {
       allowed: false,
       reason: "Must pick a Wicketkeeper for remaining slot",
@@ -614,7 +665,7 @@ export function canPickPlayer(
   }).length;
   const bowlingWithThisPick = otherBowling + (isBowler ? 1 : 0);
   const neededBowlers = Math.max(0, 5 - bowlingWithThisPick);
-  if (remainingSlotsAfterThisPick < neededBowlers) {
+  if (bowlerSlots < neededBowlers || neededKeepers + neededBowlers > remainingSlotsAfterThisPick) {
     return {
       allowed: false,
       reason: `Must pick a bowler (${5 - otherBowling} more needed for remaining slots)`,
@@ -743,6 +794,28 @@ function checkPoolReserve(
       return `Not enough ${need.label} options left in the pool for both squads`;
     }
   }
-  void slotIndex;
+
+  // Slot groups: every empty opener / tail slot needs a capable player left in the pool.
+  const mineSlots = squad.slice();
+  mineSlots[slotIndex] = player;
+  const groups: { label: string; slots: number[]; capable: (p: PlayerWithStats) => boolean }[] = [
+    { label: "opener", slots: OPENER_SLOTS, capable: isOpenerCapable },
+    { label: "tail-end bowler", slots: TAIL_SLOTS, capable: isTailCapable },
+  ];
+  for (const g of groups) {
+    const empties = (sl: (PlayerWithStats | null)[]) => g.slots.filter((i) => !sl[i]).length;
+    const myEmpty = empties(mineSlots);
+    const theirEmpty = empties(ctx.opponentSquad);
+    const need: RoleNeed = { label: g.label, required: 0, matches: g.capable };
+    if (myEmpty > 0 && eligibleFor(mine, need) < myEmpty) {
+      return `Taking this player would leave too few ${g.label} options in the pool for your squad`;
+    }
+    if (theirEmpty > 0 && eligibleFor(theirs, need) < theirEmpty) {
+      return `Taking this player would leave too few ${g.label} options in the pool for your opponent`;
+    }
+    if (myEmpty + theirEmpty > 0 && pool.filter(g.capable).length < myEmpty + theirEmpty) {
+      return `Not enough ${g.label} options left in the pool for both squads`;
+    }
+  }
   return null;
 }
