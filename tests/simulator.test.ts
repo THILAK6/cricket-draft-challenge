@@ -88,5 +88,28 @@ describe("Realistic Cricket Match Simulator", () => {
     expect(result.playerOfTheMatch.name).toBeDefined();
     expect(result.decisiveDifference).toBeDefined();
   });
+
+  it("simulates a multi-innings Test match with toss and lead dynamics", () => {
+    const testChallenge: Challenge = {
+      id: "ch_sim_lords",
+      title: "Lord's Seam Battle",
+      format: "TEST",
+      venue: { name: "Lord's Cricket Ground, London", country: "ENG", pitch_type: "GREEN_SEAMER" },
+      narrative_intro: "Overcast skies with lateral seam movement.",
+      constraints: [],
+    };
+
+    const result = simulateCricketMatch(userSquad, aiSquad, testChallenge, 54321);
+
+    expect(result.format).toBe("TEST");
+    expect(["USER", "AI", "DRAW"]).toContain(result.winner);
+    expect(result.toss).toBeDefined();
+    expect(result.userInnings).toBeDefined();
+    expect(result.aiInnings).toBeDefined();
+    expect(result.userSecondInnings).toBeDefined();
+    expect(result.aiSecondInnings).toBeDefined();
+    expect(result.leadFirstInnings).toBeDefined();
+    expect(result.keyMoments.length).toBeGreaterThan(0);
+  });
 });
 

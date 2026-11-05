@@ -119,3 +119,60 @@ export interface DraftState {
   results?: any;
 }
 
+export interface SlotDefinition {
+  slot: number; // 1 to 11
+  name: string;
+  shortRole: string;
+  icon: string;
+  description: string;
+}
+
+export function getSlotDefinitions(format: MatchFormat = "T20"): SlotDefinition[] {
+  if (format === "TEST") {
+    return [
+      { slot: 1, name: "Opening Batter", shortRole: "OPENER", icon: "🏏", description: "Blunt the new Dukes ball with solid defense and patience" },
+      { slot: 2, name: "Opening Batter", shortRole: "OPENER", icon: "🏏", description: "Top order leave technique and high balls faced" },
+      { slot: 3, name: "No. 3 Anchor", shortRole: "ANCHOR", icon: "🛡️", description: "First drop technician to steady early breakthroughs" },
+      { slot: 4, name: "Middle Order Pillar", shortRole: "MIDDLE", icon: "🏛️", description: "Proven century-maker and partnership builder" },
+      { slot: 5, name: "Middle Order Batter", shortRole: "MIDDLE", icon: "🛡️", description: "Patience against spin and second new ball resilience" },
+      { slot: 6, name: "All-Rounder / Middle Order", shortRole: "ALL-ROUND", icon: "⚔️", description: "Counter-attacking bat and vital 5th bowling option" },
+      { slot: 7, name: "Wicketkeeper-Batter", shortRole: "WK_BAT", icon: "🧤", description: "Glovework to pacers & spinners, batting with the tail" },
+      { slot: 8, name: "Bowling All-Rounder", shortRole: "BOWL_AR", icon: "🎯", description: "Lower order resilience and frontline bowling spells" },
+      { slot: 9, name: "Specialist Bowler", shortRole: "BOWLER", icon: "⚡", description: "Strike weapon (Express Pace / Mystery Spin)" },
+      { slot: 10, name: "Specialist Bowler", shortRole: "BOWLER", icon: "🎯", description: "Workhorse seamer / probing line & length" },
+      { slot: 11, name: "Specialist Bowler", shortRole: "BOWLER", icon: "💥", description: "Attack spearhead or spin wizard taking 20 wickets" },
+    ];
+  }
+
+  if (format === "ODI") {
+    return [
+      { slot: 1, name: "Opener", shortRole: "OPENER", icon: "🏏", description: "Powerplay 1 aggressor / strike builder" },
+      { slot: 2, name: "Opener", shortRole: "OPENER", icon: "🏏", description: "New ball boundary finder & runner" },
+      { slot: 3, name: "No. 3 Anchor", shortRole: "ANCHOR", icon: "🛡️", description: "Middle overs tempo controller (avg 45+)" },
+      { slot: 4, name: "Middle Order", shortRole: "MIDDLE", icon: "🛡️", description: "Strike rotator & boundary accumulator" },
+      { slot: 5, name: "Middle Aggressor", shortRole: "MIDDLE", icon: "⚡", description: "Accelerates between overs 30-40" },
+      { slot: 6, name: "Finisher / All-Rounder", shortRole: "FINISHER", icon: "💥", description: "Death overs blitz and clutch match finishing" },
+      { slot: 7, name: "Lower Order AR", shortRole: "ALL-ROUND", icon: "🌟", description: "Late-innings hitting and 10 overs quota" },
+      { slot: 8, name: "Bowling All-Rounder", shortRole: "BOWL_AR", icon: "🎯", description: "Deep batting security and wicket taker" },
+      { slot: 9, name: "Frontline Bowler", shortRole: "BOWLER", icon: "⚡", description: "New ball swing and middle overs cutter" },
+      { slot: 10, name: "Frontline Bowler", shortRole: "BOWLER", icon: "🎯", description: "Line & length containment bowler" },
+      { slot: 11, name: "Frontline Bowler", shortRole: "BOWLER", icon: "💥", description: "Death yorker specialist and wicket taker" },
+    ];
+  }
+
+  // T20 Default
+  return [
+    { slot: 1, name: "Powerplay Opener", shortRole: "OPENER", icon: "🚀", description: "Exploit 30-yard circle in overs 1-6" },
+    { slot: 2, name: "Powerplay Opener", shortRole: "OPENER", icon: "🚀", description: "Boundary hunter with high strike rate" },
+    { slot: 3, name: "Anchor / Stroke Player", shortRole: "ANCHOR", icon: "🛡️", description: "Rotates strike against spin in middle overs" },
+    { slot: 4, name: "Middle Order Hitter", shortRole: "MIDDLE", icon: "⚡", description: "Target boundaries against slow bowlers" },
+    { slot: 5, name: "Middle Order Power", shortRole: "MIDDLE", icon: "⚡", description: "Clears long boundaries at 140+ SR" },
+    { slot: 6, name: "Death Finisher / AR", shortRole: "FINISHER", icon: "💥", description: "180+ death SR specialist (Hardik/Russell role)" },
+    { slot: 7, name: "Power Finisher / AR", shortRole: "FINISHER", icon: "🌟", description: "High-octane hitting in overs 17-20" },
+    { slot: 8, name: "Bowling All-Rounder", shortRole: "BOWL_AR", icon: "🎯", description: "Batting depth + 4 overs bowling option" },
+    { slot: 9, name: "Specialist Bowler", shortRole: "BOWLER", icon: "⚡", description: "Express pace / Mystery spinner" },
+    { slot: 10, name: "Frontline Bowler", shortRole: "BOWLER", icon: "🎯", description: "Middle overs squeeze and wicket taker" },
+    { slot: 11, name: "Death Bowler", shortRole: "BOWLER", icon: "💥", description: "Nails pinpoint yorkers under pressure" },
+  ];
+}
+

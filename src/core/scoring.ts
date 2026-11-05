@@ -79,40 +79,57 @@ export function calculateDeterministicScore(
   }
   roleScore += Math.min(3.0, middleOrderCount * 1.0);
 
-  // Finisher / Lower-Middle Resilience: Slots 5, 6, 7
-  let hasFinisher = false;
-  for (let i = 4; i < Math.min(7, squad.length); i++) {
-    const p = squad[i];
-    if (!p) continue;
-    let isFinisher = false;
-    if (isT20) {
-      isFinisher =
-        p.stats.finisher_innings >= 6 ||
-        (p.primary_role === "AR" && p.stats.bat_strike_rate >= 135) ||
-        (p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200);
-    } else if (isOdi) {
-      isFinisher =
-        p.stats.finisher_innings >= 6 ||
-        (p.primary_role === "AR" && p.stats.bat_strike_rate >= 95) ||
-        (p.stats.bat_strike_rate >= 105 && p.stats.bat_runs >= 300);
-    } else {
-      // Test match counter-attacking lower middle order (Gilchrist / Pant / Stokes role)
-      isFinisher =
-        p.stats.finisher_innings >= 6 ||
-        (p.primary_role === "AR" && p.stats.bat_average >= 28.0) ||
-        (p.stats.bat_average >= 32.0 && p.stats.bat_runs >= 400);
+  // Lower-Middle Order Construction (Slots 5, 6, 7):
+  // Format-specific: T20/ODI requires explosive death finishers; Tests require all-round resilience & batting depth
+  if (isTest) {
+    // Tests: Check for Lower-Middle Order Spine (Slots 5, 6, 7)
+    // Needs all-round batting depth or genuine Test keeper with batting pedigree (Gilchrist, Pant, Stokes, Boucher)
+    let hasLowerMiddleSpine = false;
+    for (let i = 4; i < Math.min(7, squad.length); i++) {
+      const p = squad[i];
+      if (!p) continue;
+      if (
+        p.primary_role === "AR" ||
+        p.primary_role === "WK" ||
+        (p.primary_role === "BAT" && (p.stats.bat_average >= 32.0 || p.stats.matches >= 25))
+      ) {
+        hasLowerMiddleSpine = true;
+        break;
+      }
     }
-    if (isFinisher) {
-      hasFinisher = true;
-      break;
+    if (hasLowerMiddleSpine) {
+      roleScore += 2.5; // Solid Test lower-middle order
     }
-  }
+    // No finisher penalty in Test matches!
+  } else {
+    // Limited Overs (T20 & ODI): Requires authentic Death Finisher
+    let hasFinisher = false;
+    for (let i = 4; i < Math.min(7, squad.length); i++) {
+      const p = squad[i];
+      if (!p) continue;
+      let isFinisher = false;
+      if (isT20) {
+        isFinisher =
+          p.stats.finisher_innings >= 6 ||
+          (p.primary_role === "AR" && p.stats.bat_strike_rate >= 135) ||
+          (p.stats.bat_strike_rate >= 142 && p.stats.bat_runs >= 200);
+      } else {
+        isFinisher =
+          p.stats.finisher_innings >= 6 ||
+          (p.primary_role === "AR" && p.stats.bat_strike_rate >= 95) ||
+          (p.stats.bat_strike_rate >= 105 && p.stats.bat_runs >= 300);
+      }
+      if (isFinisher) {
+        hasFinisher = true;
+        break;
+      }
+    }
 
-  if (hasFinisher) {
-    roleScore += 2.5;
-  } else if (nonNullSquad.length >= 7) {
-    // Deficit penalty for missing lower-middle order counter-attack
-    roleScore -= (isTest ? 2.5 : 3.5);
+    if (hasFinisher) {
+      roleScore += 2.5;
+    } else if (nonNullSquad.length >= 7) {
+      roleScore -= 3.5; // Penalty for missing finisher in T20/ODI
+    }
   }
 
   // Attack Diversity (Pace + Spin Synergy):

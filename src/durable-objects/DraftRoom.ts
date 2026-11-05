@@ -285,9 +285,11 @@ export class DraftRoom implements DurableObject {
   }
 
   /**
-   * Slot-Aware, Pitch-Aware AI Draft Logic:
-   * AI NEVER picks Hardik as an opener (slots 0-1 reserved for top order).
-   * AI NEVER picks 5 spinners at Wankhede or Lord's (max 1 spinner on flat/seam tracks).
+   * Grandmaster AI Draft Algorithm:
+   * Format-Aware, Pitch-Aware, Value-Over-Replacement Draft Engine.
+   * Instead of rigid sequential slot filling, AI evaluates every legal (candidate, vacantSlot)
+   * pair in the pool. It snipes generational stars (Bumrah, Kohli, Cummins, etc.) early,
+   * matches them to their optimal slot, and counters pitch conditions ruthlessly.
    */
   private executeAiPick() {
     if (!this.draftState || this.draftState.pool.length === 0) return;
@@ -295,158 +297,223 @@ export class DraftRoom implements DurableObject {
     const squad = this.draftState.aiPicks;
     const challenge = this.draftState.challenge;
     const pitchType = challenge.venue.pitch_type;
+    const format = challenge.format || "T20";
+    const isTest = format === "TEST";
+    const isOdi = format === "ODI";
+    const isT20 = format === "T20";
 
     // Find all vacant slots
     const emptyIndices: number[] = [];
     for (let i = 0; i < 11; i++) {
       if (squad[i] === null) emptyIndices.push(i);
     }
-
     if (emptyIndices.length === 0) return;
 
     const nonNullAi = squad.filter((p): p is PlayerWithStats => p !== null);
     const hasKeeper = nonNullAi.some((p) => p.primary_role === "WK");
     const spinnerCount = nonNullAi.filter((p) => p.bowling_category === "SPIN").length;
     const pacerCount = nonNullAi.filter((p) => p.bowling_category === "PACE").length;
-    const bowlerCount = nonNullAi.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").length;
+    const bowlingOptionsCount = nonNullAi.filter(
+      (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
+    ).length;
+    const openerCount = (squad[0] ? 1 : 0) + (squad[1] ? 1 : 0);
 
-    // Target slot prioritization:
-    let targetSlotIndex = emptyIndices[0];
-    if (emptyIndices.includes(0)) targetSlotIndex = 0;
-    else if (emptyIndices.includes(1)) targetSlotIndex = 1;
-    else if (emptyIndices.includes(2)) targetSlotIndex = 2;
-    else if (emptyIndices.some((idx) => idx >= 8) && bowlerCount < 4) {
-      targetSlotIndex = emptyIndices.find((idx) => idx >= 8)!;
-    } else if (emptyIndices.includes(5) || emptyIndices.includes(6)) {
-      targetSlotIndex = emptyIndices.find((idx) => idx === 5 || idx === 6)!;
-    }
-
-    // Find legal candidates for this target slot
-    let legal = this.draftState.pool.filter(
-      (p) => canPickPlayer(p, squad, challenge, targetSlotIndex).allowed
-    );
-
-    if (legal.length === 0) {
-      // Try alternate empty slots
-      for (const slotIdx of emptyIndices) {
-        const alt = this.draftState.pool.filter(
-          (p) => canPickPlayer(p, squad, challenge, slotIdx).allowed
-        );
-        if (alt.length > 0) {
-          targetSlotIndex = slotIdx;
-          legal = alt;
-          break;
-        }
-      }
-    }
-
-    const poolToScore = legal.length > 0 ? legal : this.draftState.pool;
-
-    // Strict Pitch Quota Check:
-    // Flat / Seam tracks: Max 1 spinner in the entire XI!
+    // Strict Pitch Quotas:
+    // Flat & Green tracks: Max 1 spinner in the entire XI!
     const disallowMoreSpinners =
       (pitchType === "HIGH_SCORING_FLAT" || pitchType === "GREEN_SEAMER") && spinnerCount >= 1;
 
-    const needsKeeperUrgent = !hasKeeper && emptyIndices.length <= 4;
+    // Evaluate every legal (candidate, slot) combination
+    interface ScoredPair {
+      player: PlayerWithStats;
+      slotIndex: number;
+      score: number;
+    }
 
-    const scored = poolToScore.map((p) => {
-      let score = 0;
+    const candidatePairs: ScoredPair[] = [];
+
+    for (const p of this.draftState.pool) {
       const isPacer = p.bowling_category === "PACE";
       const isSpinner = p.bowling_category === "SPIN";
       const isWK = p.primary_role === "WK";
       const isAR = p.primary_role === "AR";
       const isBat = p.primary_role === "BAT";
       const isBowl = p.primary_role === "BOWL";
+      const matches = Math.max(1, p.stats.matches);
 
-      // Positional role evaluation
-      if (targetSlotIndex === 0 || targetSlotIndex === 1) {
-        // OPENERS: Must be genuine openers (Kohli, Rohit, Warner, de Kock, Buttler, etc.)
-        if (isBowl) {
-          score -= 1000;
-        } else if (p.stats.top_order_innings >= 10 || (isBat && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35)) {
-          score += 100 + p.stats.bat_average * 1.5 + (p.stats.bat_strike_rate / 130) * 20 + p.stats.top_order_innings * 0.4;
-        } else if (isBat || isWK) {
-          score += 25 + p.stats.bat_average;
-        } else {
-          score -= 500; // Finishers/ARs (Hardik) penalized as openers
+      // Pitch restriction
+      if (disallowMoreSpinners && isSpinner) continue;
+
+      // Calculate Player Base Quality for the specific format
+      let quality = 0;
+      if (isTest) {
+        // TEST: Batting average & resistance are king; Bowling average & wickets per match rule
+        if (isBat || isWK || isAR) {
+          const avg = p.stats.bat_average || 25;
+          quality += Math.pow(Math.min(65, avg) / 38.0, 1.8) * 75;
+          if (avg >= 50.0) quality += 40; // Platinum test batters (Smith, Root, Williamson)
+          else if (avg >= 42.0) quality += 25;
         }
-      } else if (targetSlotIndex === 2) {
-        // TOP ORDER ANCHOR (No. 3)
-        if (isBowl) {
-          score -= 1000;
-        } else if (p.stats.bat_average >= 38.0 && (isBat || isWK)) {
-          score += 100 + p.stats.bat_average * 2.0 + (p.stats.matches / 10);
-        } else if (isBat || isWK) {
-          score += 50 + p.stats.bat_average * 1.2;
-        } else {
-          score -= 300;
-        }
-      } else if (targetSlotIndex === 3 || targetSlotIndex === 4) {
-        // MIDDLE ORDER (No. 4 & 5)
-        if (isBowl) {
-          score -= 800;
-        } else if (isBat || isWK || isAR) {
-          score += 80 + p.stats.bat_average * 1.2 + (p.stats.bat_strike_rate / 130) * 15;
-          if (p.stats.middle_order_innings >= 8) score += 20;
-        }
-      } else if (targetSlotIndex === 5 || targetSlotIndex === 6) {
-        // FINISHERS & ALL-ROUNDERS (No. 6 & 7 - Hardik, Stokes, Maxwell, Russell)
-        if (isAR) {
-          score += 90 + (p.stats.bat_strike_rate / 135) * 25 + p.stats.finisher_innings * 2;
-        } else if (p.stats.finisher_innings >= 5 || p.stats.bat_strike_rate >= 140) {
-          score += 75 + (p.stats.bat_strike_rate / 135) * 25 + p.stats.bat_average * 0.8;
-        } else if (isBat) {
-          score += 30 + (p.stats.bat_strike_rate / 130) * 15;
-        } else {
-          score -= 200;
-        }
-      } else if (targetSlotIndex === 7) {
-        // LOWER ORDER / BOWLING AR (No. 8)
-        if (isAR || (isBowl && p.stats.bat_average >= 14.0)) {
-          score += 90 + p.stats.bat_average * 1.5 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 20;
-        } else if (isBowl) {
-          score += 60;
-        } else {
-          score -= 100;
-        }
-      } else {
-        // FRONTLINE BOWLERS (Slots 8, 9, 10 - No. 9, 10, 11)
         if (isBowl || isAR) {
-          score += 80 + (7.8 / Math.max(5.5, p.stats.bowl_economy || 8.0)) * 30 + (p.stats.bowl_wickets / Math.max(1, p.stats.matches)) * 25;
-        } else {
-          score -= 1000; // Never pick pure batter at No. 11
+          const bowlAvg = p.stats.bowl_average || 35.0;
+          const wpm = p.stats.bowl_wickets / matches;
+          quality += (28.0 / Math.max(18.0, bowlAvg)) * 80 + Math.min(3.5, wpm) * 15;
+          if (bowlAvg <= 24.0 && matches >= 15) quality += 40; // Elite test strike weapons (Bumrah, Cummins, Anderson)
         }
+        // Test Experience / Caps resilience
+        quality += Math.min(35, matches * 0.6);
+      } else if (isOdi) {
+        // ODI: High average + healthy strike rate + low economy
+        if (isBat || isWK || isAR) {
+          quality += (p.stats.bat_average / 38.0) * 55 + (p.stats.bat_strike_rate / 90.0) * 35;
+          if (p.stats.bat_average >= 45.0) quality += 30;
+        }
+        if (isBowl || isAR) {
+          const econ = p.stats.bowl_economy || 5.8;
+          quality += (5.2 / Math.max(3.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
+          if (econ <= 4.8) quality += 25;
+        }
+        quality += Math.min(25, matches * 0.3);
+      } else {
+        // T20: Boundary hitting strike rate & death economy
+        if (isBat || isWK || isAR) {
+          quality += (p.stats.bat_strike_rate / 135.0) * 65 + (p.stats.bat_average / 30.0) * 35;
+          if (p.stats.bat_strike_rate >= 145.0) quality += 30;
+        }
+        if (isBowl || isAR) {
+          const econ = p.stats.bowl_economy || 8.0;
+          quality += (7.6 / Math.max(5.8, econ)) * 55 + (p.stats.bowl_wickets / matches) * 20;
+          if (econ <= 7.2) quality += 30;
+        }
+        quality += Math.min(20, matches * 0.25);
       }
 
-      // Pitch Suitability Quotas:
-      if (disallowMoreSpinners && isSpinner) {
-        score -= 500; // Strictly prevent 5 spinners at Wankhede or Lord's
-      }
-      if (pitchType === "HIGH_SCORING_FLAT" && isPacer) {
-        score += 35; // Wankhede pace boost
-      }
+      // Pitch Synergy
+      let pitchBonus = 0;
       if (pitchType === "GREEN_SEAMER" && isPacer) {
-        score += 40; // Lord's seam boost
+        pitchBonus += isTest ? 55 : 40; // Seamers rule green tops
+      } else if (pitchType === "DUSTBOWL" && isSpinner) {
+        pitchBonus += isTest ? 60 : 45; // Spinners dominate turners
+      } else if (pitchType === "SLOW_LOW" && isSpinner) {
+        pitchBonus += 35;
+      } else if (pitchType === "HIGH_SCORING_FLAT") {
+        if (isPacer && p.stats.bowl_economy > 0 && p.stats.bowl_economy <= (isT20 ? 7.6 : 5.0)) pitchBonus += 35;
+        if (isBat && p.stats.bat_strike_rate >= (isT20 ? 140 : 95)) pitchBonus += 30;
       }
-      if (pitchType === "DUSTBOWL" && isSpinner) {
-        score += 40; // Chepauk spin boost
+
+      // Test each vacant slot for positional legality and tactical fit
+      for (const slotIdx of emptyIndices) {
+        const legalCheck = canPickPlayer(p, squad, challenge, slotIdx);
+        if (!legalCheck.allowed) continue;
+
+        let slotFit = 0;
+
+        if (slotIdx === 0 || slotIdx === 1) {
+          // OPENERS
+          if (isBowl) {
+            slotFit -= 1500;
+          } else if (p.stats.top_order_innings >= 8 || (isBat && p.stats.top_order_innings / Math.max(1, p.stats.bat_innings) >= 0.35)) {
+            slotFit += 60;
+          } else if (isBat || isWK) {
+            slotFit += 25;
+          } else {
+            slotFit -= 400; // Finishers/tailenders penalized
+          }
+        } else if (slotIdx === 2) {
+          // #3 ANCHOR
+          if (isBowl) {
+            slotFit -= 1500;
+          } else if (p.stats.bat_average >= (isTest ? 42.0 : 38.0) && (isBat || isWK)) {
+            slotFit += 55;
+          } else if (isBat || isWK) {
+            slotFit += 30;
+          } else {
+            slotFit -= 350;
+          }
+        } else if (slotIdx === 3 || slotIdx === 4) {
+          // MIDDLE ORDER (4 & 5)
+          if (isBowl) {
+            slotFit -= 1000;
+          } else if (isBat || isWK || isAR) {
+            slotFit += 50;
+            if (p.stats.middle_order_innings >= 8) slotFit += 15;
+          }
+        } else if (slotIdx === 5 || slotIdx === 6) {
+          // SLOTS 6 & 7: FORMAT SPECIFIC
+          if (isTest) {
+            // In Tests: All-Rounders (Stokes, Jadeja, Kallis) or solid WK (Gilchrist, Pant, Watling)
+            if (isAR) slotFit += 65;
+            else if (isWK) slotFit += 55;
+            else if (isBat && p.stats.bat_average >= 32.0) slotFit += 45;
+            else slotFit -= 150;
+          } else {
+            // In T20 / ODI: Explosive Finishers
+            if (isAR) slotFit += 60;
+            else if (p.stats.finisher_innings >= 5 || p.stats.bat_strike_rate >= (isT20 ? 140 : 100)) slotFit += 60;
+            else if (isWK) slotFit += 40;
+            else if (isBat) slotFit += 25;
+            else slotFit -= 200;
+          }
+        } else if (slotIdx === 7) {
+          // LOWER ORDER / BOWLING AR (Slot 8)
+          if (isAR) slotFit += 60;
+          else if (isBowl && p.stats.bat_average >= 14.0) slotFit += 55;
+          else if (isBowl) slotFit += 40;
+          else slotFit -= 150;
+        } else {
+          // FRONTLINE BOWLERS (Slots 8, 9, 10 - #9, 10, 11)
+          if (isBowl || isAR) {
+            slotFit += 60;
+            // Spearheads into slot 9/10
+            if (p.stats.bowl_wickets >= (isTest ? 60 : 40)) slotFit += 20;
+          } else {
+            slotFit -= 2000; // Never pick pure batter at #9-11
+          }
+        }
+
+        // Squad Need Urgency
+        let urgency = 0;
+        if (!hasKeeper && isWK) {
+          urgency += emptyIndices.length <= 4 ? 200 : 80;
+        }
+        if (bowlingOptionsCount < 5 && (isBowl || isAR)) {
+          urgency += emptyIndices.length <= 5 ? 160 : 70;
+        }
+        if (openerCount < 2 && (slotIdx === 0 || slotIdx === 1) && (isBat || isWK)) {
+          urgency += emptyIndices.length <= 4 ? 120 : 50;
+        }
+
+        const totalScore = quality + pitchBonus + slotFit + urgency;
+        candidatePairs.push({ player: p, slotIndex: slotIdx, score: totalScore });
       }
+    }
 
-      // Mandatory keeper guard
-      if (needsKeeperUrgent && isWK) {
-        score += 150;
+    if (candidatePairs.length === 0) {
+      // Fallback: pick first legal player into first empty slot
+      const fallbackSlot = emptyIndices[0];
+      const legal = this.draftState.pool.filter(
+        (p) => canPickPlayer(p, squad, challenge, fallbackSlot).allowed
+      );
+      const chosen = legal.length > 0 ? legal[0] : this.draftState.pool[0];
+      const pIdx = this.draftState.pool.findIndex((p) => p.id === chosen.id);
+      if (pIdx !== -1) {
+        const [picked] = this.draftState.pool.splice(pIdx, 1);
+        squad[fallbackSlot] = picked;
+        this.draftState.currentTurn = "USER";
+        this.draftState.round += 1;
+        this.draftState.lastActionTimestamp = Date.now();
       }
+      return;
+    }
 
-      return { player: p, score };
-    });
+    // Sort by grandmaster score descending
+    candidatePairs.sort((a, b) => b.score - a.score);
+    const best = candidatePairs[0];
 
-    scored.sort((a, b) => b.score - a.score);
-    const chosen = scored[0].player;
-
-    const pIdx = this.draftState.pool.findIndex((p) => p.id === chosen.id);
+    const pIdx = this.draftState.pool.findIndex((p) => p.id === best.player.id);
     if (pIdx !== -1) {
       const [picked] = this.draftState.pool.splice(pIdx, 1);
-      squad[targetSlotIndex] = picked;
+      squad[best.slotIndex] = picked;
       this.draftState.currentTurn = "USER";
       this.draftState.round += 1;
       this.draftState.lastActionTimestamp = Date.now();
