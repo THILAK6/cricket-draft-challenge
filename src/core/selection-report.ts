@@ -430,8 +430,12 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   consider("depth", 0.65, "Add batting depth: pick bowlers and all-rounders who can score down to #8");
   adviceCandidates.sort((a, b) => b.score - a.score).slice(0, 3).forEach((a) => nextTime.push(a.text));
   if (nextTime.length === 0) {
-    if (winner === "AI") nextTime.push("Your selection matched the AI's, so the loss came on the field. Look for the best pick at each slot and pace-vs-spin balance for this pitch.");
-    else nextTime.push("A strong, balanced selection. Keep the same template and look for a stronger player at your weakest slot.");
+    // No category qualified: still say something concrete, from the category with the most points left
+    const weakestCat = [...categories].sort((a, b) => a.user / a.max - b.user / b.max)[0];
+    const left = weakestCat.max - weakestCat.user;
+    const slotHint = weakestPick ? ` The slot to revisit is #${weakestPick.slot} (${weakestPick.name}: ${weakestPick.detail}).` : "";
+    if (winner === "AI") nextTime.push(`Your selection matched the AI's, so the loss came on the field. Your most points left unclaimed were in ${weakestCat.label.toLowerCase()} (${weakestCat.user}/${weakestCat.max}).${slotHint}`);
+    else nextTime.push(`A strong, balanced selection. The most points left on the table were in ${weakestCat.label.toLowerCase()} (${weakestCat.user}/${weakestCat.max}, ${left} unclaimed).${slotHint}`);
   }
   // Never tell the user the selection was fine when the same report says the AI's was clearly better.
   if (outcome === "PICKS_DECIDED" && winner === "AI" && nextTime.length === 0) nextTime.push("Close the gap in the categories above.");

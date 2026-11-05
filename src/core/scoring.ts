@@ -254,9 +254,10 @@ export function calculateDeterministicScore(
   switch (pitch_type) {
     case "GREEN_SEAMER": {
       // Rewards 3+ fPacers
+      // A green seamer needs a real seam attack: at least three frontline pacers
       if (fPacers.length >= 3) pitchScore += 8;
-      else if (fPacers.length === 2) pitchScore += 4;
-      else pitchScore -= 5;
+      else if (fPacers.length === 2) pitchScore -= 1;
+      else pitchScore -= 6;
 
       const seamBenchmarkEcon = isT20 ? 7.8 : isOdi ? 5.2 : 3.2;
       const goodSeam = fPacers.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= seamBenchmarkEcon);
@@ -270,7 +271,7 @@ export function calculateDeterministicScore(
     case "DUSTBOWL": {
       if (fSpinners.length >= 3) pitchScore += 10;
       else if (fSpinners.length === 2) pitchScore += 7;
-      else if (fSpinners.length === 1) pitchScore += 2;
+      else if (fSpinners.length === 1) pitchScore -= 2; // below the two-spinner minimum
       else pitchScore -= 8;
       if (fPacers.length >= 4) pitchScore -= 3;
       break;
@@ -285,6 +286,9 @@ export function calculateDeterministicScore(
       const deathEconThreshold = isT20 ? 7.5 : isOdi ? 5.0 : 3.0;
       const controlBowlers = nonNullSquad.filter((p) => p.stats.bowl_economy > 0 && p.stats.bowl_economy <= deathEconThreshold);
       if (controlBowlers.length >= 2) pitchScore += 3;
+      // On a flat deck a thin attack gets hit: at least four frontline bowlers, and some hitters of your own
+      if (fPacers.length + fSpinners.length < 4) pitchScore -= 3;
+      if (highSrBatters.length < 2) pitchScore -= 2;
       break;
     }
 

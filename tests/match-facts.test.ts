@@ -43,7 +43,7 @@ function invariants(seed: number, uAvg: number, aAvg: number) {
   if (!facts.commonPhases.death) expect(text).not.toMatch(/produced 0 in the final|scored \d+ in the final overs, while/);
   // A side bowled out early: the story is the collapse, not a phase comparison
   for (const side of ["USER", "AI"] as const) {
-    if (facts.sides[side].collapsed && facts.winner !== side) {
+    if (facts.sides[side].allOut && !facts.sides[side].reached.death && facts.winner !== side) {
       expect(r.decisiveDifference).not.toMatch(/middle overs/i);
     }
   }
@@ -95,8 +95,8 @@ describe("MatchFacts keeps every section consistent", () => {
       const { facts } = run(seed, 45, 20);
       if (facts.sides.AI.collapsed) {
         seen++;
-        expect(facts.sides.AI.allOut).toBe(true);
-        expect(facts.sides.AI.reached.death).toBe(false);
+        // Either bowled out early, or a cluster of wickets for next to nothing
+        expect((facts.sides.AI.allOut && !facts.sides.AI.reached.death) || facts.sides.AI.cluster !== null).toBe(true);
       }
     }
     expect(seen).toBeGreaterThan(0);

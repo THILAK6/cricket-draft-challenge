@@ -1,7 +1,7 @@
 import type { MatchFormat, PlayerWithStats } from "./types";
 import type { InningsScorecard } from "./simulator";
 import { computeContributions, describeContribution, type Contribution, type Side } from "./impact";
-import { phasesReached, collapsedEarly, PHASE_BOUNDS, type PhasesReached } from "./phases";
+import { phasesReached, collapsedEarly, comparablePhases, findWicketCluster, PHASE_BOUNDS, type PhasesReached } from "./phases";
 
 /**
  * The single source of truth for the match report. Built once from the scorecard, before any
@@ -32,6 +32,8 @@ export interface SideFacts {
   allOut: boolean;
   /** Bowled out well before the overs were up (or, in Tests, never applies). */
   collapsed: boolean;
+  /** 5+ wickets for very few runs, even if the side was not bowled out. */
+  cluster: { fromWicket: number; toWicket: number; runs: number; startScore: number; endScore: number } | null;
   phaseRuns: { powerplay: number; middle: number; death: number };
 }
 
@@ -116,27 +118,29 @@ export function computeAwards(
 export function buildMatchFacts(input: FactsInput): MatchFacts {
   const { format, winner, userInnings, aiInnings } = input;
   const contributions =
-    input.contributions ?? computeContributions({ format, userInnings, aiInnings, winner, chase: input.chase });
+    input.contributions ?? computeContributions({ format, userInnings, aiInnings, winner, chase: input.chase, pitch: input.pitch });
 
   const sideFacts = (batting: InningsScorecard[]): SideFacts => {
     const lim = format !== "TEST";
-    const collapsed = lim && batting.some((i) => collapsedEarly(format, i));
+    const cluster = batting.map((i) => findWicketCluster(format, i.fallOfWickets)).find((c) => c) ?? null;
+    const collapsed = lim && (batting.some((i) => collapsedEarly(format, i)) || cluster !== null);
     return {
       reached: phasesReached(format, batting),
       runs: batting.reduce((n, i) => n + i.totalRuns, 0),
       wickets: batting.reduce((n, i) => n + i.totalWickets, 0),
       balls: batting.reduce((n, i) => n + i.totalBalls, 0),
       allOut: batting.some((i) => i.totalWickets >= 10),
+      cluster,
       collapsed,
       phaseRuns: { powerplay: sumPhase(batting, "powerplay"), middle: sumPhase(batting, "middle"), death: sumPhase(batting, "death") },
     };
   };
   const sides = { USER: sideFacts(userInnings), AI: sideFacts(aiInnings) };
-  const commonPhases: PhasesReached = {
-    powerplay: sides.USER.reached.powerplay && sides.AI.reached.powerplay,
-    middle: sides.USER.reached.middle && sides.AI.reached.middle,
-    death: sides.USER.reached.death && sides.AI.reached.death,
-  };
+  // Comparable = both sides faced at least half of the phase's balls
+  const commonPhases: PhasesReached =
+    userInnings[0] && aiInnings[0]
+      ? comparablePhases(format, { totalBalls: sides.USER.balls }, { totalBalls: sides.AI.balls })
+      : { powerplay: false, middle: false, death: false };
 
   const players: PlayerFact[] = [];
   const addSide = (team: Side, squad: (PlayerWithStats | null)[], batting: InningsScorecard[], bowling: InningsScorecard[]) => {
@@ -202,7 +206,7 @@ function computeMargin(
     const inn = (winner === "USER" ? userInnings : aiInnings)[0];
     const wkts = 10 - (inn?.totalWickets ?? 0);
     const left = bounds.maxBalls - (inn?.totalBalls ?? bounds.maxBalls);
-    return { type: "wickets", size: wkts, tier: wkts >= 8 || left >= bounds.maxBalls * 0.3 ? "dominant" : wkts >= 5 || left >= bounds.maxBalls * 0.1 ? "clear" : "narrow" };
+    return { type: "wickets", size: wkts, tier: wkts >= 8 || left >= bounds.maxBalls * 0.3 ? "dominant" : wkts >= 5 && left >= bounds.maxBalls * 0.05 ? "clear" : "narrow" };
   }
   const diff = sides[winner].runs - sides[loser].runs;
   const rel = diff / Math.max(1, sides[winner].runs);

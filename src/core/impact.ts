@@ -35,6 +35,21 @@ export interface Contribution {
 }
 
 export const PAR_RPO: Record<MatchFormat, number> = { T20: 9.0, ODI: 5.6, TEST: 3.7 };
+/** How much faster or slower than the format's par a pitch type scores. */
+export const PITCH_PAR_FACTOR: Record<string, number> = { GREEN_SEAMER: 0.92, DUSTBOWL: 0.95, SLOW_LOW: 0.9, HIGH_SCORING_FLAT: 1.12 };
+/** Tail-enders are not expected to keep pace: the balls they use are worth less against par. */
+const SLOT_RATE = [1, 1, 1, 1, 1, 1, 0.8, 0.8, 0.6, 0.6, 0.6];
+
+/**
+ * Par run rate for this match: half the venue's par for the format, half what the two sides actually
+ * scored, so a bowling-friendly day is not judged against a flat-track yardstick.
+ */
+export function matchParRpo(format: MatchFormat, pitch: string | undefined, innings: { totalRuns: number; totalBalls: number }[]): number {
+  const venue = PAR_RPO[format] * (pitch ? PITCH_PAR_FACTOR[pitch] ?? 1 : 1);
+  const balls = innings.reduce((n, i) => n + i.totalBalls, 0);
+  const runs = innings.reduce((n, i) => n + i.totalRuns, 0);
+  return balls >= 60 ? 0.5 * venue + 0.5 * ((runs / balls) * 6) : venue;
+}
 const PAR_TOTAL: Record<MatchFormat, number> = { T20: 165, ODI: 260, TEST: 245 };
 // Share of a typical innings total scored from each batting position (sums to 1)
 const SLOT_SHARE = [0.17, 0.17, 0.15, 0.13, 0.11, 0.09, 0.07, 0.05, 0.03, 0.02, 0.01];
@@ -44,7 +59,7 @@ export const expectedRunsAtSlot = (format: MatchFormat, slot: number): number =>
   (SLOT_SHARE[Math.min(slot, 10)] ?? 0.01) * PAR_TOTAL[format];
 
 const wicketValue = (format: MatchFormat, slot: number, runsMade: number): number =>
-  6 + 0.4 * expectedRunsAtSlot(format, slot) + (runsMade < 5 ? 2 : 0);
+  5 + 0.35 * expectedRunsAtSlot(format, slot) + (runsMade < 5 ? 2 : 0);
 
 export interface ContributionInput {
   format: MatchFormat;
@@ -53,11 +68,13 @@ export interface ContributionInput {
   winner: "USER" | "AI" | "TIE" | "DRAW";
   /** Limited overs only: which side chased and what it had to reach. */
   chase?: { team: Side; target: number };
+  /** Pitch type, for the venue par. */
+  pitch?: string;
 }
 
 export function computeContributions(input: ContributionInput): Contribution[] {
   const { format, winner, chase } = input;
-  const rpo = PAR_RPO[format];
+  const rpo = matchParRpo(format, input.pitch, [...input.userInnings, ...input.aiInnings]);
   const map = new Map<string, Contribution>();
   const get = (team: Side, playerId: string, name: string): Contribution => {
     const key = `${team}:${playerId}`;
@@ -91,14 +108,13 @@ export function computeContributions(input: ContributionInput): Contribution[] {
         c.fours += b.fours;
         c.sixes += b.sixes;
         if (!b.isOut) c.notOut = true;
-        // Runs, less a share of what the balls faced would normally have produced. Staying in only
-        // partly offsets that, so an anchor is credited without a quick fifty being undervalued.
+        // Runs, less everything the balls faced would normally have produced (tail-enders are held to a lower rate).
         const slot = inn.batters.indexOf(b);
         const exp = expectedRunsAtSlot(format, slot);
-        let v = b.runs - 0.45 * ((b.balls * rpo) / 6);
+        let v = b.runs - ((b.balls * rpo) / 6) * (SLOT_RATE[Math.min(slot, 10)] ?? 0.6);
         if (b.isOut && b.runs < 0.4 * exp) v -= (0.4 * exp - b.runs) * 0.6; // an early dismissal costs the side
-        if (b.runs >= 100) v += 20;
-        else if (b.runs >= 50) v += 8;
+        if (b.runs >= 100) v += 30;
+        else if (b.runs >= 50) v += 10;
         if (chase && chase.team === team && winner === team) {
           v += (b.runs / Math.max(1, chase.target)) * 20; // a share of the chase
           if (!b.isOut) v += 5; // finished the job
@@ -112,6 +128,12 @@ export function computeContributions(input: ContributionInput): Contribution[] {
         const bc = get(opp, b.bowlerId, bowlerName);
         bc.bowlImpact += wicketValue(format, slot, b.runs);
       });
+      // A dropped catch costs the fielder in proportion to what the reprieved batter went on to make
+      for (const d of inn.drops ?? []) {
+        if (!d.fielderId) continue;
+        const fc = get(opp, d.fielderId, d.fielder);
+        fc.fieldImpact -= 2 + 0.7 * (d.reprieveRuns ?? 0);
+      }
       for (const f of inn.fielders ?? []) {
         const fc = get(opp, f.playerId, f.name);
         fc.fieldImpact += f.catches * 8 + f.runOuts * 12 + f.stumpings * 10;
@@ -131,15 +153,6 @@ export function computeContributions(input: ContributionInput): Contribution[] {
   }
 
   const out = [...map.values()];
-  // A score that rivals the opposition's whole innings total swung the match on its own
-  const totals: Record<Side, number> = {
-    USER: input.userInnings.reduce((n, i) => n + i.totalRuns, 0),
-    AI: input.aiInnings.reduce((n, i) => n + i.totalRuns, 0),
-  };
-  for (const c of out) {
-    const oppTotal = totals[c.team === "USER" ? "AI" : "USER"];
-    if (c.batted && c.runs >= 30 && c.runs >= 0.7 * oppTotal) c.batImpact += 0.3 * c.runs;
-  }
   for (const c of out) c.impact = c.batImpact + c.bowlImpact + c.fieldImpact;
   return out;
 }

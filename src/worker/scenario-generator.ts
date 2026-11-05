@@ -62,9 +62,9 @@ interface Condition {
 
 const CONDITIONS: Condition[] = [
   { label: "Under Cloud Cover", text: "Heavy cloud hangs low and the ball is swinging from the first over.", pitches: ["GREEN_SEAMER", "SLOW_LOW"] },
-  { label: "Morning Moisture", text: "Dew on the grass and moisture in the surface give the new ball a lively start.", pitches: ["GREEN_SEAMER"] },
+  { label: "Morning Moisture", text: "Grass cover and moisture in the surface give the new ball a lively start.", pitches: ["GREEN_SEAMER"] },
   { label: "Day-Night Showdown", text: "Played under lights with a pink-ball feel: the twilight period is the hardest time to bat.", pitches: ["GREEN_SEAMER", "SLOW_LOW", "HIGH_SCORING_FLAT"], formats: ["TEST", "ODI"] },
-  { label: "Under The Lights", text: "A night match with heavy dew expected, so the side bowling second will struggle to grip the ball.", pitches: ["HIGH_SCORING_FLAT", "SLOW_LOW", "DUSTBOWL"], formats: ["T20", "ODI"] },
+  { label: "Under The Lights", text: "A night match under lights; the surface is expected to stay true throughout.", pitches: ["HIGH_SCORING_FLAT", "SLOW_LOW", "DUSTBOWL"], formats: ["T20", "ODI"] },
   { label: "Heatwave", text: "Forty degrees and a baked surface. Fielders will tire and the pitch will keep deteriorating.", pitches: ["DUSTBOWL", "SLOW_LOW", "HIGH_SCORING_FLAT"] },
   { label: "Cracked Surface", text: "Visible cracks and a dry, worn square. Turn and uneven bounce will take over as the match goes on.", pitches: ["DUSTBOWL", "SLOW_LOW"] },
   { label: "Batting Paradise", text: "A true, hard surface and a lightning outfield. Boundaries are on offer for anyone who gets set.", pitches: ["HIGH_SCORING_FLAT"] },
