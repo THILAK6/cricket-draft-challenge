@@ -3,6 +3,7 @@ import type { InningsScorecard } from "./simulator";
 import type { MatchPerformance } from "./performance";
 import { calculateDeterministicScore } from "./scoring";
 import { playerQuality } from "./player-quality";
+import { computeAwards } from "./match-facts";
 import { computeContributions, PAR_RPO, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
 
@@ -59,6 +60,7 @@ export interface SelectionInput {
   aiInnings: InningsScorecard[];
   performance: MatchPerformance;
   /** Shared impact scores (same ones behind Player of the Match). Computed here when omitted. */
+  facts?: import("./match-facts").MatchFacts;
   contributions?: Contribution[];
   /** Limited overs: the chasing side and its target. */
   chase?: { team: Side; target: number };
@@ -182,6 +184,7 @@ interface PlayerImpact {
   slot: number;
   runs: number;
   balls: number;
+  notOut: boolean;
   batted: boolean;
   wickets: number;
   conceded: number;
@@ -203,6 +206,7 @@ function impacts(squad: Squad, side: Side, contribs: Contribution[]): PlayerImpa
       player: p,
       slot,
       runs: c?.runs ?? 0,
+      notOut: c?.notOut ?? false,
       balls: c?.balls ?? 0,
       batted: c?.batted ?? false,
       wickets: c?.wickets ?? 0,
@@ -220,7 +224,7 @@ function impacts(squad: Squad, side: Side, contribs: Contribution[]): PlayerImpa
 
 function describe(i: PlayerImpact): string {
   const parts: string[] = [];
-  if (i.batted) parts.push(`${i.runs} off ${i.balls}`);
+  if (i.batted) parts.push(`${i.runs}${i.notOut ? "*" : ""} off ${i.balls}`);
   if (i.overs > 0) parts.push(`${i.wickets}/${i.conceded} in ${ballsToOvers(i.ballsBowled)} ov`);
   const field = i.catches + i.runOuts + i.stumpings;
   if (field > 0) parts.push(`${field} dismissal${field === 1 ? "" : "s"} in the field`);
@@ -344,13 +348,13 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   };
 
   // ---- Best and weakest pick for the user ------------------------------------------------------
-  const involved = imp.USER.filter((i) => i.batted || i.overs > 0);
-  const bestI = [...involved].sort((a, b) => b.impact - a.impact)[0];
-  const weakI = [...involved].sort((a, b) => a.impact - b.impact)[0];
-  // Only name a best or weakest pick when someone genuinely beat or fell short of par.
-  const bestPick: PickHighlight | null = bestI && bestI.impact >= 10 ? { name: bestI.player.name, slot: bestI.slot + 1, detail: describe(bestI) } : null;
-  const weakestPick: PickHighlight | null =
-    weakI && weakI !== bestI && weakI.impact <= -8 ? { name: weakI.player.name, slot: weakI.slot + 1, detail: describe(weakI) } : null;
+  const awards = input.facts?.awards ?? computeAwards(contribs, winner);
+  const pickOf = (a: { name: string } | null): PickHighlight | null => {
+    const i = a ? imp.USER.find((x) => x.player.name === a.name) : undefined;
+    return i ? { name: i.player.name, slot: i.slot + 1, detail: describe(i) } : null;
+  };
+  const bestPick = pickOf(awards.bestPick);
+  const weakestPick = pickOf(awards.weakestPick);
 
   // ---- Headline: tie the result back to the picks ---------------------------------------------
   const paper = `${totals.USER} v ${totals.AI} on selection`;
@@ -362,7 +366,8 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     [...gaps].sort((a, b) => (forSide === "USER" ? b.gap - a.gap : a.gap - b.gap))[0];
 
   // How one-sided the match was on the field, from the same performance scores shown on the results screen
-  const dominant = Math.abs(performance.USER.overallScore - performance.AI.overallScore) >= 25;
+  const dominant = Math.abs(performance.USER.overallScore - performance.AI.overallScore) >= 25 || input.facts?.margin.tier === "dominant";
+  const clearWin = dominant || input.facts?.margin.tier === "clear";
   let headline: string;
   let outcome: SelectionReport["outcome"];
   if (winner === "DRAW" || winner === "TIE") {
@@ -376,7 +381,9 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
           ? `Your picks won it. You built the clearly better-balanced XI (${paper}) and it showed on the field.`
           : dominant
             ? `A narrow edge on paper (${paper}) turned into a heavy win: your XI was far better on the day.`
-            : `A narrow selection edge to you (${paper}), and it was enough on the day.`;
+            : clearWin
+              ? `A narrow selection edge to you (${paper}), and your XI turned it into a clear win on the day.`
+              : `A narrow selection edge to you (${paper}), and it was enough on the day.`;
     } else if (paperEdge === "AI") {
       outcome = "UPSET";
       const g = bigGap("USER");
@@ -414,7 +421,7 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     const c = cat(key);
     const deficit = c.ai - c.user;
     // After a win, only point at categories where the AI actually had the edge
-    if (winner === "USER" && deficit <= 0) return;
+    if (winner === "USER" && (deficit <= 0 || (dominant && deficit < 4))) return;
     if (c.user / c.max < ratioLimit || deficit >= 2) adviceCandidates.push({ score: deficit * 2 + (c.max - c.user), text: `${text} (you ${c.user}/${c.max}, AI ${c.ai}/${c.max}).` });
   };
   consider("role", 0.8, userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher");

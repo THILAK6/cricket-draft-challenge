@@ -1,5 +1,6 @@
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
+import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim } from "./match-facts";
 import { phasesReached, collapsedEarly, PHASE_BOUNDS } from "./phases";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
@@ -135,6 +136,8 @@ export interface MatchSimulationResult {
   selection: SelectionReport;
   /** Notable in-match tactical calls (bowling changes, batting-order promotions) made from conditions. */
   tactics: string[];
+  /** The single facts object every narrative section was generated from. */
+  matchFacts?: MatchFacts;
   decisiveDifference: string;
   whyWinnerWon: string[];
   whyLoserLost: string[];
@@ -215,6 +218,7 @@ export function simulateCricketMatch(
 
   const keyMoments: KeyMoment[] = [];
   const tactics: string[] = [];
+  const claims: TacticClaim[] = [];
   // Wrapper that hands each innings the bowling side's plan and the shared tactics log.
   const inningsOf = (
     bat: (PlayerWithStats | null)[],
@@ -230,6 +234,7 @@ export function simulateCricketMatch(
     simulateInnings(bat, bowl, ch, overs, name, tgt, r, inn, det, {
       plan: name === "AI XI" ? options.userPlan : undefined,
       tactics,
+      claims,
       bowlingSide: name === "AI XI" ? "Your XI" : "AI XI",
     });
 
@@ -375,20 +380,22 @@ export function simulateCricketMatch(
     const testUserInns = [userInn1, userInn2].filter((i): i is InningsScorecard => !!i);
     const testAiInns = [aiInn1, aiInn2].filter((i): i is InningsScorecard => !!i);
     const testContribs = computeContributions({ format: "TEST", userInnings: testUserInns, aiInnings: testAiInns, winner });
-    const potm = determinePlayerOfTheMatch(testContribs, winner);
+    const testFacts = buildMatchFacts({ format: "TEST", winner, userInnings: testUserInns, aiInnings: testAiInns, userSquad, aiSquad, pitch: challenge.venue.pitch_type, contributions: testContribs });
+    const potm = determinePlayerOfTheMatch(testFacts);
     const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2, testContribs);
   for (const d of dropsNarrative([aiInn1, aiInn2].filter((x): x is InningsScorecard => !!x), [userInn1, userInn2].filter((x): x is InningsScorecard => !!x))) {
     if (winner !== d.side) analysis.whyLoserLost.push(d.text);
   }
     const testPerf = computeMatchPerformance("TEST", testUserInns, testAiInns);
-    const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf, contributions: testContribs });
+    const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf, contributions: testContribs, facts: testFacts });
 
     return {
       format: "TEST",
       winner,
       summary,
       toss: tossInfo,
-      tactics: yourSideFirst(tactics).slice(0, 12),
+      tactics: yourSideFirst(checkTacticClaims(claims, testFacts)).slice(0, 12),
+      matchFacts: testFacts,
       userInnings: userInn1,
       aiInnings: aiInn1,
       userSecondInnings: userInn2,
@@ -530,14 +537,15 @@ export function simulateCricketMatch(
 
   const chase = { team: (firstTeam === "USER" ? "AI" : "USER") as "USER" | "AI", target: firstInnings.totalRuns + 1 };
   const limitedContribs = computeContributions({ format, userInnings: [userInnings], aiInnings: [aiInnings], winner, chase });
-  const potm = determinePlayerOfTheMatch(limitedContribs, winner);
+  const limitedFacts = buildMatchFacts({ format, winner, userInnings: [userInnings], aiInnings: [aiInnings], userSquad, aiSquad, pitch: challenge.venue.pitch_type, chase, contributions: limitedContribs });
+  const potm = determinePlayerOfTheMatch(limitedFacts);
   const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst, undefined, undefined, limitedContribs);
   for (const d of dropsNarrative([aiInnings], [userInnings])) {
     if (winner !== d.side) analysis.whyLoserLost.push(d.text);
   }
 
   const limitedPerf = computeMatchPerformance(format, [userInnings], [aiInnings], chase);
-  const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf, contributions: limitedContribs, chase });
+  const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf, contributions: limitedContribs, chase, facts: limitedFacts });
 
   return {
     format,
@@ -547,7 +555,8 @@ export function simulateCricketMatch(
     userInnings,
     aiInnings,
     keyMoments,
-    tactics: yourSideFirst(tactics).slice(0, 12),
+    tactics: yourSideFirst(checkTacticClaims(claims, limitedFacts)).slice(0, 12),
+    matchFacts: limitedFacts,
     superOver,
     performance: limitedPerf,
     selection: limitedSel,
@@ -593,7 +602,7 @@ function simulateInnings(
   rng: () => number,
   inningsNumber = 1,
   isDeterioratedPitch = false,
-  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; bowlingSide?: string } = {}
+  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; claims?: TacticClaim[]; bowlingSide?: string } = {}
 ): InningsScorecard {
   const wicketLimit = opts.wicketLimit ?? 10;
   const { pitch_type, country } = challenge.venue;
@@ -664,8 +673,13 @@ function simulateInnings(
 
   // Log notable calls, at most two per kind per side, so the list stays readable
   const noteCounts = new Map<string, number>();
-  const note = (text: string, kind = "other") => {
+  const notedPlayers = new Set<string>();
+  const note = (text: string, kind = "other", playerId?: string, side: "Your XI" | "AI XI" = "AI XI") => {
     if (!opts.tactics || opts.tactics.includes(text)) return;
+    // One call per player per innings: the same bowler is not "brought on" and "given the ball" twice
+    if (playerId && kind !== "promo") {
+      if (notedPlayers.has(playerId)) return;
+    }
     // The same call with only the numbers changed (e.g. a repeated hold-back) is one tactic, not two
     const shape = text.replace(/\d+(\.\d+)?/g, "#");
     if (opts.tactics.some((t) => t.replace(/\d+(\.\d+)?/g, "#") === shape)) return;
@@ -673,7 +687,9 @@ function simulateInnings(
     const n = noteCounts.get(key) ?? 0;
     if (n >= 2) return;
     noteCounts.set(key, n + 1);
+    if (playerId && kind !== "promo") notedPlayers.add(playerId);
     opts.tactics.push(text);
+    opts.claims?.push({ text, side, kind, playerId });
   };
   const bowlSide = opts.bowlingSide ?? "Fielding side";
   let ballsSinceWicket = 99;
@@ -731,7 +747,7 @@ function simulateInnings(
       }
     );
     const bowler = picked.bowler;
-    if (picked.reason) note(`${bowlSide}: ${picked.reason.text}`, picked.reason.kind);
+    if (picked.reason) note(`${bowlSide}: ${picked.reason.text}`, picked.reason.kind, bowler.id, bowlSide === "Your XI" ? "Your XI" : "AI XI");
     lastBowlerId = bowler.id;
     const bStats = bowlerStatsMap.get(bowler.id)!;
 
@@ -803,7 +819,7 @@ function simulateInnings(
             const [ca, cb] = [batterCards[nextBatterIdx], batterCards[promoted]];
             batterCards[nextBatterIdx] = cb;
             batterCards[promoted] = ca;
-            note(`${teamName}: ${b.player.name} promoted up the order ${promotionWhy(format, phase, totalWickets, target)}`, "promo");
+            note(`${teamName}: ${b.player.name} promoted up the order ${promotionWhy(format, phase, totalWickets, target)}`, "promo", b.player.id, teamName === "Your XI" ? "Your XI" : "AI XI");
           }
           strikerIdx = nextBatterIdx;
           nextBatterIdx++;
@@ -1415,15 +1431,11 @@ function resolveBall(
   return { runs: isTest ? 4 : 6, isOut: false };
 }
 
-function determinePlayerOfTheMatch(
-  contribs: Contribution[],
-  winner: "USER" | "AI" | "TIE" | "DRAW"
-): { name: string; team: "USER" | "AI"; performance: string } {
-  // Same impact score as Best Pick and the decisive-difference text. Winners first.
-  const pool = winner === "USER" || winner === "AI" ? contribs.filter((c) => c.team === winner) : contribs;
-  const best = [...pool].sort((x, y) => y.impact - x.impact)[0];
-  if (!best) return { name: "Match Aggregate", team: "USER", performance: "All-round team display" };
-  return { name: best.name, team: best.team, performance: describeContribution(best) };
+function determinePlayerOfTheMatch(facts: MatchFacts): { name: string; team: "USER" | "AI"; performance: string } {
+  // Same awards object as Best Pick and the decisive-difference text.
+  const a = facts.awards.playerOfMatch;
+  if (!a) return { name: "Match Aggregate", team: "USER", performance: "All-round team display" };
+  return { name: a.name, team: a.team, performance: a.line };
 }
 
 /**
