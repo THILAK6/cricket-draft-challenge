@@ -1060,6 +1060,59 @@
       .dismissal-inline { display: block; font-weight: 400; font-size: 0.62rem; color: #94a3b8; line-height: 1.25; }
     }
 
+
+    /* ---- Mobile-first draft UX ---- */
+    .btn-draft { display: none; }
+    .p-blocked { display: none; }
+    .mv-btns { display: none; }
+    @media (max-width: 1024px) {
+      /* Bottom tab bar, thumb reachable */
+      .mobile-tab-nav {
+        order: 99; height: calc(58px + env(safe-area-inset-bottom)); min-height: calc(58px + env(safe-area-inset-bottom));
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); border-bottom: 0; background: #0e131c; gap: 6px;
+      }
+      .tab-btn { white-space: nowrap; height: 46px; font-size: 0.82rem; border-radius: 10px; flex-direction: row; gap: 0.3rem; line-height: 1.15; font-size: 0.78rem; padding: 0 4px; }
+      .toast-container { bottom: calc(70px + env(safe-area-inset-bottom)); left: 10px; right: 10px; align-items: center; }
+      .cockpit-view { padding: 6px 8px; }
+      .panel-card { margin-right: 0; }
+      /* Pool cards: roomy, with an obvious primary action */
+      .player-card { padding: 0.65rem 0.75rem; gap: 0.45rem; border-radius: 12px; }
+      .p-name { font-size: 0.95rem; }
+      .p-meta { font-size: 0.78rem; }
+      .p-stats-row { font-size: 0.8rem; flex-wrap: wrap; gap: 0.35rem 0.7rem; }
+      .player-card .drag-handle { display: none; }
+      .btn-draft { display: block; width: 100%; min-height: 44px; border: 0; border-radius: 10px; background: var(--gold); color: #0b0f14; font-weight: 800; font-size: 0.95rem; cursor: pointer; }
+      .btn-draft:active { transform: scale(0.98); }
+      .p-blocked { display: block; font-size: 0.75rem; color: var(--text-dim); }
+      .info-btn { width: 36px; height: 36px; font-size: 0.9rem; }
+      .search-box { min-height: 44px; font-size: 16px; }
+      .chip, .filter-chip { min-height: 38px; }
+      .selection-guide-banner { font-size: 0.78rem; }
+      /* Squad rows */
+      .slot-row { min-height: 56px; padding: 0.45rem 0.6rem; border-radius: 10px; }
+      .slot-row .drag-handle { display: none; }
+      .mv-btns { display: flex; flex-direction: column; gap: 2px; }
+      .mv-btn { width: 36px; height: 24px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #cbd5e1; border-radius: 6px; font-size: 0.65rem; cursor: pointer; }
+      .btn-remove-tiny { width: 40px; height: 40px; }
+      .slot-row .info-btn { margin-left: 0; }
+      /* Start match sticks above the tab bar */
+      .match-ready-banner { position: sticky; top: 0; z-index: 5; margin: 0 0 6px; }
+      #match-ready-subtitle { display: none; }
+      #bowling-plan { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; width: 100%; }
+      #bowling-plan label { display: flex; align-items: center; gap: 4px; }
+      .plan-select { flex: 1; min-width: 0; }
+      #btn-start-match-sim { min-height: 48px; width: 100%; font-size: 0.95rem; justify-content: center; }
+      .plan-select { min-height: 36px; font-size: 16px; }
+      .telemetry-strip { max-height: 76px; overflow-y: auto; font-size: 0.72rem; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; padding: 4px 8px; }
+      .slot-player-title { flex-wrap: wrap; }
+    }
+    @media (max-width: 640px) {
+      .scorecard-modal-backdrop { padding: 0 !important; }
+      .scorecard-modal { width: 100% !important; max-width: none !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; padding-bottom: env(safe-area-inset-bottom); }
+      .scenario-bar { padding: 0.2rem 0.6rem; }
+      .brand-title { font-size: 0.9rem; }
+    }
+
     /* Setup wizard: one step at a time before drafting */
     .wiz { position: fixed; inset: 0; z-index: 60; background: #0b0f16; display: none; flex-direction: column; overflow-y: auto; }
     .wiz.open { display: flex; }
@@ -1182,13 +1235,13 @@
   <!-- Mobile Segmented Navigation (<1024px) -->
   <div class="mobile-tab-nav" id="mobile-nav">
     <button class="tab-btn active" data-tab="panel-pool" onclick="switchMobileTab('panel-pool')">
-      🏏 Pool (<span id="m-pool-count">0</span>)
+      🏏 Pool <span id="m-pool-count">0</span>
     </button>
     <button class="tab-btn" data-tab="panel-user" onclick="switchMobileTab('panel-user')">
-      🛡️ Your XI (<span id="m-user-count">0</span>/11)
+      🛡️ Your XI <span><span id="m-user-count">0</span>/11</span>
     </button>
     <button class="tab-btn" data-tab="panel-ai" onclick="switchMobileTab('panel-ai')">
-      🤖 AI XI (<span id="m-ai-count">0</span>/11)
+      🤖 AI XI <span><span id="m-ai-count">0</span>/11</span>
     </button>
   </div>
 
@@ -1207,7 +1260,7 @@
       <div class="pool-controls">
         <!-- Interactive Selection Guide Banner -->
         <div class="selection-guide-banner" id="selection-banner">
-          <span id="selection-banner-text" style="color: #cbd5e1;">💡 <strong>Select & Drop:</strong> Click any player, then tap a slot in Your XI to place.</span>
+          <span id="selection-banner-text" style="color: #cbd5e1;">💡 <strong>Tap “+ Draft”</strong> on any player. They go to the best open slot; reorder later in Your XI.</span>
           <button id="btn-cancel-selection" class="btn btn-sm btn-secondary" style="display: none; padding: 0.12rem 0.45rem; font-size: 0.68rem;" onclick="deselectPlayer()">✕ Cancel</button>
         </div>
 
@@ -1647,6 +1700,10 @@
         return { allowed: false, reason: "Player already drafted" };
       }
 
+      if (p.primary_role === 'WK' && currentSquad.filter((pl, idx) => pl && idx !== targetSlotIdx && pl.primary_role === 'WK').length >= 2) {
+        return { allowed: false, reason: 'Max 2 wicketkeepers in an XI' };
+      }
+
       // Country Limit
       const countryCounts = {};
       currentSquad.forEach((pl, idx) => {
@@ -1660,6 +1717,16 @@
         if (c.type === 'max_per_country') {
           const maxAllowed = (c.exceptions && c.exceptions[p.country]) !== undefined ? c.exceptions[p.country] : c.value;
           if (curCountry >= maxAllowed) return { allowed: false, reason: `Country cap reached for ${p.country}` };
+        }
+      }
+
+      // Slot roles (mirrors the server): openers are batters/keepers, slots 9-11 bowlers/all-rounders
+      if (typeof targetSlotIdx === 'number' && targetSlotIdx >= 0 && targetSlotIdx < 11) {
+        if (targetSlotIdx <= 1 && !(p.primary_role === 'BAT' || p.primary_role === 'WK' || (p.primary_role === 'AR' && p.stats.top_order_innings >= 6))) {
+          return { allowed: false, reason: `Slot ${targetSlotIdx + 1} needs a specialist batter or keeper` };
+        }
+        if (targetSlotIdx >= 8 && !(p.primary_role === 'BOWL' || p.primary_role === 'AR')) {
+          return { allowed: false, reason: `Slot ${targetSlotIdx + 1} needs a bowler or all-rounder` };
         }
       }
 
@@ -1680,6 +1747,7 @@
 
     // Switch mobile tab (<1024px)
     function switchMobileTab(panelId) {
+      try { document.querySelector('.cockpit-view').scrollTop = 0; } catch (e) {}
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       const activeBtn = document.querySelector(`.tab-btn[data-tab="${panelId}"]`);
       if (activeBtn) activeBtn.classList.add('active');
@@ -1747,6 +1815,7 @@
         if (data.success) {
           if (data.challenge) setChallenge(data.challenge);
           currentRoomId = data.roomId;
+          window._readyShown = false;
           selectedPoolPlayer = null;
           showToast(`Draft started! Format: ${currentFormat}`, "success");
           initWebSocket(data.roomId);
@@ -1982,6 +2051,36 @@
     }
 
     // Pick / Drop player into a specific slot in Your XI
+    // One-tap drafting: pick the best legal empty slot for a player
+    function bestSlotFor(p) {
+      const fmt = (draftState && draftState.challenge && draftState.challenge.format) || currentFormat;
+      const open = [];
+      for (let i = 0; i < 11; i++) {
+        if (draftState.userPicks[i]) continue;
+        if (!checkPlayerPickLegality(p, draftState.userPicks, draftState.challenge, i).allowed) continue;
+        open.push(i);
+      }
+      if (!open.length) return -1;
+      // Natural zone for the role, then a good-fit badge, then the earliest open slot
+      const zone = p.primary_role === 'BOWL' ? (i) => (i >= 7 ? 0 : 2)
+        : p.primary_role === 'AR' ? (i) => (i >= 5 && i <= 8 ? 0 : 1)
+        : p.primary_role === 'WK' ? (i) => (i >= 2 && i <= 6 ? 0 : 1)
+        : (i) => (i <= 6 ? 0 : 2);
+      const score = (i) => zone(i) * 10 + (getSlotFitBadge(p, i, fmt).includes('badge-fit-good') ? 0 : 5) + i / 100;
+      return open.sort((a, b) => score(a) - score(b))[0];
+    }
+    function quickDraft(p) {
+      const idx = bestSlotFor(p);
+      if (idx < 0) { showToast("No open slot fits this player. Free a slot first.", "warning"); return; }
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
+      pickPlayerIntoSlot(p.id, idx);
+    }
+    function moveSlot(i, dir) {
+      const j = i + dir;
+      if (j < 0 || j > 10) return;
+      reorderSlot(i, j);
+    }
+
     async function pickPlayerIntoSlot(playerId, targetIndex) {
       if (!currentRoomId || draftState.currentTurn !== 'USER') {
         showToast("It's not your turn or room is not active.", "warning");
@@ -2198,6 +2297,7 @@
         turnBadge.style.color = "var(--gold)";
         aiStatusBadge.innerText = "Ready to Play";
 
+        if (!window._readyShown) { window._readyShown = true; if (window.matchMedia('(max-width: 1024px)').matches) switchMobileTab('panel-user'); }
         if (readyBanner) {
           readyBanner.style.display = 'flex';
           readyTitle.innerText = "Both Squads Assembled (11 vs 11)!";
@@ -2251,7 +2351,7 @@
         btnCancel.style.display = 'none';
       } else {
         banner.classList.remove('active-selection');
-        bannerText.innerHTML = `<span>💡 <strong>Select & Drop:</strong> Click any player, then tap a slot in Your XI to place.</span>`;
+        bannerText.innerHTML = `<span>💡 <strong>Tap “+ Draft”</strong> on any player. They go to the best open slot; reorder later in Your XI.</span>`;
         btnCancel.style.display = 'none';
       }
 
@@ -2277,7 +2377,9 @@
         const card = document.createElement('div');
         const isSelected = selectedPoolPlayer && selectedPoolPlayer.id === p.id;
         const legality = checkPlayerPickLegality(p, draftState.userPicks, draftState.challenge);
-        const isLegal = legality.allowed && isUserTurn && !isFull;
+        const noSlot = legality.allowed && isUserTurn && !isFull && bestSlotFor(p) < 0;
+        if (noSlot) legality.reason = 'No open slot fits this player';
+        const isLegal = legality.allowed && isUserTurn && !isFull && !noSlot;
 
         card.className = `player-card ${!isLegal ? 'restricted' : ''} ${isSelected ? 'selected-in-pool' : ''} ${isLegal ? 'draggable' : ''}`;
         card.dataset.playerId = p.id;
@@ -2287,6 +2389,7 @@
 
           // Click toggles selection (Select & Drop)
           card.onclick = () => {
+            if (window.matchMedia('(max-width: 1024px)').matches) { showPlayerDetail(p.id); return; }
             if (selectedPoolPlayer && selectedPoolPlayer.id === p.id) {
               selectedPoolPlayer = null;
             } else {
@@ -2312,6 +2415,7 @@
 
           // Mobile Touch Drag Support
           card.ontouchstart = (e) => {
+            if (window.matchMedia('(max-width: 1024px)').matches) return;
             window.touchDraggedPoolPlayerId = p.id;
             selectedPoolPlayer = p;
           };
@@ -2360,7 +2464,14 @@
           <div class="p-stats-row">
             ${getRoleStatsHtml(p)}
           </div>
+          ${isLegal ? '<button class="btn-draft" type="button">+ Draft</button>' : `<div class="p-blocked">${esc(!isUserTurn ? 'AI is picking…' : isFull ? 'Squad full' : legality.reason || 'Not allowed')}</div>`}
         `;
+        const draftBtn = card.querySelector('.btn-draft');
+        if (draftBtn) {
+          draftBtn.onclick = (e) => { e.stopPropagation(); quickDraft(p); };
+          draftBtn.ontouchstart = (e) => e.stopPropagation();
+          draftBtn.ontouchend = (e) => e.stopPropagation();
+        }
         const infoBtn = card.querySelector('.info-btn');
         if (infoBtn) infoBtn.onclick = (e) => { e.stopPropagation(); showPlayerDetail(p.id); };
         if (infoBtn) infoBtn.ontouchstart = (e) => e.stopPropagation();
@@ -2493,6 +2604,7 @@
             </div>
             <button class="info-btn" data-info="${esc(p.id)}" aria-label="Player details" title="Player details" style="margin-left:auto;">i</button>
             ${isUser ? `
+              <span class="mv-btns"><button class="mv-btn" aria-label="Move up" onclick="event.stopPropagation(); moveSlot(${i}, -1);">▲</button><button class="mv-btn" aria-label="Move down" onclick="event.stopPropagation(); moveSlot(${i}, 1);">▼</button></span>
               <button class="btn-remove-tiny" title="Remove player from slot" onclick="event.stopPropagation(); removePlayer(${i});">
                 ✕
               </button>
@@ -2510,7 +2622,8 @@
               if (selectedPoolPlayer) {
                 pickPlayerIntoSlot(selectedPoolPlayer.id, i);
               } else {
-                showToast(`Select a player from the pool on the left, then click Slot #${i+1} (${slotDef.name}) to place.`, "info");
+                switchMobileTab('panel-pool');
+                showToast(`Tap "+ Draft" on a player to fill your XI.`, "info");
               }
             };
           }
