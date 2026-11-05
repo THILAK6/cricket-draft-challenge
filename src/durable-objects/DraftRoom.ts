@@ -238,7 +238,23 @@ export class DraftRoom implements DurableObject {
     return { success: true };
   }
 
+  /** Scan for a legal move so the UI can tell a stuck user to free a slot. Only runs near the end (cheap). */
+  private computeUserStuck(): boolean {
+    const st = this.draftState;
+    if (!st || st.status === "COMPLETED" || st.status === "READY_TO_PLAY") return false;
+    const empties = st.userPicks.map((p, i) => (p ? -1 : i)).filter((i) => i >= 0);
+    if (empties.length === 0 || empties.length > 5) return false;
+    const ctx = this.poolContext(st.userPicks);
+    for (const slot of empties) {
+      for (const p of st.pool) {
+        if (canPickPlayer(p, st.userPicks, st.challenge, slot, ctx).allowed) return false;
+      }
+    }
+    return true;
+  }
+
   private async persistAndBroadcast() {
+    if (this.draftState) this.draftState.userStuck = this.computeUserStuck();
     await this.state.storage.put("draftState", this.draftState);
     this.broadcast({ type: "UPDATE", state: this.draftState });
   }
@@ -486,6 +502,16 @@ export class DraftRoom implements DurableObject {
       const sorted = [...values].sort((a, b) => a - b);
       return sorted[Math.min(sorted.length - 1, Math.floor(pct * sorted.length))];
     };
+    const difficulty = this.draftState.difficulty ?? "normal";
+    // Easy mode blurs the AI's read of the board with deterministic per-pick noise (no extra randomness source).
+    if (difficulty === "easy") {
+      const spread = Math.max(...qualityMap.values()) - Math.min(...qualityMap.values());
+      let h = this.draftState.round * 2654435761;
+      for (const [id, q] of qualityMap) {
+        h = Math.imul(h ^ id.split("").reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7), 2246822519) >>> 0;
+        qualityMap.set(id, q + ((h % 1000) / 1000 - 0.5) * spread * 1.6);
+      }
+    }
     const starCut = percentile([...qualityMap.values()], 0.85);
     const keeperStarCut = percentile(
       this.draftState.pool.filter((q) => q.primary_role === "WK").map((q) => qualityMap.get(q.id) ?? 0),
@@ -666,6 +692,8 @@ export class DraftRoom implements DurableObject {
           snipeReason = `AI opened by taking ${starTag}${p.name}, the strongest player on the board.`;
         }
 
+        // Hard: pure best-value drafting. Counter-sniping spends picks on denial, which costs team quality.
+        if (difficulty === "hard") counterSnipeBonus = 0;
         const totalScore = quality + pitchBonus + slotFit + urgency + counterSnipeBonus + spinnerPenalty;
         candidatePairs.push({
           player: p,

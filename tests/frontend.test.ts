@@ -41,3 +41,12 @@ describe("front-end HTML safety", () => {
     expect(() => new Function(m![1])).not.toThrow();
   });
 });
+
+describe("front-end features", () => {
+  it("has a super over panel, AI difficulty selector and stuck-draft banner", () => {
+    expect(html).toContain('id="super-over-box"');
+    expect(html).toContain("sim.superOver");
+    expect(html).toContain('id="difficulty-select"');
+    expect(html).toContain("draftState.userStuck");
+  });
+});

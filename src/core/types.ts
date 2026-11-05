@@ -126,6 +126,10 @@ export interface DraftState {
   simulation?: MatchSimulationResult;
   results?: any;
   lastAiSnipe?: AiSnipeInfo;
+  /** True when the user's squad is incomplete and no pool player can legally go in any empty slot. */
+  userStuck?: boolean;
+  /** AI opponent strength. easy: noisy reads of the board; normal: default, with counter-sniping; hard: pure best-value drafting. */
+  difficulty?: "easy" | "normal" | "hard";
 }
 
 export interface SlotDefinition {

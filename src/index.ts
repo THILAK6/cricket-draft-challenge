@@ -107,7 +107,8 @@ app.post("/api/challenges/generate", async (c) => {
 // Start a new draft room session with a challenge
 app.post("/api/draft/start", async (c) => {
   try {
-    const body = await c.req.json<{ challengeId?: string; format?: MatchFormat }>();
+    const body = await c.req.json<{ challengeId?: string; format?: MatchFormat; difficulty?: string }>();
+    const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
     let challenge: Challenge;
     let pool: PlayerWithStats[];
 
@@ -158,6 +159,7 @@ app.post("/api/draft/start", async (c) => {
       maxRounds: 11,
       status: "DRAFTING",
       lastActionTimestamp: Date.now(),
+      difficulty,
     };
 
     // Initialize state inside the Durable Object

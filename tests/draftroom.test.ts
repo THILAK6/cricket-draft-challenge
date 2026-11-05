@@ -373,4 +373,30 @@ describe("Endgame lookahead", () => {
     expect(canPickPlayer(rhb, squad, lhbOpener, 4, ctx).allowed).toBe(true);
     expect(canPickPlayer(lhb, squad, lhbOpener, 0, ctx).allowed).toBe(true);
   });
+
+  describe("stuck-draft detection", () => {
+    async function stuckRoom(pool: PlayerWithStats[]) {
+      const all = buildPool();
+      const ids = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
+      const userPicks: (PlayerWithStats | null)[] = ids.map((id) => all.find((p) => p.id === id)!);
+      userPicks[0] = null; // slot 1 must be an LHB
+      const r = new DraftRoom(fakeState(), {});
+      await call(r, "/init", { ...initState(), userPicks, pool });
+      await call(r, "/state");
+      return r;
+    }
+
+    it("flags a user who has open slots but no legal player left", async () => {
+      const rhbOnly = buildPool().filter((p) => p.batting_hand === "RHB" && !["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"].includes(p.id));
+      const r = await stuckRoom(rhbOnly);
+      expect((r as any).computeUserStuck()).toBe(true);
+    });
+
+    it("does not flag a user who still has a legal pick", async () => {
+      const used = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
+      const pool = buildPool().filter((p) => !used.includes(p.id) && (p.batting_hand === "RHB" || p.id === "PAK_lhb"));
+      const r = await stuckRoom(pool);
+      expect((r as any).computeUserStuck()).toBe(false);
+    });
+  });
 });

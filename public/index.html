@@ -1028,6 +1028,12 @@
         ✨ New Scenario
       </button>
 
+      <select id="difficulty-select" class="btn btn-secondary btn-sm" title="AI opponent strength" aria-label="AI difficulty">
+        <option value="easy">AI: Easy</option>
+        <option value="normal" selected>AI: Normal</option>
+        <option value="hard">AI: Hard</option>
+      </select>
+
       <button id="btn-start-draft" class="btn btn-sm">
         🚀 Start Draft
       </button>
@@ -1258,6 +1264,15 @@
           <span id="potm-perf" style="font-size: 0.78rem; font-weight: 700; color: #f1f5f9; font-variant-numeric: tabular-nums;">
             Performance stats
           </span>
+        </div>
+
+        <!-- Super Over (T20 ties only) -->
+        <div id="super-over-box" style="display: none; background: #141c28; border: 1px solid var(--gold); border-radius: 6px; padding: 0.65rem;">
+          <div style="display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.3rem;">
+            <span>⚡</span>
+            <span style="color: var(--gold); font-weight: 800; font-size: 0.75rem; text-transform: uppercase;">Super Over</span>
+          </div>
+          <div id="super-over-list" style="display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.75rem; color: #cbd5e1;"></div>
         </div>
 
         <!-- Key Moments & Turning Points -->
@@ -1610,7 +1625,7 @@
         const res = await fetch(`${API_BASE}/api/draft/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ challengeId: currentChallenge.id, format: currentFormat })
+          body: JSON.stringify({ challengeId: currentChallenge.id, format: currentFormat, difficulty: document.getElementById('difficulty-select').value })
         });
         const data = await res.json();
         if (data.success) {
@@ -2023,6 +2038,10 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         banner.classList.add('active-selection');
         bannerText.innerHTML = `<span>🎯 Selected: <strong style="color: var(--gold);">${esc(selectedPoolPlayer.name)}</strong> (${esc(selectedPoolPlayer.country)} • ${esc(selectedPoolPlayer.primary_role)}) — <em>Tap any slot to place</em></span>`;
         btnCancel.style.display = 'inline-flex';
+      } else if (draftState.userStuck) {
+        banner.classList.add('active-selection');
+        bannerText.innerHTML = `<span>⚠️ <strong>No legal pick left.</strong> The remaining players don't fit your open slots. Remove a player with the ✕ on their slot, then pick again.</span>`;
+        btnCancel.style.display = 'none';
       } else {
         banner.classList.remove('active-selection');
         bannerText.innerHTML = `<span>💡 <strong>Select & Drop:</strong> Click any player, then tap a slot in Your XI to place.</span>`;
@@ -2466,6 +2485,28 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       if (sim.playerOfTheMatch) {
         document.getElementById('potm-name').innerText = sim.playerOfTheMatch.name;
         document.getElementById('potm-perf').innerText = sim.playerOfTheMatch.performance;
+      }
+
+      // Super Over (only present when a T20 finished level)
+      const soBox = document.getElementById('super-over-box');
+      const soList = document.getElementById('super-over-list');
+      soList.innerHTML = '';
+      if (sim.superOver) {
+        soBox.style.display = 'block';
+        const label = side => (side === 'USER' ? 'Your XI' : 'AI XI');
+        sim.superOver.rounds.forEach((r, idx) => {
+          const second = r.battingFirst === 'USER' ? 'AI' : 'USER';
+          const row = document.createElement('div');
+          row.innerText = `Round ${idx + 1}: ${label(r.battingFirst)} ${r.firstRuns}/${r.firstWickets}, ${label(second)} ${r.secondRuns}/${r.secondWickets}`;
+          soList.appendChild(row);
+        });
+        const res = document.createElement('div');
+        res.style.fontWeight = '700';
+        res.style.color = 'var(--gold)';
+        res.innerText = sim.superOver.summary;
+        soList.appendChild(res);
+      } else {
+        soBox.style.display = 'none';
       }
 
       // Key Turning Points
