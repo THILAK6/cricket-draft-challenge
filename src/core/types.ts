@@ -123,6 +123,8 @@ export interface DraftState {
   lastActionTimestamp: number;
   /** Fixed per-room RNG seed so a given pair of squads always produces the same match. */
   matchSeed?: number;
+  /** The user's optional bowling plan (new-ball pair, death bowler); the rest is chosen from conditions. */
+  bowlingPlan?: { newBall?: string[]; death?: string };
   simulation?: MatchSimulationResult;
   results?: any;
   lastAiSnipe?: AiSnipeInfo;

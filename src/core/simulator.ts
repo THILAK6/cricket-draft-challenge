@@ -92,6 +92,18 @@ export interface SuperOverResult {
   summary: string;
 }
 
+/** Optional bowling plan for a side. Anything left unset is chosen from the conditions. */
+export interface BowlingPlan {
+  /** Up to two player ids who take the new ball. */
+  newBall?: string[];
+  /** Player id who bowls the death overs. */
+  death?: string;
+}
+
+export interface SimulationOptions {
+  userPlan?: BowlingPlan;
+}
+
 export interface MatchSimulationResult {
   format: MatchFormat;
   winner: "USER" | "AI" | "TIE" | "DRAW";
@@ -114,6 +126,8 @@ export interface MatchSimulationResult {
   performance: MatchPerformance;
   /** Why the XI you picked won or lost: selection scores, key picks and advice. */
   selection: SelectionReport;
+  /** Notable in-match tactical calls (bowling changes, batting-order promotions) made from conditions. */
+  tactics: string[];
   decisiveDifference: string;
   whyWinnerWon: string[];
   whyLoserLost: string[];
@@ -151,7 +165,8 @@ export function simulateCricketMatch(
   userSquad: (PlayerWithStats | null)[],
   aiSquad: (PlayerWithStats | null)[],
   challenge: Challenge,
-  seed = Date.now()
+  seed = Date.now(),
+  options: SimulationOptions = {}
 ): MatchSimulationResult {
   const rng = createRng(seed);
   const format = challenge.format || "T20";
@@ -187,6 +202,24 @@ export function simulateCricketMatch(
   };
 
   const keyMoments: KeyMoment[] = [];
+  const tactics: string[] = [];
+  // Wrapper that hands each innings the bowling side's plan and the shared tactics log.
+  const inningsOf = (
+    bat: (PlayerWithStats | null)[],
+    bowl: (PlayerWithStats | null)[],
+    ch: Challenge,
+    overs: number,
+    name: string,
+    tgt: number | undefined,
+    r: () => number,
+    inn = 1,
+    det = false
+  ) =>
+    simulateInnings(bat, bowl, ch, overs, name, tgt, r, inn, det, {
+      plan: name === "AI XI" ? options.userPlan : undefined,
+      tactics,
+      bowlingSide: name === "AI XI" ? "Your XI" : "AI XI",
+    });
 
   // Determine which team bats first in Innings 1
   const userBatsFirst =
@@ -203,11 +236,11 @@ export function simulateCricketMatch(
     let aiInn1: InningsScorecard;
 
     if (userBatsFirst) {
-      userInn1 = simulateInnings(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
-      aiInn1 = simulateInnings(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
+      userInn1 = inningsOf(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
+      aiInn1 = inningsOf(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
     } else {
-      aiInn1 = simulateInnings(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
-      userInn1 = simulateInnings(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
+      aiInn1 = inningsOf(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
+      userInn1 = inningsOf(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
     }
 
     const leadFirstInnings = {
@@ -223,7 +256,7 @@ export function simulateCricketMatch(
 
     if (userBatsFirst) {
       const userLead = userInn1.totalRuns - aiInn1.totalRuns;
-      userInn2 = simulateInnings(userSquad, aiSquad, challenge, 60, "Your XI", undefined, rng, 2, true);
+      userInn2 = inningsOf(userSquad, aiSquad, challenge, 60, "Your XI", undefined, rng, 2, true);
       const targetForAi = userLead + userInn2.totalRuns + 1;
       testTarget = targetForAi;
 
@@ -232,7 +265,7 @@ export function simulateCricketMatch(
         summary = `AI XI won by an innings and ${Math.abs(targetForAi - 1)} runs!`;
         aiInn2 = createEmptyInnings("AI XI", 2);
       } else {
-        aiInn2 = simulateInnings(aiSquad, userSquad, challenge, 65, "AI XI", targetForAi, rng, 2, true);
+        aiInn2 = inningsOf(aiSquad, userSquad, challenge, 65, "AI XI", targetForAi, rng, 2, true);
 
         if (aiInn2.totalRuns >= targetForAi) {
           winner = "AI";
@@ -254,7 +287,7 @@ export function simulateCricketMatch(
       }
     } else {
       const aiLead = aiInn1.totalRuns - userInn1.totalRuns;
-      aiInn2 = simulateInnings(aiSquad, userSquad, challenge, 60, "AI XI", undefined, rng, 2, true);
+      aiInn2 = inningsOf(aiSquad, userSquad, challenge, 60, "AI XI", undefined, rng, 2, true);
       const targetForUser = aiLead + aiInn2.totalRuns + 1;
       testTarget = targetForUser;
 
@@ -263,7 +296,7 @@ export function simulateCricketMatch(
         summary = `Your XI won by an innings and ${Math.abs(targetForUser - 1)} runs!`;
         userInn2 = createEmptyInnings("Your XI", 2);
       } else {
-        userInn2 = simulateInnings(userSquad, aiSquad, challenge, 65, "Your XI", targetForUser, rng, 2, true);
+        userInn2 = inningsOf(userSquad, aiSquad, challenge, 65, "Your XI", targetForUser, rng, 2, true);
 
         if (userInn2.totalRuns >= targetForUser) {
           winner = "USER";
@@ -340,6 +373,7 @@ export function simulateCricketMatch(
       winner,
       summary,
       toss: tossInfo,
+      tactics: tactics.slice(0, 8),
       userInnings: userInn1,
       aiInnings: aiInn1,
       userSecondInnings: userInn2,
@@ -369,14 +403,14 @@ export function simulateCricketMatch(
 
   if (userBatsFirst) {
     firstTeam = "USER";
-    firstInnings = simulateInnings(userSquad, aiSquad, challenge, maxOvers, "Your XI", undefined, rng);
+    firstInnings = inningsOf(userSquad, aiSquad, challenge, maxOvers, "Your XI", undefined, rng);
     const target = firstInnings.totalRuns + 1;
-    secondInnings = simulateInnings(aiSquad, userSquad, challenge, maxOvers, "AI XI", target, rng);
+    secondInnings = inningsOf(aiSquad, userSquad, challenge, maxOvers, "AI XI", target, rng);
   } else {
     firstTeam = "AI";
-    firstInnings = simulateInnings(aiSquad, userSquad, challenge, maxOvers, "AI XI", undefined, rng);
+    firstInnings = inningsOf(aiSquad, userSquad, challenge, maxOvers, "AI XI", undefined, rng);
     const target = firstInnings.totalRuns + 1;
-    secondInnings = simulateInnings(userSquad, aiSquad, challenge, maxOvers, "Your XI", target, rng);
+    secondInnings = inningsOf(userSquad, aiSquad, challenge, maxOvers, "Your XI", target, rng);
   }
 
   const userInnings = firstTeam === "USER" ? firstInnings : secondInnings;
@@ -463,6 +497,7 @@ export function simulateCricketMatch(
     userInnings,
     aiInnings,
     keyMoments,
+    tactics: tactics.slice(0, 8),
     superOver,
     performance: limitedPerf,
     selection: limitedSel,
@@ -503,7 +538,7 @@ function simulateInnings(
   rng: () => number,
   inningsNumber = 1,
   isDeterioratedPitch = false,
-  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH" } = {}
+  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; bowlingSide?: string } = {}
 ): InningsScorecard {
   const wicketLimit = opts.wicketLimit ?? 10;
   const { pitch_type, country } = challenge.venue;
@@ -572,6 +607,19 @@ function simulateInnings(
     strikeRate: 0,
   }));
 
+  // Log notable calls, at most two per kind per side, so the list stays readable
+  const noteCounts = new Map<string, number>();
+  const note = (text: string, kind = "other") => {
+    if (!opts.tactics || opts.tactics.includes(text)) return;
+    const key = `${teamName}|${kind}`;
+    const n = noteCounts.get(key) ?? 0;
+    if (n >= 2) return;
+    noteCounts.set(key, n + 1);
+    opts.tactics.push(text);
+  };
+  const bowlSide = opts.bowlingSide ?? "Fielding side";
+  let ballsSinceWicket = 99;
+  const parRpo = PAR_RPO_BY_FORMAT[format];
   const bowlerStatsMap = new Map<string, { runs: number; balls: number; maidens: number; wickets: number }>();
   for (const b of bowlers) {
     bowlerStatsMap.set(b.id, { runs: 0, balls: 0, maidens: 0, wickets: 0 });
@@ -608,7 +656,23 @@ function simulateInnings(
       opts.phase ?? (over <= ppEnd ? "PP" : over >= deathStart ? "DEATH" : "MID");
 
     // Select Bowler for this Over (cannot be same bowler as immediate previous over)
-    const bowler = selectBowlerForOver(bowlers, phase, pitch_type, country, over, maxOvers, bowlerStatsMap, lastBowlerId, rng, format);
+    // How the batting side is going relative to what it needs (chase) or to a par score
+    const oversDone = totalBallsBowled / 6;
+    const refRpo = target ? target / maxOvers : parRpo;
+    const ahead = oversDone >= 3 ? totalRuns / oversDone / refRpo : 1;
+    const picked = selectBowlerForOver(
+      bowlers, phase, pitch_type, country, over, maxOvers, bowlerStatsMap, lastBowlerId, rng, format,
+      {
+        striker: battersInOrder[strikerIdx]?.player,
+        newBatter: ballsSinceWicket < 12,
+        ahead,
+        parRpo,
+        deteriorated: isDeterioratedPitch,
+        plan: opts.plan,
+      }
+    );
+    const bowler = picked.bowler;
+    if (picked.reason) note(`${bowlSide}: ${picked.reason.text}`, picked.reason.kind);
     lastBowlerId = bowler.id;
     const bStats = bowlerStatsMap.get(bowler.id)!;
 
@@ -644,6 +708,7 @@ function simulateInnings(
 
       striker.balls++;
       bStats.balls++;
+      ballsSinceWicket++;
 
       if (ballOutcome.isOut) {
         striker.isOut = true;
@@ -660,7 +725,21 @@ function simulateInnings(
         // A catch put down before this wicket: roughly one in six caught dismissals has a miss too
         if ((how.kind === "CAUGHT" || how.kind === "CAUGHT_BEHIND") && (totalBallsBowled * 31 + totalRuns) % 6 === 0) droppedCatches++;
 
+        ballsSinceWicket = 0;
         if (nextBatterIdx < batterCards.length) {
+          // The batting side reads the situation and may send in a different batter than the order says
+          const promoted = chooseNextBatter(battersInOrder, nextBatterIdx, {
+            format, over, maxOvers, wickets: totalWickets, runs: totalRuns, target, phase, pitch: pitch_type, parRpo,
+          });
+          if (promoted > nextBatterIdx) {
+            const [a, b] = [battersInOrder[nextBatterIdx], battersInOrder[promoted]];
+            battersInOrder[nextBatterIdx] = b;
+            battersInOrder[promoted] = a;
+            const [ca, cb] = [batterCards[nextBatterIdx], batterCards[promoted]];
+            batterCards[nextBatterIdx] = cb;
+            batterCards[promoted] = ca;
+            note(`${teamName}: ${b.player.name} promoted up the order ${promotionWhy(format, phase, totalWickets, target)}`, "promo");
+          }
           strikerIdx = nextBatterIdx;
           nextBatterIdx++;
         }
@@ -889,6 +968,85 @@ function simulateSuperOver(
 /**
  * Intelligent bowler selection taking into account quotas and consecutive over restrictions.
  */
+const PAR_RPO_BY_FORMAT: Record<MatchFormat, number> = { T20: 9.0, ODI: 5.6, TEST: 3.7 };
+
+interface BowlCtx {
+  striker?: PlayerWithStats;
+  /** A wicket fell in the last couple of overs, so a new batter is at the crease. */
+  newBatter: boolean;
+  /** Batting side's run rate over what it needs (1 = on course). */
+  ahead: number;
+  parRpo: number;
+  deteriorated: boolean;
+  plan?: BowlingPlan;
+}
+
+/**
+ * How a batter's hand and a bowler's style interact. Small, symmetric edges: they decide close
+ * calls and reward choosing bowlers for the batter at the crease, without swamping career quality.
+ */
+function matchup(batter: PlayerWithStats, bowler: PlayerWithStats, phase: "PP" | "MID" | "DEATH", format: MatchFormat): { wkt: number; runs: number } {
+  const style = (bowler.bowling_style || "").toLowerCase();
+  const left = batter.batting_hand === "LHB";
+  let wkt = 1;
+  if (bowler.bowling_category === "SPIN") {
+    if (style.includes("slow left")) wkt = left ? 0.94 : 1.07; // orthodox turns away from the right-hander
+    else if (style.includes("offbreak") || style.includes("off break")) wkt = left ? 0.93 : 1.05; // off-spin turns away from the left-hander
+    else if (style.includes("leg") || style.includes("googly")) wkt = left ? 1.07 : 0.99;
+    // Big hitters take on spin in the middle overs: more runs, more risk
+    const hitter = (batter.stats.bat_strike_rate || 0) >= (format === "T20" ? 135 : format === "ODI" ? 95 : 60);
+    if (hitter && phase === "MID") {
+      return { wkt: wkt * 1.06, runs: 1.04 };
+    }
+  } else if (bowler.bowling_category === "PACE") {
+    const leftArm = style.includes("left-arm");
+    wkt = leftArm ? (left ? 0.97 : 1.05) : left ? 1.04 : 1;
+    // Settled anchors handle the new ball better than hitters
+    const anchor = (batter.stats.bat_average || 0) >= 38 && (batter.stats.bat_strike_rate || 0) < (format === "T20" ? 125 : 85);
+    if (anchor && phase === "PP") wkt *= 0.95;
+  }
+  return { wkt, runs: 1 - (wkt - 1) * 0.6 };
+}
+
+/** Which batter the batting side sends in next: sticks to the order unless the situation calls for a change. */
+function chooseNextBatter(
+  batters: { player: PlayerWithStats; slotIndex: number }[],
+  next: number,
+  c: { format: MatchFormat; over: number; maxOvers: number; wickets: number; runs: number; target?: number; phase: "PP" | "MID" | "DEATH"; pitch: PitchType; parRpo: number }
+): number {
+  if (c.format === "TEST") return next; // Tests keep the order; nightwatchmen are not modelled
+  const window = batters.slice(next, next + 3).map((b, i) => ({ b, idx: next + i }));
+  if (window.length < 2) return next;
+  const sr = (p: PlayerWithStats) => p.stats.bat_strike_rate || 0;
+  const avg = (p: PlayerWithStats) => p.stats.bat_average || 0;
+  const ballsLeft = (c.maxOvers - c.over + 1) * 6;
+  const hitterSr = c.format === "T20" ? 130 : 90;
+  const isLowerOrder = (p: PlayerWithStats) => p.primary_role === "BOWL";
+  // Never promote a tail-ender
+  const pool = window.filter((w) => !isLowerOrder(w.b.player) || w.idx === next);
+
+  // 1. Death overs or a steep chase: send in the biggest hitter available
+  const steepChase = c.target ? (c.target - c.runs) / Math.max(1, ballsLeft / 6) > c.parRpo * 1.25 : false;
+  if ((c.phase === "DEATH" || steepChase) && c.wickets <= 7) {
+    const best = pool.reduce((m, w) => (sr(w.b.player) > sr(m.b.player) ? w : m), pool[0]);
+    if (best.idx !== next && sr(best.b.player) >= hitterSr && sr(best.b.player) > sr(pool[0].b.player) + 8) return best.idx;
+  }
+  // 2. Early collapse: send in the sturdiest batter to rebuild
+  const earlyCollapse = c.wickets >= 3 && c.over <= (c.format === "T20" ? 8 : 20);
+  if (earlyCollapse) {
+    const best = pool.reduce((m, w) => (avg(w.b.player) > avg(m.b.player) ? w : m), pool[0]);
+    if (best.idx !== next && avg(best.b.player) > avg(pool[0].b.player) + 8) return best.idx;
+  }
+  return next;
+}
+
+function promotionWhy(format: MatchFormat, phase: "PP" | "MID" | "DEATH", wickets: number, target?: number): string {
+  if (phase === "DEATH") return "to finish the innings";
+  if (target && wickets < 4) return "to keep up the chase";
+  if (wickets >= 3) return "to rebuild after the early wickets";
+  return "to suit the situation";
+}
+
 function selectBowlerForOver(
   bowlers: PlayerWithStats[],
   phase: "PP" | "MID" | "DEATH",
@@ -896,11 +1054,12 @@ function selectBowlerForOver(
   country: string,
   over: number,
   maxOvers: number,
-  statsMap: Map<string, { balls: number }>,
+  statsMap: Map<string, { balls: number; runs: number }>,
   lastBowlerId: string | null,
   rng: () => number,
-  format: MatchFormat = "T20"
-): PlayerWithStats {
+  format: MatchFormat = "T20",
+  ctx: BowlCtx = { newBatter: false, ahead: 1, parRpo: 8, deteriorated: false }
+): { bowler: PlayerWithStats; reason?: { text: string; kind: string } } {
   const isTest = format === "TEST";
   const maxQuotaBalls = isTest ? 30 * 6 : Math.floor((maxOvers / 5) * 6);
 
@@ -914,9 +1073,17 @@ function selectBowlerForOver(
     if (withoutLast.length > 0) eligible = withoutLast;
   }
 
+  const newBallIds = ctx.plan?.newBall ?? [];
+  const wicketRate = (b: PlayerWithStats) => (b.stats.bowl_overs > 0 ? b.stats.bowl_wickets / b.stats.bowl_overs : 0.12);
+
   // Score candidate bowlers for this phase
   const scored = eligible.map((b) => {
     let weight = 10;
+    const why: { w: number; text: string; kind: string }[] = [];
+    const add = (w: number, text?: string, kind = "other") => {
+      weight += w;
+      if (text && Math.abs(w) >= 30) why.push({ w, text, kind });
+    };
     const isPacer = b.bowling_category === "PACE";
     const isSpinner = b.bowling_category === "SPIN";
     const isSpecialist = b.primary_role === "BOWL";
@@ -934,6 +1101,10 @@ function selectBowlerForOver(
       else if (isSpecialist) weight += 150;
       else if (isAR && isPacer) weight += 100;
       else weight -= 1000; // Never open with part-timers
+      // The captain's plan, or a turning pitch, can change who takes the new ball
+      if (newBallIds.includes(b.id)) add(400, `${b.name} takes the new ball as planned`, "plan");
+      else if (!isTest && pitch === "DUSTBOWL" && isSpinner && isSpecialist) add(170, `${b.name} (spin) opens the bowling on a turning pitch`, "open");
+      else if (!isTest && pitch === "SLOW_LOW" && format === "T20" && isSpinner && isSpecialist) add(95, `${b.name} (spin) opens on a slow surface`, "open");
     } else if (phase === "PP") {
       if (isSpecialist && isPacer) weight += isTest ? 60 : 45;
       else if (isSpecialist) weight += 30;
@@ -952,6 +1123,7 @@ function selectBowlerForOver(
         if (isPacer) weight += 40;
       }
       if (isPartTimer) weight -= 800; // Never bowl part-timer in death overs
+      if (ctx.plan?.death === b.id) add(170, `${b.name} is held back for the death overs`, "death");
     }
 
     if (phase === "MID") {
@@ -962,11 +1134,43 @@ function selectBowlerForOver(
     if (country === "RSA" && isPacer) weight += 20;
     if ((country === "IND" || country === "BAN" || country === "SL") && isSpinner) weight += 20;
 
-    return { bowler: b, weight: weight + rng() * 10 };
+    // Right bowler for the batter at the crease
+    if (ctx.striker && (isPacer || isSpinner)) {
+      const mu = matchup(ctx.striker, b, phase, format);
+      add((mu.wkt - 1) * 450, `${b.name} brought on against ${ctx.striker.name}`, "matchup");
+    }
+
+    // A new batter has just come in: go to the strike bowler
+    if (ctx.newBatter && over > 2) add((wicketRate(b) - 0.12) * 500, `${b.name} is given the ball to attack the new batter`, "strike");
+
+    // Reading the game: attack when the batters are cruising, squeeze when they are behind the rate
+    if (b.stats.bowl_economy > 0) {
+      if (ctx.ahead >= 1.15) add((wicketRate(b) - 0.12) * 250);
+      else if (ctx.ahead <= 0.85) add(Math.max(-40, Math.min(40, (ctx.parRpo - b.stats.bowl_economy) * 12)), `${b.name} is used to keep the run rate down`, "squeeze");
+    }
+
+    // Pitch wearing: spin as the surface breaks up, pace with the second new ball
+    if (isTest) {
+      if (ctx.deteriorated && isSpinner) add(45, `${b.name} (spin) gets the ball as the pitch wears`, "wear");
+      if (over >= 80 && isPacer) add(40);
+    }
+
+    // A bowler being hit around is taken off
+    const st = statsMap.get(b.id);
+    if (st && st.balls >= 12) {
+      const econ = st.runs / (st.balls / 6);
+      if (econ > ctx.parRpo * 1.45) add(-70, `${b.name} is taken off after an expensive spell`, "off");
+    }
+
+    return { bowler: b, weight: weight + rng() * 10, why };
   });
 
   scored.sort((a, b) => b.weight - a.weight);
-  return scored[0]?.bowler || eligible[0];
+  const top = scored[0];
+  if (!top) return { bowler: eligible[0] };
+  // Only report the most decisive reason, and only when it truly tipped the choice
+  const reason = top.why.filter((x) => x.w > 0).sort((a, b) => b.w - a.w)[0];
+  return { bowler: top.bowler, reason };
 }
 
 /**
@@ -1028,6 +1232,10 @@ function resolveBall(
     wktChance *= 28.0 / batAvg;
   }
 
+  // Batter v bowler matchup (hand v style), applied identically to both sides
+  const mu = matchup(batter, bowler, phase, format);
+  wktChance *= mu.wkt;
+
   // Well-set batter eye (fewer wickets once settled on 30+ runs)
   if (batterBallsSoFar >= 25 && batterRunsSoFar >= 25) {
     wktChance *= 0.72; // Settled batter is tough to dislodge
@@ -1043,6 +1251,7 @@ function resolveBall(
   const bowlerEcon = bowler.stats.bowl_economy || (isTest ? 3.0 : isOdi ? 5.2 : 8.0);
   let expectedRunsPerBall = (batSr / 100 + (isTest ? bowlerEcon / 3.0 : bowlerEcon / 6.0)) / 2;
 
+  expectedRunsPerBall *= mu.runs;
   const wicketsInHand = 10 - totalWicketsDown;
 
   // Realistic Phase Tempo based on Wickets in Hand and Batter Calibre

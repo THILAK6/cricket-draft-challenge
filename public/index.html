@@ -944,6 +944,7 @@
       0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.2); border-color: rgba(212, 175, 55, 0.4); }
       50% { box-shadow: 0 0 18px rgba(16, 185, 129, 0.45); border-color: rgba(16, 185, 129, 0.65); }
     }
+    .plan-select { background: #0b1320; color: #e2e8f0; border: 1px solid var(--border); border-radius: 4px; font-size: 0.64rem; padding: 0.15rem 0.25rem; max-width: 120px; }
     .match-ready-info {
       display: flex;
       align-items: center;
@@ -1122,6 +1123,12 @@
             <div id="match-ready-subtitle" style="font-size: 0.67rem; color: #cbd5e1;">Review order (drag to swap), then start match.</div>
           </div>
         </div>
+        <div id="bowling-plan" style="display: none; gap: 0.35rem; align-items: center; flex-wrap: wrap; font-size: 0.64rem; color: #cbd5e1;">
+          <span style="font-weight: 800; color: #fde047;">🎯 Bowling plan</span>
+          <label>New ball <select id="plan-new1" class="plan-select"></select></label>
+          <select id="plan-new2" class="plan-select" aria-label="Second new-ball bowler"></select>
+          <label>Death <select id="plan-death" class="plan-select"></select></label>
+        </div>
         <button id="btn-start-match-sim" class="btn btn-sm btn-match-ready" onclick="startMatchSimulation()">
           ⚔️ START MATCH SIMULATION
         </button>
@@ -1276,6 +1283,10 @@
               <div style="color: var(--gold); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.25rem;">What the AI's picks did</div>
               <ul id="selection-ai-points" style="list-style: none; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
             </div>
+          </div>
+          <div id="selection-tactics-wrap" style="display: none; margin-top: 0.6rem;">
+            <div style="color: var(--cyan); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.2rem;">Tactical calls during the match</div>
+            <ul id="selection-tactics" style="margin: 0; padding-left: 1rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
           </div>
           <div id="selection-picks" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.5rem; margin-top: 0.6rem;"></div>
           <div style="margin-top: 0.6rem;">
@@ -1870,6 +1881,35 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       }
     }
 
+    // Bowling plan: optional; anything left on Auto is chosen from the conditions during the match
+    function readBowlingPlan() {
+      const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+      const newBall = [v('plan-new1'), v('plan-new2')].filter(Boolean);
+      return { newBall, death: v('plan-death') || undefined };
+    }
+
+    function renderBowlingPlan() {
+      const box = document.getElementById('bowling-plan');
+      if (!box || !draftState) return;
+      const bowlers = (draftState.userPicks || []).filter(p => p && p.primary_role !== 'WK' && (p.primary_role === 'BOWL' || p.primary_role === 'AR'));
+      const sig = bowlers.map(p => p.id).join(',');
+      box.style.display = draftState.status === 'READY_TO_PLAY' && bowlers.length ? 'flex' : 'none';
+      if (box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      for (const id of ['plan-new1', 'plan-new2', 'plan-death']) {
+        const sel = document.getElementById(id);
+        sel.innerHTML = '';
+        const auto = document.createElement('option');
+        auto.value = ''; auto.innerText = 'Auto';
+        sel.appendChild(auto);
+        bowlers.forEach(p => {
+          const o = document.createElement('option');
+          o.value = p.id; o.innerText = p.short_name || p.name;
+          sel.appendChild(o);
+        });
+      }
+    }
+
     // Explicit Match Simulation Trigger
     async function startMatchSimulation() {
       if (!currentRoomId) return;
@@ -1881,7 +1921,9 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
 
       try {
         const res = await fetch(`${API_BASE}/api/room/${currentRoomId}/start-match`, {
-          method: 'POST'
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(readBowlingPlan())
         });
         const data = await res.json();
         if (data.success) {
@@ -1961,6 +2003,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       const readySubtitle = document.getElementById('match-ready-subtitle');
       const btnSim = document.getElementById('btn-start-match-sim');
 
+      renderBowlingPlan();
       if (draftState.status === 'READY_TO_PLAY') {
         turnBadge.innerText = "SQUADS READY (11v11)";
         turnBadge.style.background = "rgba(212, 175, 55, 0.2)";
@@ -2577,6 +2620,15 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       };
       chip('Best pick', 'var(--emerald)', sel.bestPick);
       chip('Weakest pick', 'var(--crimson)', sel.weakestPick);
+
+      const tac = document.getElementById('selection-tactics');
+      tac.innerHTML = '';
+      (sim.tactics || []).forEach(t => {
+        const li = document.createElement('li');
+        li.innerText = t;
+        tac.appendChild(li);
+      });
+      document.getElementById('selection-tactics-wrap').style.display = tac.children.length ? 'block' : 'none';
 
       const next = document.getElementById('selection-next');
       next.innerHTML = '';

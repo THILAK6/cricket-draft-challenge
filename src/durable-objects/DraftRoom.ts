@@ -91,7 +91,8 @@ export class DraftRoom implements DurableObject {
 
     // "/referee" is kept as a legacy alias of "/start-match" with identical guards.
     if ((url.pathname.endsWith("/start-match") || url.pathname.endsWith("/referee")) && request.method === "POST") {
-      const result = await this.startMatch();
+      const body = await readJson<{ newBall?: unknown; death?: unknown }>(request);
+      const result = await this.startMatch(body ?? undefined);
       if (!result.success) {
         return Response.json({ error: result.error }, { status: result.status });
       }
@@ -216,7 +217,7 @@ export class DraftRoom implements DurableObject {
    * Runs the match once per squad configuration. Repeat calls return the stored result,
    * and the room's fixed seed means re-submitting identical squads cannot re-roll it.
    */
-  private async startMatch(): Promise<{ success: true } | { success: false; error: string; status: number }> {
+  private async startMatch(planInput?: { newBall?: unknown; death?: unknown }): Promise<{ success: true } | { success: false; error: string; status: number }> {
     const ds = this.draftState;
     if (!ds) {
       return { success: false, error: "Draft room not initialized", status: 400 };
@@ -234,6 +235,14 @@ export class DraftRoom implements DurableObject {
         status: 400,
       };
     }
+
+    // Keep only plan entries that are real bowlers in the user's XI (keepers never bowl)
+    const bowlerIds = new Set(ds.userPicks.filter((p): p is PlayerWithStats => !!p && p.primary_role !== "WK").map((p) => p.id));
+    const newBall = Array.isArray(planInput?.newBall)
+      ? [...new Set((planInput!.newBall as unknown[]).filter((id): id is string => typeof id === "string" && bowlerIds.has(id)))].slice(0, 2)
+      : [];
+    const death = typeof planInput?.death === "string" && bowlerIds.has(planInput.death) ? planInput.death : undefined;
+    ds.bowlingPlan = newBall.length || death ? { newBall, death } : undefined;
 
     await this.finishDraft();
     return { success: true };
@@ -713,7 +722,8 @@ export class DraftRoom implements DurableObject {
       this.draftState.userPicks,
       this.draftState.aiPicks,
       this.draftState.challenge,
-      this.draftState.matchSeed
+      this.draftState.matchSeed,
+      { userPlan: this.draftState.bowlingPlan }
     );
     this.draftState.simulation = simulation;
 
