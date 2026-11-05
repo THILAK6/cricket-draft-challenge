@@ -2578,10 +2578,16 @@
           ['Catches dropped', U.stats.droppedCatches, A.stats.droppedCatches, 0, false],
         ] },
         phases: { label: 'Phases', rows: [
-          [isTest ? 'Overs 1-25' : 'Powerplay', U.stats.powerplayRuns, A.stats.powerplayRuns, Math.max(U.stats.powerplayRuns, A.stats.powerplayRuns, 1), true],
-          [isTest ? 'Overs 26-79' : 'Middle overs', U.stats.middleRuns, A.stats.middleRuns, Math.max(U.stats.middleRuns, A.stats.middleRuns, 1), true],
-          [isTest ? 'Overs 80+' : 'Death overs', U.stats.deathRuns, A.stats.deathRuns, Math.max(U.stats.deathRuns, A.stats.deathRuns, 1), true],
-        ] },
+          ['powerplay', isTest ? 'Overs 1-25' : 'Powerplay', 'powerplayRuns'],
+          ['middle', isTest ? 'Overs 26-79' : 'Middle overs', 'middleRuns'],
+          ['death', isTest ? 'Overs 80+' : 'Death overs', 'deathRuns'],
+        ].map(([k, label, f]) => {
+          // A side that was bowled out before a phase began shows "did not bat", not a 0 to compare
+          const reached = side => !side.stats.phasesReached || side.stats.phasesReached[k];
+          const ru = reached(U), ra = reached(A);
+          if (ru && ra) return [label, U.stats[f], A.stats[f], Math.max(U.stats[f], A.stats[f], 1), true];
+          return [label, ru ? U.stats[f] : 'did not bat', ra ? A.stats[f] : 'did not bat', 0, null];
+        }) },
       };
       if (!tabs[teamReportTab]) teamReportTab = 'overview';
 
@@ -2653,7 +2659,7 @@
         batting: 'Batting score compares runs per innings with a par for the format, plus credit for 50s and 100s.',
         bowling: 'Bowling score blends wickets taken with economy against par. Run outs are not credited to bowlers.',
         fielding: 'Fielding is read from catches, run outs and stumpings minus dropped chances. With fewer than 3 chances there is nothing to judge, so it stays at 50.',
-        phases: 'Runs scored in each phase of the innings.',
+        phases: 'Runs scored in each phase of the innings. A side bowled out before a phase began is shown as "did not bat" and is not compared.',
       };
       document.getElementById('team-report-note').innerText = notes[teamReportTab] || '';
     }

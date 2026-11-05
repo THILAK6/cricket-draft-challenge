@@ -1,5 +1,6 @@
 import type { MatchFormat } from "./types";
 import type { InningsScorecard } from "./simulator";
+import { ballsToOvers } from "./overs";
 
 /** Everything the results screen shows for one side, derived only from the simulated scorecards. */
 export interface TeamPerformance {
@@ -22,6 +23,8 @@ export interface TeamPerformance {
     powerplayRuns: number;
     middleRuns: number;
     deathRuns: number;
+    /** Which phases this side actually batted in (a side bowled out early never reached the death overs). */
+    phasesReached: { powerplay: boolean; middle: boolean; death: boolean };
     wicketsTaken: number;
     oversBowled: string;
     economy: number;
@@ -53,13 +56,17 @@ const oversToBalls = (o: string) => {
   const [w, b] = o.split(".").map(Number);
   return (w || 0) * 6 + (b || 0);
 };
-const ballsToOvers = (balls: number) => `${Math.floor(balls / 6)}.${balls % 6}`;
 
 /**
  * @param batting  innings this side batted in
  * @param bowling  innings this side bowled in (the opponent's batting innings)
  */
-function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: InningsScorecard[]): TeamPerformance {
+function buildTeam(
+  format: MatchFormat,
+  batting: InningsScorecard[],
+  bowling: InningsScorecard[],
+  chase?: { target: number; won: boolean }
+): TeamPerformance {
   const par = PAR[format];
 
   // ---- Batting -----------------------------------------------------------------------------
@@ -73,7 +80,23 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
   const top = batters.reduce<{ name: string; runs: number } | null>((best, b) => (!best || b.runs > best.runs ? { name: b.name, runs: b.runs } : best), null);
   const batInnings = Math.max(1, batting.length);
   // Runs against a par score, with credit for big individual innings. Test scores are judged per innings.
-  const battingScore = clamp(Math.round(50 * (runs / (par.runsPerInnings * batInnings)) + 4 * fifties + 8 * hundreds));
+  let battingScore = clamp(Math.round(50 * (runs / (par.runsPerInnings * batInnings)) + 4 * fifties + 8 * hundreds));
+  if (chase?.won) {
+    // A successful chase is judged on how comfortably it was done, not on runs against a full-innings par:
+    // reaching the target earns a base mark, with more for balls and wickets in hand.
+    const maxBalls = format === "T20" ? 120 : 300;
+    const ballsLeft = Math.max(0, maxBalls - balls);
+    const wktsLeft = Math.max(0, 10 - batting.reduce((n, i) => n + i.totalWickets, 0));
+    const comfort = (ballsLeft / maxBalls) * 30 + (wktsLeft / 10) * 12;
+    battingScore = Math.max(battingScore, clamp(Math.round(52 + comfort + 4 * fifties + 8 * hundreds)));
+  }
+  const ppBalls = (format === "T20" ? 6 : 10) * 6;
+  const deathBalls = (format === "T20" ? 15 : 40) * 6;
+  const phasesReached = {
+    powerplay: batting.some((i) => i.totalBalls > 0),
+    middle: format === "TEST" ? batting.length > 0 : batting.some((i) => i.totalBalls > ppBalls),
+    death: format === "TEST" ? batting.length > 0 : batting.some((i) => i.totalBalls > deathBalls),
+  };
 
   // ---- Bowling -----------------------------------------------------------------------------
   const wicketsTaken = bowling.reduce(
@@ -132,6 +155,7 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
       powerplayRuns: batting.reduce((n, i) => n + i.phaseRuns.powerplay, 0),
       middleRuns: batting.reduce((n, i) => n + i.phaseRuns.middle, 0),
       deathRuns: batting.reduce((n, i) => n + i.phaseRuns.death, 0),
+      phasesReached,
       wicketsTaken,
       oversBowled: ballsToOvers(ballsBowled),
       economy: Math.round(economy * 100) / 100,
@@ -148,11 +172,14 @@ function buildTeam(format: MatchFormat, batting: InningsScorecard[], bowling: In
 export function computeMatchPerformance(
   format: MatchFormat,
   userInnings: InningsScorecard[],
-  aiInnings: InningsScorecard[]
+  aiInnings: InningsScorecard[],
+  chase?: { team: "USER" | "AI"; target: number }
 ): MatchPerformance {
   const played = (i: InningsScorecard) => i.totalBalls > 0 || i.totalRuns > 0;
   const u = userInnings.filter(played);
   const a = aiInnings.filter(played);
   // The innings a side bowled in are the opponent's batting innings.
-  return { USER: buildTeam(format, u, a), AI: buildTeam(format, a, u) };
+  const chaseFor = (side: "USER" | "AI", batting: InningsScorecard[]) =>
+    chase && chase.team === side ? { target: chase.target, won: batting.reduce((n, i) => n + i.totalRuns, 0) >= chase.target } : undefined;
+  return { USER: buildTeam(format, u, a, chaseFor("USER", u)), AI: buildTeam(format, a, u, chaseFor("AI", a)) };
 }

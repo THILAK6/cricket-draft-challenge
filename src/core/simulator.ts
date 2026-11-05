@@ -1,3 +1,5 @@
+import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
+import { ballsToOvers } from "./overs";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
 import { buildSelectionReport, type SelectionReport } from "./selection-report";
@@ -12,6 +14,8 @@ export interface BatterScorecard {
   sixes: number;
   isOut: boolean;
   dismissal?: string;
+  /** Bowler who took the wicket; absent for run outs and not-out batters. */
+  bowlerId?: string;
   strikeRate: number;
 }
 
@@ -153,9 +157,7 @@ function createRng(seed: number) {
  * Formats balls into standard cricket overs string (e.g. 284 balls -> "47.2")
  */
 function formatBallsToOvers(balls: number): string {
-  const completed = Math.floor(balls / 6);
-  const remainder = balls % 6;
-  return `${completed}.${remainder}`;
+  return ballsToOvers(balls);
 }
 
 /**
@@ -194,7 +196,14 @@ export function simulateCricketMatch(
     tossReason = "dictate the match tempo before the wicket slows down and grips for cutters";
   }
 
-  const tossNarrative = `${tossWinner === "USER" ? "Your XI" : "AI XI"} won the toss and elected to ${tossDecision.toLowerCase()} first to ${tossReason}.`;
+  // Vary the wording by seed (not the rng stream, so match results are unchanged)
+  const tossOpeners = [
+    (w: string, d: string, r: string) => `${w} won the toss and elected to ${d} first to ${r}.`,
+    (w: string, d: string, r: string) => `${w} called correctly and chose to ${d}, looking to ${r}.`,
+    (w: string, d: string, r: string) => `Winning the toss, ${w} decided to ${d} first: the plan is to ${r}.`,
+  ];
+  const tossWho = tossWinner === "USER" ? "Your XI" : "AI XI";
+  const tossNarrative = tossOpeners[Math.abs(Math.floor(seed)) % tossOpeners.length](tossWho, tossDecision.toLowerCase(), tossReason);
   const tossInfo: TossInfo = {
     winner: tossWinner,
     decision: tossDecision,
@@ -360,13 +369,13 @@ export function simulateCricketMatch(
       impactTeam: winner === "DRAW" || winner === "TIE" ? "USER" : winner,
     });
 
-    const potm = determinePlayerOfTheMatch(userInn1, aiInn1, winner === "DRAW" || winner === "TIE" ? "USER" : winner, userInn2, aiInn2);
-    const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2);
-
     const testUserInns = [userInn1, userInn2].filter((i): i is InningsScorecard => !!i);
     const testAiInns = [aiInn1, aiInn2].filter((i): i is InningsScorecard => !!i);
+    const testContribs = computeContributions({ format: "TEST", userInnings: testUserInns, aiInnings: testAiInns, winner });
+    const potm = determinePlayerOfTheMatch(testContribs, winner);
+    const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2, testContribs);
     const testPerf = computeMatchPerformance("TEST", testUserInns, testAiInns);
-    const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf });
+    const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf, contributions: testContribs });
 
     return {
       format: "TEST",
@@ -483,11 +492,13 @@ export function simulateCricketMatch(
     impactTeam: winner === "TIE" ? "USER" : winner,
   });
 
-  const potm = determinePlayerOfTheMatch(userInnings, aiInnings, winner);
-  const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst);
+  const chase = { team: (firstTeam === "USER" ? "AI" : "USER") as "USER" | "AI", target: firstInnings.totalRuns + 1 };
+  const limitedContribs = computeContributions({ format, userInnings: [userInnings], aiInnings: [aiInnings], winner, chase });
+  const potm = determinePlayerOfTheMatch(limitedContribs, winner);
+  const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst, undefined, undefined, limitedContribs);
 
-  const limitedPerf = computeMatchPerformance(format, [userInnings], [aiInnings]);
-  const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf });
+  const limitedPerf = computeMatchPerformance(format, [userInnings], [aiInnings], chase);
+  const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf, contributions: limitedContribs, chase });
 
   return {
     format,
@@ -616,6 +627,9 @@ function simulateInnings(
   const noteCounts = new Map<string, number>();
   const note = (text: string, kind = "other") => {
     if (!opts.tactics || opts.tactics.includes(text)) return;
+    // The same call with only the numbers changed (e.g. a repeated hold-back) is one tactic, not two
+    const shape = text.replace(/\d+(\.\d+)?/g, "#");
+    if (opts.tactics.some((t) => t.replace(/\d+(\.\d+)?/g, "#") === shape)) return;
     const key = `${teamName}|${kind}`;
     const n = noteCounts.get(key) ?? 0;
     if (n >= 2) return;
@@ -719,6 +733,7 @@ function simulateInnings(
         striker.isOut = true;
         const how = rollDismissal(totalBallsBowled * 7919 + totalRuns * 104729 + totalWickets * 1299709 + strikerIdx, bowler, fieldingSide, keeper, isTest);
         striker.dismissal = dismissalText(how.kind, bowler, how.fielder);
+        if (how.kind !== "RUN_OUT") striker.bowlerId = bowler.id;
         totalWickets++;
         if (how.kind !== "RUN_OUT") bStats.wickets++; // a run out is not the bowler's wicket
         const card = how.fielder ? fielderMap.get(how.fielder.id) : undefined;
@@ -1334,66 +1349,14 @@ function resolveBall(
 }
 
 function determinePlayerOfTheMatch(
-  userInnings: InningsScorecard,
-  aiInnings: InningsScorecard,
-  winner: "USER" | "AI" | "TIE" | "DRAW",
-  userInn2?: InningsScorecard,
-  aiInn2?: InningsScorecard
+  contribs: Contribution[],
+  winner: "USER" | "AI" | "TIE" | "DRAW"
 ): { name: string; team: "USER" | "AI"; performance: string } {
-  const allBatters = [
-    ...userInnings.batters.map((b) => ({ ...b, team: "USER" as const })),
-    ...aiInnings.batters.map((b) => ({ ...b, team: "AI" as const })),
-    ...(userInn2 ? userInn2.batters.map((b) => ({ ...b, team: "USER" as const })) : []),
-    ...(aiInn2 ? aiInn2.batters.map((b) => ({ ...b, team: "AI" as const })) : []),
-  ];
-
-  // Bowlers in userInnings bowled against User XI (i.e. AI bowlers)
-  // Bowlers in aiInnings bowled against AI XI (i.e. User XI bowlers)
-  const allBowlers = [
-    ...userInnings.bowlers.map((b) => ({ ...b, team: "AI" as const })),
-    ...aiInnings.bowlers.map((b) => ({ ...b, team: "USER" as const })),
-    ...(userInn2 ? userInn2.bowlers.map((b) => ({ ...b, team: "AI" as const })) : []),
-    ...(aiInn2 ? aiInn2.bowlers.map((b) => ({ ...b, team: "USER" as const })) : []),
-  ];
-
-  // Weight winning performances higher
-  const scoredBatters = allBatters.map((b) => {
-    let score = b.runs * 1.0;
-    if (b.runs >= 100) score += 40;
-    else if (b.runs >= 50) score += 20;
-    if (b.team === winner) score *= 1.25;
-    return { ...b, matchScore: score };
-  });
-
-  const scoredBowlers = allBowlers.map((b) => {
-    let score = b.wickets * 28 - b.runs * 0.4;
-    if (b.wickets >= 5) score += 50;
-    else if (b.wickets >= 3) score += 25;
-    if (b.team === winner) score *= 1.25;
-    return { ...b, matchScore: score };
-  });
-
-  scoredBatters.sort((a, b) => b.matchScore - a.matchScore);
-  scoredBowlers.sort((a, b) => b.matchScore - a.matchScore);
-
-  const bestBat = scoredBatters[0];
-  const bestBowl = scoredBowlers[0];
-
-  if (bestBowl && (!bestBat || bestBowl.matchScore >= bestBat.matchScore)) {
-    return {
-      name: bestBowl.name,
-      team: bestBowl.team,
-      performance: `${bestBowl.wickets} for ${bestBowl.runs} (${bestBowl.overs} ov, Econ ${bestBowl.economy})`,
-    };
-  } else if (bestBat) {
-    return {
-      name: bestBat.name,
-      team: bestBat.team,
-      performance: `${bestBat.runs} runs off ${bestBat.balls} balls (${bestBat.fours}x4, ${bestBat.sixes}x6)`,
-    };
-  }
-
-  return { name: "Match Aggregate", team: "USER", performance: "All-round team display" };
+  // Same impact score as Best Pick and the decisive-difference text. Winners first.
+  const pool = winner === "USER" || winner === "AI" ? contribs.filter((c) => c.team === winner) : contribs;
+  const best = [...pool].sort((x, y) => y.impact - x.impact)[0];
+  if (!best) return { name: "Match Aggregate", team: "USER", performance: "All-round team display" };
+  return { name: best.name, team: best.team, performance: describeContribution(best) };
 }
 
 /**
@@ -1516,7 +1479,8 @@ function deriveMatchAnalysis(
   ballsRemaining = 0,
   userBatsFirst = true,
   userInn2?: InningsScorecard,
-  aiInn2?: InningsScorecard
+  aiInn2?: InningsScorecard,
+  contribs: Contribution[] = []
 ) {
   const pitch = challenge.venue.pitch_type;
   const format = challenge.format || "T20";
@@ -1585,93 +1549,103 @@ function deriveMatchAnalysis(
       whyLoserLost.push(`Batting collapses against disciplined line and length on this ${pitch.replace(/_/g, " ")} pitch.`);
     }
   } else {
-    // Limited Overs (T20 & ODI): Authentically determine whether winner batted 2nd (chasing) or 1st (defending)
+    // Limited Overs (T20 & ODI). Every claim below comes from the same impact score as Player of
+    // the Match, and anything about "not out" or "finishing" is checked against the scorecard.
     const isChaseWin = (winner === "USER" && !userBatsFirst) || (winner === "AI" && userBatsFirst);
+    const winTeam: "USER" | "AI" = winner === "AI" ? "AI" : "USER";
+    const loseTeam: "USER" | "AI" = winTeam === "USER" ? "AI" : "USER";
+    const best = topContribution(contribs, winTeam);
+    const bestBat = topContribution(contribs, winTeam, "bat");
+    const bestBowl = topContribution(contribs, winTeam, "bowl");
+    const batLed = !!best && best.batImpact >= best.bowlImpact;
 
-    if (isChaseWin && topBatWin && topBatWin.runs >= 45) {
-      // Anchoring run chase
+    if (isChaseWin) {
       const ballsInfo = ballsRemaining >= 12
         ? `with ${formatBallsToOvers(ballsRemaining)} overs to spare`
         : ballsRemaining > 0
-        ? `with ${ballsRemaining} balls to spare`
+        ? `with ${ballsRemaining} ball${ballsRemaining === 1 ? "" : "s"} to spare`
         : `off the final ball`;
 
-      decisiveDifference = `${topBatWin.name}'s match-winning knock of ${topBatWin.runs} off ${topBatWin.balls} balls (${topBatWin.fours}x4, ${topBatWin.sixes}x6) expertly paced ${winnerName}'s chase, crossing the line ${ballsInfo}.`;
-
-      whyWinnerWon.push(`${topBatWin.name} anchored the innings with ${topBatWin.runs} runs, removing all scoreboard pressure.`);
-      if (tightWinBowler) {
+      if (best && batLed && best.runs >= 30) {
+        const line = `${best.runs}${best.notOut ? "*" : ""} off ${best.balls} (${best.fours}x4, ${best.sixes}x6)`;
+        decisiveDifference = best.notOut
+          ? `${best.name} carried ${winnerName} home with ${line}, finishing the chase ${ballsInfo}.`
+          : `${best.name}'s ${line} gave ${winnerName} the platform to chase ${winningInnings.totalRuns} down ${ballsInfo}.`;
+        whyWinnerWon.push(best.notOut
+          ? `${best.name} stayed in to the end with ${line}, so the required rate never got away.`
+          : `${best.name} set the chase up with ${line} before falling.`);
+      } else if (bestBowl && bestBowl.wickets >= 2) {
+        decisiveDifference = `${bestBowl.name}'s ${bestBowl.wickets}/${bestBowl.conceded} in ${ballsToOvers(bestBowl.ballsBowled)} ov kept the target within reach, and ${winnerName} reached it ${ballsInfo}.`;
+        whyWinnerWon.push(`${bestBowl.name} took ${bestBowl.wickets}/${bestBowl.conceded}, holding ${loserName} to a chaseable total.`);
+      } else {
+        decisiveDifference = `${winnerName} chased the target down ${ballsInfo} through contributions across the order.`;
+      }
+      if (tightWinBowler && bestBowl?.name !== tightWinBowler.name) {
         whyWinnerWon.push(`Containment bowling: ${tightWinBowler.name} yielded only ${tightWinBowler.runs} runs in ${tightWinBowler.overs} ov (Econ ${tightWinBowler.economy}).`);
       }
-      whyWinnerWon.push(`Clinical chase pacing, reaching the target ${ballsInfo}.`);
+      whyWinnerWon.push(`Reached the target ${ballsInfo}.`);
 
       if (losingWktsInHand >= 5 && losingRPO < (isOdi ? 5.3 : 8.2)) {
-        whyLoserLost.push(`Under-utilized batting depth: Ended on ${losingInnings.totalRuns}/${losingInnings.totalWickets} with ${losingWktsInHand} wickets in hand (scoring at only ${losingRPO.toFixed(2)} RPO).`);
+        whyLoserLost.push(`Under-utilized batting depth: ended on ${losingInnings.totalRuns}/${losingInnings.totalWickets} with ${losingWktsInHand} wickets in hand (scoring at only ${losingRPO.toFixed(2)} RPO).`);
+      } else if (best && best.notOut && batLed) {
+        whyLoserLost.push(`Could not dislodge ${best.name}, who was not out on ${best.runs}.`);
       } else {
-        whyLoserLost.push(`Inability to dislodge ${topBatWin.name}, who controlled the innings tempo.`);
+        whyLoserLost.push(`${loserName} did not take wickets at the right moments, and ${winnerName} always had the chase under control.`);
       }
       if (expLoseBowler) {
         whyLoserLost.push(`Boundary release: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
       }
-    } else if (!isChaseWin) {
-      // Defending a total!
+    } else {
+      // Defending a total
       const runMargin = winningInnings.totalRuns - losingInnings.totalRuns;
+      const bowlLed = !!bestBowl && (!bestBat || bestBowl.bowlImpact >= bestBat.batImpact);
 
-      if (topBowlWin && topBowlWin.wickets >= 2) {
-        decisiveDifference = `Disciplined bowling defense: ${winnerName} defended ${winningInnings.totalRuns} by restricting ${loserName} to ${losingInnings.totalRuns}/${losingInnings.totalWickets}, spearheaded by ${topBowlWin.name}'s ${topBowlWin.wickets}/${topBowlWin.runs} in ${topBowlWin.overs} ov.`;
-        whyWinnerWon.push(`${topBowlWin.name}'s strike spell of ${topBowlWin.wickets}/${topBowlWin.runs} dismantled key partnerships.`);
+      if (bestBowl && bestBowl.wickets >= 2 && bowlLed) {
+        decisiveDifference = `${winnerName} defended ${winningInnings.totalRuns}, holding ${loserName} to ${losingInnings.totalRuns}/${losingInnings.totalWickets}, with ${bestBowl.name}'s ${bestBowl.wickets}/${bestBowl.conceded} in ${ballsToOvers(bestBowl.ballsBowled)} ov the biggest contribution.`;
+        whyWinnerWon.push(`${bestBowl.name} took ${bestBowl.wickets}/${bestBowl.conceded}, breaking key partnerships.`);
+      } else if (bestBat && bestBat.runs >= 40) {
+        decisiveDifference = `${bestBat.name}'s ${bestBat.runs}${bestBat.notOut ? "*" : ""} off ${bestBat.balls} built the ${winningInnings.totalRuns} that ${loserName} could not reach, and ${winnerName} closed out a ${runMargin}-run win.`;
       } else {
-        decisiveDifference = `Scoreboard pressure proved decisive: ${winnerName}'s 1st innings total of ${winningInnings.totalRuns}/${winningInnings.totalWickets} was defended with precision, closing out a ${runMargin}-run victory.`;
-        whyWinnerWon.push(`Imposing 1st innings total exerted constant required rate pressure on the chase.`);
+        decisiveDifference = `${winnerName} defended ${winningInnings.totalRuns}/${winningInnings.totalWickets} and closed out a ${runMargin}-run victory.`;
       }
-
-      if (tightWinBowler) {
+      if (bestBat && bestBat.runs >= 40) {
+        whyWinnerWon.push(`${bestBat.name}'s ${bestBat.runs}${bestBat.notOut ? "*" : ""} (${bestBat.balls}b) set the benchmark.`);
+      }
+      if (tightWinBowler && bestBowl?.name !== tightWinBowler.name) {
         whyWinnerWon.push(`Squeeze bowling: ${tightWinBowler.name} conceded only ${tightWinBowler.runs} runs in ${tightWinBowler.overs} ov (Econ ${tightWinBowler.economy}).`);
       }
-      if (topBatWin && topBatWin.runs >= 40) {
-        whyWinnerWon.push(`${topBatWin.name}'s foundational ${topBatWin.runs} (${topBatWin.balls}b) set the winning benchmark.`);
-      }
 
-      whyLoserLost.push(`Stumbled under scoreboard pressure, falling behind the required rate.`);
+      const allOut = losingInnings.totalWickets >= 10;
+      whyLoserLost.push(allOut
+        ? `Bowled out for ${losingInnings.totalRuns} in ${losingInnings.oversString} overs, short of ${winningInnings.totalRuns + 1}.`
+        : `Finished on ${losingInnings.totalRuns}/${losingInnings.totalWickets}, ${runMargin} short of ${winningInnings.totalRuns}.`);
       if (expLoseBowler) {
-        whyLoserLost.push(`Leaked early boundaries: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
+        whyLoserLost.push(`Boundary release: ${expLoseBowler.name} conceded ${expLoseBowler.runs} runs in ${expLoseBowler.overs} ov (Econ ${expLoseBowler.economy}).`);
       }
-    } else {
-      // Phase differential fallback
-      const winDeath = winningInnings.phaseRuns.death;
-      const loseDeath = losingInnings.phaseRuns.death;
 
-      if (winDeath > loseDeath + 8) {
-        decisiveDifference = `Late-overs surge: ${winnerName} outscored ${loserName} in the final overs (${winDeath} runs to ${loseDeath}), proving the decisive margin.`;
-        whyWinnerWon.push(`Aggressive late-innings acceleration (${winDeath} runs in the closing overs).`);
-        whyLoserLost.push(`Stalled momentum in the final phase, falling behind the required rate.`);
-      } else {
-        const spanLabel = isOdi ? "50 overs" : isTest ? "the 5 days of play" : "20 overs";
-        decisiveDifference = `Superior all-round execution across ${spanLabel} on this ${pitch.replace(/_/g, " ")} surface separated the sides.`;
-        whyWinnerWon.push(`Consistent strike rotation and boundary finding throughout the innings.`);
-        whyLoserLost.push(`High dot-ball tally during the middle overs.`);
-      }
-    }
-  }
-
-  // Limited overs, defended total: name the phase that actually produced the margin (computed
-  // from the scorecards, not assumed), instead of crediting whichever bowler had the best figures.
-  if (!isTest && (winner === "USER" || winner === "AI")) {
-    const chased = (winner === "USER" && !userBatsFirst) || (winner === "AI" && userBatsFirst);
-    const margin = winningInnings.totalRuns - losingInnings.totalRuns;
-    if (!chased && margin > 0) {
+      // Name the phase that produced the margin, but only phases BOTH sides actually batted in.
+      const maxOvers = format === "T20" ? 20 : 50;
+      const ppEnd = (format === "T20" ? 6 : 10) * 6;
+      const deathStart = (format === "T20" ? 15 : 40) * 6;
+      const reached = (inn: InningsScorecard, key: "powerplay" | "middle" | "death") =>
+        key === "powerplay" ? inn.totalBalls > 0 : key === "middle" ? inn.totalBalls > ppEnd : inn.totalBalls > deathStart && maxOvers > 0;
       const t20 = format === "T20";
       const phases = [
         { key: "powerplay" as const, label: t20 ? "powerplay (overs 1-6)" : "powerplay (overs 1-10)" },
         { key: "middle" as const, label: t20 ? "middle overs (7-15)" : "middle overs (11-40)" },
         { key: "death" as const, label: t20 ? "death overs (16-20)" : "death overs (41-50)" },
-      ].map((ph) => ({ ...ph, win: winningInnings.phaseRuns[ph.key], lose: losingInnings.phaseRuns[ph.key] }));
+      ]
+        .filter((ph) => reached(winningInnings, ph.key) && reached(losingInnings, ph.key))
+        .map((ph) => ({ ...ph, win: winningInnings.phaseRuns[ph.key], lose: losingInnings.phaseRuns[ph.key] }));
       const top = [...phases].sort((x, y) => (y.win - y.lose) - (x.win - x.lose))[0];
-      const gain = top.win - top.lose;
-      if (gain >= 10 && gain >= margin * 0.5) {
-        const share = Math.min(100, Math.round((gain / margin) * 100));
-        decisiveDifference = `The match turned in the ${top.label}: ${winnerName} scored ${top.win} to ${top.lose} there, ${gain >= margin ? "more than the whole" : `${share}% of the`} ${margin}-run margin.`;
-        whyWinnerWon.unshift(`Won the ${top.label} ${top.win} to ${top.lose}.`);
-        whyLoserLost.unshift(`Lost the ${top.label}, scoring ${top.lose} to ${top.win}.`);
+      if (top && runMargin > 0) {
+        const gain = top.win - top.lose;
+        if (gain >= 10 && gain >= runMargin * 0.5) {
+          const share = Math.min(100, Math.round((gain / runMargin) * 100));
+          decisiveDifference = `The match turned in the ${top.label}: ${winnerName} scored ${top.win} to ${top.lose} there, ${gain >= runMargin ? "more than the whole" : `${share}% of the`} ${runMargin}-run margin.`;
+          whyWinnerWon.unshift(`Won the ${top.label} ${top.win} to ${top.lose}.`);
+          whyLoserLost.unshift(`Lost the ${top.label}, scoring ${top.lose} to ${top.win}.`);
+        }
       }
     }
   }

@@ -3,6 +3,8 @@ import type { InningsScorecard } from "./simulator";
 import type { MatchPerformance } from "./performance";
 import { calculateDeterministicScore } from "./scoring";
 import { playerQuality } from "./player-quality";
+import { computeContributions, type Contribution } from "./impact";
+import { ballsToOvers } from "./overs";
 
 /**
  * "Did the XI you picked deserve to win?" This game is about selecting a better and more balanced
@@ -56,6 +58,10 @@ export interface SelectionInput {
   userInnings: InningsScorecard[];
   aiInnings: InningsScorecard[];
   performance: MatchPerformance;
+  /** Shared impact scores (same ones behind Player of the Match). Computed here when omitted. */
+  contributions?: Contribution[];
+  /** Limited overs: the chasing side and its target. */
+  chase?: { team: Side; target: number };
 }
 
 const PITCH_LABEL: Record<string, string> = {
@@ -180,50 +186,34 @@ interface PlayerImpact {
   wickets: number;
   conceded: number;
   overs: number;
+  ballsBowled: number;
   catches: number;
   runOuts: number;
   stumpings: number;
   impact: number;
 }
 
-/** Typical runs per over for the format; impact is measured against it, so expensive overs count against a bowler. */
-const PAR_RPO: Record<string, number> = { T20: 9.0, ODI: 5.6, TEST: 3.7 };
-
-function impacts(squad: Squad, format: string, batting: InningsScorecard[], bowling: InningsScorecard[]): PlayerImpact[] {
+/** Per-player rows for one side, taking the shared impact score from computeContributions. */
+function impacts(squad: Squad, side: Side, contribs: Contribution[]): PlayerImpact[] {
   const out: PlayerImpact[] = [];
   squad.forEach((p, slot) => {
     if (!p) return;
-    const row: PlayerImpact = { player: p, slot, runs: 0, balls: 0, batted: false, wickets: 0, conceded: 0, overs: 0, catches: 0, runOuts: 0, stumpings: 0, impact: 0 };
-    for (const inn of batting) {
-      const b = inn.batters.find((x) => x.playerId === p.id);
-      if (b && (b.balls > 0 || b.isOut)) {
-        row.batted = true;
-        row.runs += b.runs;
-        row.balls += b.balls;
-      }
-    }
-    for (const inn of bowling) {
-      const b = inn.bowlers.find((x) => x.playerId === p.id);
-      if (b) {
-        const [o, balls] = b.overs.split(".").map(Number);
-        row.overs += (o || 0) + (balls || 0) / 6;
-        row.wickets += b.wickets;
-        row.conceded += b.runs;
-      }
-      const f = (inn.fielders ?? []).find((x) => x.playerId === p.id);
-      if (f) {
-        row.catches += f.catches;
-        row.runOuts += f.runOuts;
-        row.stumpings += f.stumpings;
-      }
-    }
-    // Net contribution against par: runs above what the balls faced would normally yield, plus
-    // wickets and the runs a bowler saved (or leaked) against par, plus fielding.
-    const parRpo = PAR_RPO[format] ?? 6;
-    const batNet = row.runs - (row.balls * parRpo) / 6;
-    const bowlNet = row.wickets * 22 + (row.overs * parRpo - row.conceded);
-    row.impact = batNet + bowlNet + row.catches * 8 + row.runOuts * 12 + row.stumpings * 10;
-    out.push(row);
+    const c = contribs.find((x) => x.team === side && x.playerId === p.id);
+    out.push({
+      player: p,
+      slot,
+      runs: c?.runs ?? 0,
+      balls: c?.balls ?? 0,
+      batted: c?.batted ?? false,
+      wickets: c?.wickets ?? 0,
+      conceded: c?.conceded ?? 0,
+      overs: (c?.ballsBowled ?? 0) / 6,
+      ballsBowled: c?.ballsBowled ?? 0,
+      catches: 0,
+      runOuts: 0,
+      stumpings: 0,
+      impact: c?.impact ?? 0,
+    });
   });
   return out;
 }
@@ -231,7 +221,7 @@ function impacts(squad: Squad, format: string, batting: InningsScorecard[], bowl
 function describe(i: PlayerImpact): string {
   const parts: string[] = [];
   if (i.batted) parts.push(`${i.runs} off ${i.balls}`);
-  if (i.overs > 0) parts.push(`${i.wickets}/${i.conceded} in ${r1(i.overs)} ov`);
+  if (i.overs > 0) parts.push(`${i.wickets}/${i.conceded} in ${ballsToOvers(i.ballsBowled)} ov`);
   const field = i.catches + i.runOuts + i.stumpings;
   if (field > 0) parts.push(`${field} dismissal${field === 1 ? "" : "s"} in the field`);
   return parts.join(", ") || "did not get involved";
@@ -252,9 +242,10 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     AI: calculateDeterministicScore(aiSquad, challenge),
   };
   const prof = { USER: profile(userSquad, format), AI: profile(aiSquad, format) };
+  const contribs = input.contributions ?? computeContributions({ format: format as "T20" | "ODI" | "TEST", userInnings, aiInnings, winner, chase: input.chase });
   const imp = {
-    USER: impacts(userSquad, format, userInnings, aiInnings),
-    AI: impacts(aiSquad, format, aiInnings, userInnings),
+    USER: impacts(userSquad, "USER", contribs),
+    AI: impacts(aiSquad, "AI", contribs),
   };
 
   const categories: SelectionCategory[] = [
@@ -309,7 +300,12 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     const theirBat = side === "USER" ? aiInnings : userInnings;
     const lo = lowerOrderRuns(myBat);
     const loOpp = lowerOrderRuns(theirBat);
-    if (dDiff >= 2 || (lo - loOpp >= 25 && dDiff >= 0)) add(side, "good", Math.max(dDiff, 2) + 1, `Batting depth paid off: #7-#11 added ${lo} runs against ${loOpp}.`);
+    // Only talk about the tail if both tails actually came to the crease
+    const tailBatted = (inns: InningsScorecard[]) => inns.some((inn) => inn.batters.slice(6).some((b) => b.balls > 0 || b.isOut));
+    const bothTails = tailBatted(myBat) && tailBatted(theirBat);
+    if (!bothTails) {
+      // no comparison possible
+    } else if (dDiff >= 2 || (lo - loOpp >= 25 && dDiff >= 0)) add(side, "good", Math.max(dDiff, 2) + 1, `Batting depth paid off: #7-#11 added ${lo} runs against ${loOpp}.`);
     else if (dDiff <= -2 || (loOpp - lo >= 25 && dDiff <= 0)) add(side, "bad", Math.max(-dDiff, 2) + 1, `The tail was exposed: #7-#11 added only ${lo} runs against ${loOpp}.`);
 
     // A batter forced to bowl because the frontline attack was too thin
@@ -318,7 +314,7 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
       .sort((a, b) => b.overs - a.overs)[0];
     if (partTimer) {
       const econ = partTimer.conceded / partTimer.overs;
-      add(side, "bad", 3 + Math.min(4, partTimer.overs / 2), `Only ${me.frontline} frontline bowlers, so ${partTimer.player.name} (a batter) had to bowl ${r1(partTimer.overs)} overs and went for ${r1(econ)} an over.`);
+      add(side, "bad", 3 + Math.min(4, partTimer.overs / 2), `Only ${me.frontline} frontline bowlers, so ${partTimer.player.name} (a batter) had to bowl ${ballsToOvers(partTimer.ballsBowled)} overs and went for ${r1(econ)} an over.`);
     }
   }
 
@@ -411,7 +407,7 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   };
   consider("role", 0.8, userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher");
   consider("pitch", 0.75, `Read the pitch: on a ${pitchLabel}, ${PITCH_HINT[pitch] ?? "match your squad to the conditions"}. You picked ${pitchTraits(prof.USER, pitch)}`);
-  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your top seven averaged ${r1(prof.USER.topSevenAvg)}`);
+  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your top seven had a career batting average of ${r1(prof.USER.topSevenAvg)} in this format (AI ${r1(prof.AI.topSevenAvg)})`);
   consider("depth", 0.65, "Add batting depth: pick bowlers and all-rounders who can score down to #8");
   adviceCandidates.sort((a, b) => b.score - a.score).slice(0, 3).forEach((a) => nextTime.push(a.text));
   if (nextTime.length === 0) {
