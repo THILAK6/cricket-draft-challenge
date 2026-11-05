@@ -52,5 +52,7 @@ describe("front-end features", () => {
     expect(html).toContain("draftState.userStuck");
     expect(html).toContain('id="team-report-box"');
     expect(html).toContain("renderTeamReport(sim)");
+    expect(html).toContain('id="selection-box"');
+    expect(html).toContain("renderSelectionReport(sim)");
   });
 });

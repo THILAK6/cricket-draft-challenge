@@ -1266,6 +1266,32 @@
           </span>
         </div>
 
+        <!-- Selection report: why the XI you picked won or lost -->
+        <div id="selection-box" style="display: none; background: #141c28; border: 1px solid var(--gold); border-radius: 6px; padding: 0.75rem;">
+          <div style="color: var(--gold); font-weight: 800; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.35rem;">🧠 Your Selection</div>
+          <div id="selection-headline" style="color: #f1f5f9; font-size: 0.88rem; font-weight: 700; line-height: 1.4; margin-bottom: 0.55rem;"></div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.68rem; font-weight: 700; margin-bottom: 0.25rem;">
+            <span style="color: var(--cyan);">● Your XI <span id="sel-total-user"></span></span>
+            <span style="color: var(--gold);"><span id="sel-total-ai"></span> AI XI ●</span>
+          </div>
+          <div id="selection-bars" style="display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.65rem;"></div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.6rem;">
+            <div>
+              <div style="color: var(--cyan); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.25rem;">What your picks did</div>
+              <ul id="selection-user-points" style="list-style: none; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
+            </div>
+            <div>
+              <div style="color: var(--gold); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.25rem;">What the AI's picks did</div>
+              <ul id="selection-ai-points" style="list-style: none; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
+            </div>
+          </div>
+          <div id="selection-picks" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.5rem; margin-top: 0.6rem;"></div>
+          <div style="margin-top: 0.6rem;">
+            <div style="color: var(--gold); font-weight: 800; font-size: 0.72rem; margin-bottom: 0.2rem;">Next time</div>
+            <ul id="selection-next" style="margin: 0; padding-left: 1rem; font-size: 0.74rem; line-height: 1.4; color: #cbd5e1;"></ul>
+          </div>
+        </div>
+
         <!-- Team report: batting / bowling / fielding scores and extra stats -->
         <div id="team-report-box" style="display: none; background: #141c28; border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem;">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
@@ -2551,6 +2577,80 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       document.getElementById('team-report-note').innerText = notes[teamReportTab] || '';
     }
 
+    function renderSelectionReport(sim) {
+      const box = document.getElementById('selection-box');
+      const sel = sim && sim.selection;
+      if (!sel) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      document.getElementById('selection-headline').innerText = sel.headline;
+      document.getElementById('sel-total-user').innerText = `${sel.totals.USER}/100`;
+      document.getElementById('sel-total-ai').innerText = `${sel.totals.AI}/100`;
+
+      const bars = document.getElementById('selection-bars');
+      bars.innerHTML = '';
+      sel.categories.forEach(c => {
+        const uWin = c.user > c.ai, aWin = c.ai > c.user;
+        const row = document.createElement('div');
+        row.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 0.76rem;">
+            <span style="color: var(--cyan); font-weight: ${uWin ? 800 : 500};">${esc(c.user)}<span style="color: var(--text-dim); font-weight: 400;">/${esc(c.max)}</span></span>
+            <span style="color: var(--text-muted); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em;">${esc(c.label)}</span>
+            <span style="color: var(--gold); font-weight: ${aWin ? 800 : 500};">${esc(c.ai)}<span style="color: var(--text-dim); font-weight: 400;">/${esc(c.max)}</span></span>
+          </div>
+          <div style="display: flex; gap: 2px; height: 6px; margin-top: 3px;">
+            <div style="flex: 1; display: flex; justify-content: flex-end; background: rgba(255,255,255,0.04); border-radius: 3px 0 0 3px;"><div style="width: ${Math.max(2, (c.user / c.max) * 100)}%; background: var(--cyan); border-radius: 3px 0 0 3px;"></div></div>
+            <div style="flex: 1; background: rgba(255,255,255,0.04); border-radius: 0 3px 3px 0;"><div style="width: ${Math.max(2, (c.ai / c.max) * 100)}%; background: var(--gold); border-radius: 0 3px 3px 0;"></div></div>
+          </div>`;
+        bars.appendChild(row);
+      });
+
+      const fill = (id, points) => {
+        const ul = document.getElementById(id);
+        ul.innerHTML = '';
+        (points || []).forEach(p => {
+          const li = document.createElement('li');
+          li.style.cssText = 'display: flex; gap: 0.35rem;';
+          const icon = document.createElement('span');
+          icon.innerText = p.tone === 'good' ? '✅' : '⚠️';
+          const text = document.createElement('span');
+          text.innerText = p.text;
+          li.appendChild(icon);
+          li.appendChild(text);
+          ul.appendChild(li);
+        });
+        if (!ul.children.length) {
+          const li = document.createElement('li');
+          li.style.color = 'var(--text-dim)';
+          li.innerText = 'Nothing stood out.';
+          ul.appendChild(li);
+        }
+      };
+      fill('selection-user-points', sel.userPoints);
+      fill('selection-ai-points', sel.aiPoints);
+
+      const picks = document.getElementById('selection-picks');
+      picks.innerHTML = '';
+      const chip = (label, color, p) => {
+        if (!p) return;
+        const el = document.createElement('div');
+        el.style.cssText = `border: 1px solid ${color}; border-radius: 6px; padding: 0.4rem 0.55rem; font-size: 0.72rem; background: rgba(255,255,255,0.02);`;
+        el.innerHTML = `<div style="color: ${color}; font-weight: 800; font-size: 0.66rem; text-transform: uppercase;">${esc(label)}</div>
+          <div style="color: #f1f5f9; font-weight: 700;">${esc(p.name)} <span style="color: var(--text-dim); font-weight: 400;">(#${esc(p.slot)})</span></div>
+          <div style="color: #94a3b8;">${esc(p.detail)}</div>`;
+        picks.appendChild(el);
+      };
+      chip('Best pick', 'var(--emerald)', sel.bestPick);
+      chip('Weakest pick', 'var(--crimson)', sel.weakestPick);
+
+      const next = document.getElementById('selection-next');
+      next.innerHTML = '';
+      (sel.nextTime || []).forEach(t => {
+        const li = document.createElement('li');
+        li.innerText = t;
+        next.appendChild(li);
+      });
+    }
+
     function showScorecard() {
       const modal = document.getElementById('scorecard-modal');
       modal.style.display = 'flex';
@@ -2627,6 +2727,7 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         document.getElementById('potm-perf').innerText = sim.playerOfTheMatch.performance;
       }
 
+      renderSelectionReport(sim);
       renderTeamReport(sim);
 
       // Super Over (only present when a T20 finished level)
@@ -2668,8 +2769,8 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
       // Why Winner Won & Where Loser Fell Short
       const winnerName = sim.winner === 'USER' ? 'Your XI' : 'AI XI';
       const loserName = sim.winner === 'USER' ? 'AI XI' : 'Your XI';
-      document.getElementById('why-winner-title').innerText = `Why ${winnerName} Won`;
-      document.getElementById('why-loser-title').innerText = `Where ${loserName} Fell Short`;
+      document.getElementById('why-winner-title').innerText = `How ${winnerName} Won It On The Field`;
+      document.getElementById('why-loser-title').innerText = `Where ${loserName} Fell Short On The Field`;
 
       const winList = document.getElementById('why-winner-list');
       winList.innerHTML = '';

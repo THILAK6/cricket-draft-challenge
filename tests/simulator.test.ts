@@ -272,4 +272,28 @@ describe("Realistic Cricket Match Simulator", () => {
     }
     expect(kinds.size).toBeGreaterThanOrEqual(4);
   });
+
+  it("returns a selection report that explains the result in terms of the picks", () => {
+    for (const seed of [11, 222, 3333, 44444]) {
+      const r = simulateCricketMatch(userSquad, aiSquad, t20Challenge, seed);
+      const sel = r.selection;
+      expect(sel).toBeDefined();
+      expect(sel.headline.length).toBeGreaterThan(10);
+      expect(sel.categories).toHaveLength(4);
+      for (const c of sel.categories) {
+        expect(c.user).toBeGreaterThanOrEqual(0);
+        expect(c.user).toBeLessThanOrEqual(c.max);
+        expect(c.ai).toBeGreaterThanOrEqual(0);
+        expect(c.ai).toBeLessThanOrEqual(c.max);
+      }
+      expect(sel.totals.USER).toBe(sel.categories.reduce((a, c) => a + c.user, 0));
+      expect(sel.totals.AI).toBe(sel.categories.reduce((a, c) => a + c.ai, 0));
+      expect(["PICKS_DECIDED", "UPSET", "CLOSE", "LEVEL"]).toContain(sel.outcome);
+      expect(Array.isArray(sel.nextTime)).toBe(true);
+      for (const p of [...sel.userPoints, ...sel.aiPoints]) {
+        expect(["good", "bad"]).toContain(p.tone);
+        expect(p.text.length).toBeGreaterThan(0);
+      }
+    }
+  });
 });

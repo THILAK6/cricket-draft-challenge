@@ -1,5 +1,6 @@
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
+import { buildSelectionReport, type SelectionReport } from "./selection-report";
 
 export interface BatterScorecard {
   playerId: string;
@@ -111,6 +112,8 @@ export interface MatchSimulationResult {
   keyMoments: KeyMoment[];
   /** Batting, bowling and fielding scores plus comparison stats for each side. */
   performance: MatchPerformance;
+  /** Why the XI you picked won or lost: selection scores, key picks and advice. */
+  selection: SelectionReport;
   decisiveDifference: string;
   whyWinnerWon: string[];
   whyLoserLost: string[];
@@ -327,6 +330,11 @@ export function simulateCricketMatch(
     const potm = determinePlayerOfTheMatch(userInn1, aiInn1, winner === "DRAW" || winner === "TIE" ? "USER" : winner, userInn2, aiInn2);
     const analysis = deriveMatchAnalysis(userInn1, aiInn1, userSquad, aiSquad, challenge, winner, 0, userBatsFirst, userInn2, aiInn2);
 
+    const testUserInns = [userInn1, userInn2].filter((i): i is InningsScorecard => !!i);
+    const testAiInns = [aiInn1, aiInn2].filter((i): i is InningsScorecard => !!i);
+    const testPerf = computeMatchPerformance("TEST", testUserInns, testAiInns);
+    const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf });
+
     return {
       format: "TEST",
       winner,
@@ -340,7 +348,8 @@ export function simulateCricketMatch(
       testTarget,
       dayChronicle,
       keyMoments,
-      performance: computeMatchPerformance("TEST", [userInn1, userInn2].filter((i): i is InningsScorecard => !!i), [aiInn1, aiInn2].filter((i): i is InningsScorecard => !!i)),
+      performance: testPerf,
+      selection: testSel,
       decisiveDifference: analysis.decisiveDifference,
       whyWinnerWon: analysis.whyWinnerWon,
       whyLoserLost: analysis.whyLoserLost,
@@ -443,6 +452,9 @@ export function simulateCricketMatch(
   const potm = determinePlayerOfTheMatch(userInnings, aiInnings, winner);
   const analysis = deriveMatchAnalysis(userInnings, aiInnings, userSquad, aiSquad, challenge, winner, ballsRemaining, userBatsFirst);
 
+  const limitedPerf = computeMatchPerformance(format, [userInnings], [aiInnings]);
+  const limitedSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: [userInnings], aiInnings: [aiInnings], performance: limitedPerf });
+
   return {
     format,
     winner,
@@ -452,7 +464,8 @@ export function simulateCricketMatch(
     aiInnings,
     keyMoments,
     superOver,
-    performance: computeMatchPerformance(format, [userInnings], [aiInnings]),
+    performance: limitedPerf,
+    selection: limitedSel,
     decisiveDifference: analysis.decisiveDifference,
     whyWinnerWon: analysis.whyWinnerWon,
     whyLoserLost: analysis.whyLoserLost,
