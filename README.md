@@ -39,7 +39,10 @@ npm install
 ### 2. Setup Local D1 Database
 ```bash
 npm run db:migrate:local
+npm run db:seed:local
 ```
+
+`db:seed:local` loads the player pool from `data/seed.sql`; without it there are no players to draft.
 
 ### 3. Run Dev Server
 ```bash
