@@ -504,6 +504,7 @@
       justify-content: space-between;
       gap: 0.4rem;
       min-height: 40px;
+      flex-shrink: 0; /* rows grow with wrapped text instead of squeezing and overlapping */
       transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
       user-select: none;
     }
@@ -607,7 +608,8 @@
       color: #94a3b8;
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      flex-wrap: wrap;
+      gap: 0.1rem 0.4rem;
     }
 
     .btn-remove-tiny {
@@ -961,6 +963,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap: wrap;
       gap: 0.5rem;
       animation: pulseReadyGlow 2.5s infinite ease-in-out;
     }
@@ -968,12 +971,18 @@
       0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.2); border-color: rgba(212, 175, 55, 0.4); }
       50% { box-shadow: 0 0 18px rgba(16, 185, 129, 0.45); border-color: rgba(16, 185, 129, 0.65); }
     }
+    /* Bowling plan sits on its own full-width row between the message and the start button */
+    #bowling-plan { order: 2; flex: 1 1 100%; display: none; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; }
+    #bowling-plan label { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+    #btn-start-match-sim { order: 3; flex: 1 1 auto; }
+    .match-ready-info { order: 1; }
     .plan-select { background: #0b1320; color: #e2e8f0; border: 1px solid var(--border); border-radius: 4px; font-size: 0.64rem; padding: 0.15rem 0.25rem; max-width: 120px; }
     .match-ready-info {
       display: flex;
       align-items: center;
       gap: 0.5rem;
       min-width: 0;
+      flex: 1 1 200px;
     }
     .btn-match-ready {
       background: linear-gradient(135deg, #f59e0b, #10b981) !important;
@@ -1147,10 +1156,9 @@
             <div id="match-ready-subtitle" style="font-size: 0.67rem; color: #cbd5e1;">Review order (drag to swap), then start match.</div>
           </div>
         </div>
-        <div id="bowling-plan" style="display: none; gap: 0.35rem; align-items: center; flex-wrap: wrap; font-size: 0.64rem; color: #cbd5e1;">
+        <div id="bowling-plan" style="font-size: 0.66rem; color: #cbd5e1;">
           <span style="font-weight: 800; color: #fde047;">🎯 Bowling plan</span>
-          <label>New ball <select id="plan-new1" class="plan-select"></select></label>
-          <select id="plan-new2" class="plan-select" aria-label="Second new-ball bowler"></select>
+          <label>New ball <select id="plan-new1" class="plan-select" aria-label="First new-ball bowler"></select><select id="plan-new2" class="plan-select" aria-label="Second new-ball bowler"></select></label>
           <label>Death <select id="plan-death" class="plan-select"></select></label>
         </div>
         <button id="btn-start-match-sim" class="btn btn-sm btn-match-ready" onclick="startMatchSimulation()">
