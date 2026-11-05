@@ -133,6 +133,12 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
 }
 
 /**
+ * Upper bound on backtracking nodes visited. The combination space is C(pool, 11), so without
+ * a budget a near-impossible challenge can burn through a Worker's CPU limit.
+ */
+export const DEFAULT_SEARCH_NODE_BUDGET = 1_500_000; // ~1M nodes (~170ms) finds 50 XIs on a typical pool
+
+/**
  * Fast backtracking constraint satisfaction checker.
  * Explores combination tree to guarantee at least `targetSolutions` (default: 50)
  * valid 11-player squads can be formed from the pool.
@@ -140,7 +146,8 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
 export function checkChallengeFeasibility(
   pool: PlayerWithStats[],
   challenge: Challenge,
-  targetSolutions = 50
+  targetSolutions = 50,
+  maxNodes = DEFAULT_SEARCH_NODE_BUDGET
 ): FeasibilityResult {
   const reasons: string[] = [];
 
@@ -257,8 +264,15 @@ export function checkChallengeFeasibility(
     return 11;
   }
 
+  let nodesVisited = 0;
+  let budgetExhausted = false;
+
   function backtrack(startIndex: number) {
-    if (solutionsFound >= targetSolutions) return;
+    if (solutionsFound >= targetSolutions || budgetExhausted) return;
+    if (++nodesVisited > maxNodes) {
+      budgetExhausted = true;
+      return;
+    }
 
     // Prune if remaining pool cannot fill 11
     const needed = 11 - currentSelection.length;
@@ -276,7 +290,7 @@ export function checkChallengeFeasibility(
     }
 
     for (let i = startIndex; i < sortedPool.length; i++) {
-      if (solutionsFound >= targetSolutions) return;
+      if (solutionsFound >= targetSolutions || budgetExhausted) return;
 
       const candidate = sortedPool[i];
       const curCountryCount = countryUsage.get(candidate.country) || 0;
@@ -303,7 +317,9 @@ export function checkChallengeFeasibility(
   const isFeasible = solutionsFound >= targetSolutions;
   if (!isFeasible) {
     reasons.push(
-      `Only found ${solutionsFound} valid combinations (minimum required: ${targetSolutions}). Challenge is too restrictive.`
+      budgetExhausted
+        ? `Search budget of ${maxNodes} nodes exhausted after ${solutionsFound} valid combinations (minimum required: ${targetSolutions}). Challenge is too restrictive.`
+        : `Only found ${solutionsFound} valid combinations (minimum required: ${targetSolutions}). Challenge is too restrictive.`
     );
   }
 
@@ -313,6 +329,37 @@ export function checkChallengeFeasibility(
     sampleSquad,
     reasons,
   };
+}
+
+/**
+ * The user and the AI draft from one shared pool, so a challenge is only playable if
+ * two disjoint legal XIs exist. Verifies the pool supports `targetSolutions` XIs, then
+ * removes one sample XI and checks that a second legal XI can still be formed.
+ * Passing guarantees two disjoint XIs exist (sufficient, not necessary).
+ */
+export function checkDraftFeasibility(
+  pool: PlayerWithStats[],
+  challenge: Challenge,
+  targetSolutions = 50,
+  maxNodes = DEFAULT_SEARCH_NODE_BUDGET
+): FeasibilityResult {
+  const first = checkChallengeFeasibility(pool, challenge, targetSolutions, maxNodes);
+  if (!first.isFeasible || !first.sampleSquad) return first;
+
+  const takenIds = new Set(first.sampleSquad.map((p) => p.id));
+  const remaining = pool.filter((p) => !takenIds.has(p.id));
+  const second = checkChallengeFeasibility(remaining, challenge, 1, maxNodes);
+  if (!second.isFeasible) {
+    return {
+      isFeasible: false,
+      validCombinationsFound: first.validCombinationsFound,
+      sampleSquad: first.sampleSquad,
+      reasons: [
+        `Pool cannot support two disjoint XIs for a head-to-head draft: ${second.reasons.join("; ")}`,
+      ],
+    };
+  }
+  return first;
 }
 
 export interface PickLegalityResult {

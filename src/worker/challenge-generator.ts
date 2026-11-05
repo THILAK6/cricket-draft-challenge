@@ -1,7 +1,13 @@
 import { z } from "zod";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core/types";
 import { ChallengeSchema } from "../core/types";
-import { checkChallengeFeasibility } from "../core/validator";
+import { checkDraftFeasibility } from "../core/validator";
+
+/**
+ * Size of the player pool a draft room is seeded with. Challenge feasibility is checked
+ * against exactly this pool, so a validated challenge is always playable in the room.
+ */
+export const DRAFT_POOL_SIZE = 50;
 
 export interface Env {
   DB: D1Database;
@@ -215,7 +221,7 @@ export async function generateValidatedChallenge(
   options: { format?: MatchFormat; requestedVenue?: string } = {}
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[]; attempts: number }> {
   const format: MatchFormat = options.format || "T20";
-  const pool = await fetchPlayerPool(env.DB, format, 80);
+  const pool = await fetchPlayerPool(env.DB, format, DRAFT_POOL_SIZE);
 
   if (pool.length < 22) {
     throw new Error(`Insufficient players in D1 database for format ${format} (found ${pool.length}). Run database seeding.`);
@@ -239,7 +245,7 @@ export async function generateValidatedChallenge(
     }
 
     // Deterministic Feasibility Validation Check
-    const feasibility = checkChallengeFeasibility(pool, candidateChallenge, 50);
+    const feasibility = checkDraftFeasibility(pool, candidateChallenge, 50);
 
     if (feasibility.isFeasible) {
       // Persist challenge into D1
@@ -251,10 +257,16 @@ export async function generateValidatedChallenge(
     console.warn(`[Generator] Attempt ${attempt} failed feasibility check: ${lastRejectionReason}`);
   }
 
-  // If AI generation attempts failed feasibility, fall back to guaranteed feasible template
-  const fallback = selectFallbackChallenge(format);
-  await saveChallenge(env.DB, fallback);
-  return { challenge: fallback, pool, attempts: maxAttempts + 1 };
+  // If AI generation attempts failed feasibility, fall back to the first built-in template
+  // that is actually feasible against this pool (templates are not trusted blindly).
+  for (const fallback of shuffledFallbackChallenges(format)) {
+    if (checkDraftFeasibility(pool, fallback, 50).isFeasible) {
+      await saveChallenge(env.DB, fallback);
+      return { challenge: fallback, pool, attempts: maxAttempts + 1 };
+    }
+  }
+
+  throw new Error(`No feasible ${format} challenge for the current player pool (${pool.length} players). Last rejection: ${lastRejectionReason}`);
 }
 
 async function requestChallengeFromAI(
@@ -310,6 +322,20 @@ IMPORTANT RULES:
     ...parsed,
     format,
   });
+}
+
+function shuffledFallbackChallenges(format: MatchFormat): Challenge[] {
+  const filtered = FALLBACK_SCENARIOS.filter((s) => s.format === format);
+  const templates = [...(filtered.length > 0 ? filtered : FALLBACK_SCENARIOS)];
+  for (let i = templates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [templates[i], templates[j]] = [templates[j], templates[i]];
+  }
+  return templates.map((template) => ({
+    id: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    ...template,
+    format,
+  }));
 }
 
 function selectFallbackChallenge(format: MatchFormat): Challenge {

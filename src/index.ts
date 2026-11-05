@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DraftRoom } from "./durable-objects/DraftRoom";
-import { generateValidatedChallenge, fetchPlayerPool } from "./worker/challenge-generator";
+import { generateValidatedChallenge, fetchPlayerPool, DRAFT_POOL_SIZE } from "./worker/challenge-generator";
+import { checkDraftFeasibility } from "./core/validator";
+import type { PlayerWithStats } from "./core/types";
 import type { Challenge, MatchFormat } from "./core/types";
 
 export { DraftRoom };
@@ -11,6 +13,7 @@ export interface Env {
   DRAFT_ROOM: DurableObjectNamespace;
   AI?: any;
   GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -107,6 +110,7 @@ app.post("/api/draft/start", async (c) => {
   try {
     const body = await c.req.json<{ challengeId?: string; format?: MatchFormat }>();
     let challenge: Challenge;
+    let pool: PlayerWithStats[];
 
     if (body.challengeId) {
       const row: any = await c.env.DB.prepare(
@@ -129,14 +133,19 @@ app.post("/api/draft/start", async (c) => {
         narrative_intro: row.narrative_intro,
         constraints: JSON.parse(row.constraints_json || "[]"),
       };
+
+      // Stored challenges may predate the current pool: re-check head-to-head playability
+      pool = await fetchPlayerPool(c.env.DB, challenge.format, DRAFT_POOL_SIZE);
+      const feasibility = checkDraftFeasibility(pool, challenge, 1);
+      if (!feasibility.isFeasible) {
+        return c.json({ error: `Challenge is not playable with the current player pool: ${feasibility.reasons.join("; ")}` }, 409);
+      }
     } else {
-      // Auto-generate a challenge if not supplied
+      // Auto-generate a challenge if not supplied; reuse the exact pool it was validated against
       const generated = await generateValidatedChallenge(c.env, { format: body.format });
       challenge = generated.challenge;
+      pool = generated.pool;
     }
-
-    // Load candidate player pool for the format
-    const pool = await fetchPlayerPool(c.env.DB, challenge.format, 50);
 
     // Instantiate unique Durable Object room
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -189,6 +198,11 @@ app.all("/api/room/:roomId/*", async (c) => {
 
   const url = new URL(c.req.url);
   const doPath = url.pathname.replace(`/api/room/${roomId}`, "") || "/";
+
+  // Room initialization is internal-only (done by /api/draft/start); never expose it publicly.
+  if (doPath.endsWith("/init")) {
+    return c.json({ error: "Not found" }, 404);
+  }
   const doUrl = new URL(doPath + url.search, url.origin);
 
   return stub.fetch(new Request(doUrl.toString(), c.req.raw));

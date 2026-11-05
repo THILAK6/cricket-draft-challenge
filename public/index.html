@@ -2590,7 +2590,6 @@ Tactical: ${p.stats.top_order_innings || 0} Top | ${p.stats.middle_order_innings
         return;
       }
 
-      const container = document.getElementById('innings-table-container');
       container.innerHTML = `
         <div style="font-weight: 800; font-size: 0.75rem; color: #cbd5e1; margin-bottom: 0.3rem;">
           Batting Card — ${battingInnings.teamName} (${battingInnings.totalRuns}/${battingInnings.totalWickets} in ${battingInnings.oversString || battingInnings.oversCompleted} ov)

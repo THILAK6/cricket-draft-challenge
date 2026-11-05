@@ -14,11 +14,15 @@ export interface RefereeEvaluationResult {
   verdict_summary: string;
 }
 
+/** Override per deployment with the GEMINI_MODEL var when Google retires a model. */
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
 export async function evaluateGroundConditionsWithGemini(
   userSquad: (PlayerWithStats | null)[],
   aiSquad: (PlayerWithStats | null)[],
   challenge: Challenge,
-  apiKey?: string
+  apiKey?: string,
+  model: string = DEFAULT_GEMINI_MODEL
 ): Promise<RefereeEvaluationResult> {
   const nonNullUser = userSquad.filter((p): p is PlayerWithStats => p !== null);
   const nonNullAi = aiSquad.filter((p): p is PlayerWithStats => p !== null);
@@ -153,10 +157,11 @@ Return JSON in this exact structure:
 }`;
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Key goes in a header, not the query string, so it never lands in URL logs.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || DEFAULT_GEMINI_MODEL)}:generateContent`;
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: "application/json" },

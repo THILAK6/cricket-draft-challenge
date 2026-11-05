@@ -121,6 +121,8 @@ export interface DraftState {
   maxRounds: number;
   status: "WAITING" | "DRAFTING" | "SOLO_PICK" | "READY_TO_PLAY" | "COMPLETED";
   lastActionTimestamp: number;
+  /** Fixed per-room RNG seed so a given pair of squads always produces the same match. */
+  matchSeed?: number;
   simulation?: MatchSimulationResult;
   results?: any;
   lastAiSnipe?: AiSnipeInfo;
