@@ -1,5 +1,6 @@
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats, ScoringBreakdown } from "./types";
 import { eraAdjusted } from "./era";
+import { isBowlingOption } from "./validator";
 
 /**
  * Deterministic cricket scoring engine (0 - 100 points).
@@ -38,7 +39,7 @@ export function calculateDeterministicScore(
 
   // Bowling options (4.5 to 5.0 pts)
   const bowlingOptions = nonNullSquad.filter(
-    (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
+    isBowlingOption
   );
   if (isTest) {
     // Tests: 4 frontline bowlers + 1 backup option is standard international construction

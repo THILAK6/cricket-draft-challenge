@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { api } from "../api";
+import { isBowlingOption } from "../../../src/core/validator";
 import { keyStats, PITCH_LABEL, ROLE_SHORT, roleKey, shortName, type Player } from "../format";
 import { XIList, type RoomProps } from "./Draft";
 import { PlayerSheet } from "./PlayerSheet";
@@ -31,7 +32,7 @@ export function Lineup(props: RoomProps) {
     }
   };
 
-  const bowlers = squad.filter((p): p is Player => !!p && p.primary_role !== "WK" && (p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2));
+  const bowlers = squad.filter((p): p is Player => !!p && p.primary_role !== "WK" && isBowlingOption(p));
 
   const play = async () => {
     setBusy(true);

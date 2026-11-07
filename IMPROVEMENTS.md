@@ -62,32 +62,37 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 
 ## Phase 2 — Player pool and ratings
 
-- [ ] **2.1 Pool by stature, not caps.** "Top players" are chosen by a quality/peak rating, not by
+- [x] **2.1 Pool by stature, not caps.** "Top players" are chosen by a quality/peak rating, not by
   most matches, so the pool has recognisable stars.
-- [ ] **2.2 Fix rating distortions.** Shrink small samples harder (lightly capped players such as
+- [x] **2.2 Fix rating distortions.** Shrink small samples harder (lightly capped players such as
   Corbin Bosch or Mahammad Bilal Zalmai currently rank near the top). Rate an all-rounder by their
   better skill plus part of the other, not both added together.
-- [ ] **2.2b Fix wrong countries.** Indonesian players are stored as India (`IND`), for example
+- [x] **2.2b Fix wrong countries.** Indonesian players are stored as India (`IND`), for example
   Danilson Hawoe and Apriliandi Abdillah Rahayu. Map country codes correctly in the ETL and re-seed.
   Also consider leaving associate-nation players out of the default pool.
-- [ ] **2.3 Roles per format.** A player's role can differ by format (Rahul Dravid is tagged as a
+- [x] **2.3 Roles per format.** A player's role can differ by format (Rahul Dravid is tagged as a
   keeper in Tests).
-- [ ] **2.4 Themed pools (optional draft mode).** Examples: All-time legends, a World Cup year,
+- [x] **2.4 Themed pools (optional draft mode).** Examples: All-time legends, a World Cup year,
   India vs Australia all-time, a single era. Random pool stays the default.
 
 ## Phase 3 — AI opponent (rule-based)
 
-- [ ] **3.1 Draft in phases.** Early rounds: best player available by stature. Middle rounds: balance
+- [x] **3.1 Draft in phases.** Early rounds: best player available by stature. Middle rounds: balance
   the XI. Late rounds: fill the remaining holes.
-- [ ] **3.2 Scarcity-aware sniping.** The AI takes a player to deny you only when the role is genuinely
+- [x] **3.2 Scarcity-aware sniping.** The AI takes a player to deny you only when the role is genuinely
   scarce (for example the last good spinner on a turner while you have none), not by default.
-- [ ] **3.3 Personalities replace Easy/Normal/Hard.**
+- [x] **3.3 Personalities replace Easy/Normal/Hard.**
   - *Fanboy (easy):* over-rates famous names and its home country, and leaves the keeper late.
   - *Sensible Captain (normal):* balanced, best player available.
   - *Shark (hard):* reads your gaps and snipes them.
-- [ ] **3.4 Talk like a cricketer.** Pick reasons in cricket language, not "+1.3 selection points".
-- [ ] **3.5 Sanity checks.** Tests that the AI's first picks are stars (for example, it never opens with
+- [x] **3.4 Talk like a cricketer.** Pick reasons in cricket language, not "+1.3 selection points".
+- [x] **3.5 Sanity checks.** Tests that the AI's first picks are stars (for example, it never opens with
   de Grandhomme when Kallis or Muralitharan is available), and that personalities behave differently.
+
+- [ ] **2.5 Afghanistan is missing from the data.** No AFG players were seeded (no Rashid Khan, no
+  Nabi) even though the ETL lists AFG. Needs the raw Cricsheet data, which this environment can't
+  download (cricsheet.org is blocked), so re-run `npm run etl:download` and `npm run etl:process`
+  somewhere with access.
 
 ## Phase 4 — AI opponent voice (Claude Haiku, optional)
 
@@ -131,6 +136,14 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 ---
 
 ## Working notes
+
+- **Phases 2 and 3 done.** Production needs one database step before (or right after) deploying:
+  `npx wrangler d1 execute cricdraft-db --remote --file=src/db/schema.sql` then
+  `npx wrangler d1 execute cricdraft-db --remote --file=data/data-fixes.sql`. Until then the game
+  still works (the pool query falls back), but without the country and keeper fixes.
+- The AI is now about as strong as a human who always takes the highest-rated player
+  (Fanboy < Captain < Shark, roughly 44-57% wins). Its strength should be re-tuned after Phase 5,
+  once the match engine rewards good drafting; today the dice decide too much to tune against.
 
 - **Phase 1 + 1b done.** The UI is now Preact + Vite + TypeScript in `web/` (builds to `dist/`),
   sharing the rule code with the server. Picks are slotless: each XI is put into a natural batting

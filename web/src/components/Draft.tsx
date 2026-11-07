@@ -4,6 +4,7 @@ import { canPickPlayer, rulesFor } from "../../../src/core/validator";
 import { api } from "../api";
 import { keyStats, PITCH_LABEL, plainReason, ROLE_SHORT, roleKey, shortName, type Player, type RoleKey, type Squad } from "../format";
 import { PlayerSheet } from "./PlayerSheet";
+import { PERSONA_INFO } from "../../../src/core/personas";
 import type { ShowToast } from "./Toast";
 
 export interface RoomProps {
@@ -153,7 +154,9 @@ export function Draft(props: RoomProps) {
       {aiPicks.length > 0 && !bannerHidden && (
         <div class="ai-banner" role="status">
           <div class="grow">
-            <div class="who">AI picked {aiPicks.length === 2 ? "twice" : ""}</div>
+            <div class="who">
+              {PERSONA_INFO[state.difficulty ?? "normal"].name} picked {aiPicks.length === 2 ? "twice" : ""}
+            </div>
             <div class="picks">{aiPicks.map((a) => `${shortName(a.player)} (${ROLE_SHORT[roleKey(a.player)]})`).join(" and ")}</div>
             <div class="why">{plainReason(aiPicks[aiPicks.length - 1].reason)}</div>
           </div>

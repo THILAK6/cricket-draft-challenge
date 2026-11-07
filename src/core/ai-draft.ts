@@ -1,11 +1,46 @@
 import type { Challenge, MatchFormat, PlayerWithStats } from "./types";
-import { canPickPlayer, isOpenerCapable, isTailCapable, type PickContext } from "./validator";
-import { calculateDeterministicScore, isCutter } from "./scoring";
+import { canPickPlayer, isOpenerCapable, isTailCapable, rulesFor, type Need, type PickContext } from "./validator";
+import { isCutter } from "./scoring";
 import { playerQuality } from "./player-quality";
-import { eraAdjusted } from "./era";
+import { isNaturalOpener } from "./batting-order";
+import { PERSONA_INFO } from "./personas";
 
+/**
+ * The AI opponent drafts the way a friend would at school:
+ * - early on it takes the best player left (stars go first);
+ * - as the XI fills up it balances the side (a keeper, openers, enough bowling, the right attack
+ *   for the pitch) and stops stacking one role;
+ * - late on it fills whatever the rules still need;
+ * - it only takes a player to keep him from you when that kind of player is about to run out.
+ *
+ * Three personalities replace a pure difficulty dial. Values are on the rating scale (about
+ * 30 for a fringe international, 95+ for the best), so every bonus reads as "rating points".
+ */
 export type Difficulty = "easy" | "normal" | "hard";
 type Squad = (PlayerWithStats | null)[];
+
+export interface Persona {
+  name: string;
+  blurb: string;
+  /** Weight on keeping scarce players from you. */
+  denial: number;
+  /** Rating points for every 10 caps (famous names), up to +15. */
+  fame: number;
+  /** Rating points for players from its favourite country. */
+  home: number;
+  /** Size of its misjudgements, in rating points (seeded per match). */
+  noise: number;
+  /** How much it cares about the XI's needs and balance. */
+  balance: number;
+  /** How much it plays to the pitch. */
+  pitch: number;
+}
+
+export const PERSONAS: Record<Difficulty, Persona> = {
+  easy: { ...PERSONA_INFO.easy, denial: 0, fame: 1, home: 10, noise: 9, balance: 0.6, pitch: 0.4 },
+  normal: { ...PERSONA_INFO.normal, denial: 0.5, fame: 0, home: 0, noise: 0, balance: 1, pitch: 1 },
+  hard: { ...PERSONA_INFO.hard, denial: 1.2, fame: 0, home: 0, noise: 0, balance: 1, pitch: 1.2 },
+};
 
 export interface AiPickInput {
   /** Players still available to both sides. */
@@ -16,7 +51,7 @@ export interface AiPickInput {
   opponentSquad: Squad;
   challenge: Challenge;
   difficulty: Difficulty;
-  /** Per-match seed (e.g. from the room id): Easy's misjudgements differ from match to match but replay identically. */
+  /** Per-match seed (e.g. from the room id): the Fanboy's misjudgements differ between matches but replay identically. */
   noiseSeed: number;
   /** Pick number within the match, so noise changes pick to pick. */
   round: number;
@@ -26,23 +61,22 @@ export interface AiPickResult {
   player: PlayerWithStats;
   slotIndex: number;
   reason: string;
-  /** True only when no candidate cleared the normal scoring and the best-quality legal player was taken instead. */
+  /** True only when no legal pick existed and the best player left was taken anyway. */
   fallback: boolean;
-  /** Selection points the pick adds to the AI's completed XI. */
+  /** The pick's own value to the AI's XI (rating points). */
   ownGain: number;
-  /** Selection points the human's best completed XI loses because the AI took this player. */
+  /** Rating points the pick earned for keeping a scarce player from the human. */
   denial: number;
 }
 
-/** How many selection points a unit of quality is worth when two candidates are otherwise tied. */
-const QUALITY_TIEBREAK = 1e-4;
-/** Weight on denial per difficulty (Easy ignores the human's squad). */
-const DENIAL_WEIGHT: Record<Difficulty, number> = { easy: 0, normal: 0.5, hard: 1.0 };
-/** Slots to try per player: the best fits only, to keep a pick cheap. */
-const SLOTS_PER_PLAYER = 2;
-/** Hard looks one reply ahead for this many leading candidates. */
-const LOOKAHEAD_CANDIDATES = 4;
-const LOOKAHEAD_REPLIES = 8;
+/** Hard slot eligibility (kept for the simulation harness): what a player may never be asked to do. */
+export function slotEligible(p: PlayerWithStats, slot: number, strict = true): boolean {
+  const bowler = p.primary_role === "BOWL";
+  if (slot <= 1) return isOpenerCapable(p) && !bowler && (!strict || p.stats.finisher_innings < 4);
+  if (slot <= 4) return !bowler;
+  if (slot >= 8) return isTailCapable(p);
+  return true;
+}
 
 const hash = (...xs: (string | number)[]): number => {
   let h = 2166136261;
@@ -54,340 +88,234 @@ const hash = (...xs: (string | number)[]): number => {
   return (h >>> 0) / 4294967296;
 };
 
-/** Selection score of an XI, unrounded so that small improvements register. */
-export const selectionValue = (squad: Squad, challenge: Challenge): number =>
-  calculateDeterministicScore(squad, challenge, { precise: true }).deterministic_total;
+/** A sensible XI shape per format, used for diminishing returns (the 4th all-rounder is worth less). */
+const SHAPE: Record<MatchFormat, { BAT: number; WK: number; AR: number; BOWL: number }> = {
+  T20: { BAT: 4, WK: 1, AR: 3, BOWL: 3 },
+  ODI: { BAT: 5, WK: 1, AR: 2, BOWL: 3 },
+  TEST: { BAT: 5, WK: 1, AR: 1, BOWL: 4 },
+};
 
-// ---------------------------------------------------------------------------------------------
-// Slot rules: what a player may never be asked to do. These were -1500/-2000 score penalties; they
-// are legality constraints now, so quality can never outbid them.
-// ---------------------------------------------------------------------------------------------
+const frontline = (p: PlayerWithStats) => p.primary_role === "BOWL" || p.primary_role === "AR";
+const isPace = (p: PlayerWithStats) => frontline(p) && p.bowling_category === "PACE";
+const isSpin = (p: PlayerWithStats) => frontline(p) && p.bowling_category === "SPIN";
 
-const isMiddleAnchorOrFinisher = (p: PlayerWithStats): boolean =>
-  p.stats.finisher_innings >= 4 || (p.stats.middle_order_innings >= 12 && p.stats.top_order_innings < 6);
-
-/** Hard slot eligibility for the AI (on top of the validator's own slot-role rules). */
-export function slotEligible(p: PlayerWithStats, slot: number, strict = true): boolean {
-  const bowler = p.primary_role === "BOWL";
-  if (slot <= 1) {
-    if (!isOpenerCapable(p) || bowler) return false;
-    return strict ? !isMiddleAnchorOrFinisher(p) : true;
-  }
-  if (slot <= 4) return !bowler;
-  if (slot >= 8) return isTailCapable(p);
-  return true;
+/** Role bucket for balance: a second keeper is just another batter. */
+function bucket(p: PlayerWithStats, mine: PlayerWithStats[]): "BAT" | "WK" | "AR" | "BOWL" {
+  if (p.primary_role === "WK") return mine.some((q) => q.primary_role === "WK" && q.id !== p.id) ? "BAT" : "WK";
+  return p.primary_role;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Rollout: complete an XI greedily. This only has to be a fair, cheap yardstick; the judge's own
-// selection score is what decides between candidates.
-// ---------------------------------------------------------------------------------------------
+const NEED_WORDS: Record<string, [string, string]> = {
+  WK: ["a keeper", "keeper"],
+  BOWL: ["another bowling option", "bowler"],
+  PACE: ["more pace", "seamer"],
+  SPIN: ["a spinner", "spinner"],
+  AR: ["an all-rounder", "all-rounder"],
+};
 
-interface Ctx {
-  challenge: Challenge;
-  format: MatchFormat;
-  pitch: string;
-  quality: Map<string, number>;
-  adj: Map<string, PlayerWithStats>;
-  /** Pool sorted by quality, best first. */
-  sorted: PlayerWithStats[];
-}
+const PITCH_WORDS: Record<string, string> = {
+  GREEN_SEAMER: "a green seamer",
+  DUSTBOWL: "a turner",
+  SLOW_LOW: "a slow, low pitch",
+  HIGH_SCORING_FLAT: "a flat deck",
+};
 
-const frontline = (p: PlayerWithStats, format: MatchFormat) =>
-  p.primary_role === "BOWL" || (p.primary_role === "AR" && p.stats.bowl_wickets >= (format === "TEST" ? 40 : 25));
-
-/** Where a player naturally bats, and what the ground wants, on the same scale as quality. */
-function affinity(p: PlayerWithStats, slot: number, sq: Squad, c: Ctx): number {
-  const { format, pitch } = c;
-  const a = c.adj.get(p.id) ?? p;
-  const test = format === "TEST";
-  const t20 = format === "T20";
-  const isBat = p.primary_role === "BAT";
-  const isWK = p.primary_role === "WK";
-  const isAR = p.primary_role === "AR";
-  let v = 0;
-
-  if (slot <= 1) {
-    const open = a.stats.top_order_innings >= 8 || (a.stats.bat_innings >= 5 && a.stats.top_order_innings / Math.max(1, a.stats.bat_innings) >= 0.35);
-    if (open && (isBat || isWK)) v += 25;
-    else if (isBat && a.stats.top_order_innings >= 3) v += 8;
-  } else if (slot === 2) {
-    if (a.stats.bat_average >= (test ? 42 : 38) && (isBat || isWK)) v += 18;
-  } else if (slot <= 4) {
-    if (a.stats.middle_order_innings >= 8) v += 8;
-  } else if (slot <= 6) {
-    if (test) {
-      if (isAR) v += 22;
-      else if (isWK) v += 18;
-      else if (isBat && a.stats.bat_average >= 32) v += 12;
-    } else {
-      if (a.stats.finisher_innings >= 5) v += 40;
-      else if (isAR) v += 16;
-      else if (a.stats.bat_strike_rate >= (t20 ? 140 : 100)) v += 12;
-    }
-  } else if (slot === 7) {
-    if (isAR) v += 15;
-    else if (p.primary_role === "BOWL" && a.stats.bat_average >= 14) v += 10;
-  } else if (a.stats.bowl_wickets >= (test ? 60 : 40)) v += 10;
-
-  // Squad needs the judge pays for
-  if (isWK && !sq.some((q) => q && q.primary_role === "WK")) v += 25;
-  const bowlers = sq.filter((q) => q && (q.primary_role === "BOWL" || q.primary_role === "AR" || q.stats.bowl_overs >= 2)).length;
-  if (bowlers < 6 && (p.primary_role === "BOWL" || isAR)) v += 12;
-
-  // What the ground wants, with diminishing returns so a rollout does not stack one type
-  const have = (pred: (q: PlayerWithStats) => boolean) => sq.filter((q) => q && pred(q)).length;
-  const fPace = (q: PlayerWithStats) => q.bowling_category === "PACE" && frontline(q, format);
-  const fSpin = (q: PlayerWithStats) => q.bowling_category === "SPIN" && frontline(q, format);
-  const pace = fPace(p);
-  const spin = fSpin(p);
-  switch (pitch) {
-    case "GREEN_SEAMER":
-      if (pace) v += have(fPace) < 3 ? 28 : 6;
-      if (spin && have(fSpin) >= 1) v -= 18;
-      break;
-    case "DUSTBOWL":
-      if (spin) v += have(fSpin) < 3 ? 28 : 6;
-      if (pace && have(fPace) >= 2) v -= 18;
-      break;
-    case "SLOW_LOW":
-      if (spin && have(fSpin) < 2) v += 22;
-      if (isCutter(p) && frontline(p, format)) v += 10;
-      if (a.stats.bowl_economy > 0 && a.stats.bowl_economy <= (t20 ? 7.2 : test ? 2.8 : 4.9)) v += 8;
-      break;
-    case "HIGH_SCORING_FLAT":
-      if (isBat && a.stats.bat_strike_rate >= (t20 ? 135 : test ? 55 : 92)) v += 12;
-      if ((pace || spin) && a.stats.bowl_economy > 0 && a.stats.bowl_economy <= (t20 ? 7.5 : test ? 3.0 : 5.0)) v += 10;
-      break;
-  }
-  return v;
-}
-
-/** Slots in the order a rollout fills them: the hardest to staff first. */
-const FILL_ORDER = [10, 9, 8, 0, 1, 7, 2, 3, 4, 5, 6];
-
-/**
- * Completes `squad` to eleven from `pool` (minus `exclude`), best affinity first, only with
- * legal, eligible players. Returns the completed XI (possibly short if the pool cannot finish it).
- */
-function complete(squad: Squad, c: Ctx, exclude: Set<string>): Squad {
-  const sq = squad.slice();
-  const used = new Set<string>(exclude);
-  for (const p of sq) if (p) used.add(p.id);
-  for (const slot of FILL_ORDER) {
-    if (sq[slot]) continue;
-    let best: PlayerWithStats | null = null;
-    let bestScore = -Infinity;
-    const rejected: string[] = [];
-    for (let guard = 0; guard < 6; guard++) {
-      best = null;
-      bestScore = -Infinity;
-      for (const p of c.sorted) {
-        if (used.has(p.id) || rejected.includes(p.id)) continue;
-        if (!slotEligible(p, slot)) continue;
-        const s = (c.quality.get(p.id) ?? 0) + affinity(p, slot, sq, c);
-        if (s > bestScore) {
-          bestScore = s;
-          best = p;
-        }
-      }
-      if (!best) break;
-      if (canPickPlayer(best, sq, c.challenge, slot).allowed) break;
-      rejected.push(best.id);
-      best = null;
-    }
-    if (best) {
-      sq[slot] = best;
-      used.add(best.id);
-    }
-  }
-  return sq;
-}
-
-const completedValue = (squad: Squad, c: Ctx, exclude: Set<string>): number => selectionValue(complete(squad, c, exclude), c.challenge);
-
-function buildCtx(pool: PlayerWithStats[], challenge: Challenge): Ctx {
-  const format = (challenge.format || "T20") as MatchFormat;
-  const quality = new Map<string, number>();
-  const adj = new Map<string, PlayerWithStats>();
-  for (const p of pool) {
-    quality.set(p.id, playerQuality(p, format));
-    adj.set(p.id, eraAdjusted(p, format));
-  }
-  const sorted = [...pool].sort((a, b) => (quality.get(b.id) ?? 0) - (quality.get(a.id) ?? 0));
-  return { challenge, format, pitch: challenge.venue.pitch_type, quality, adj, sorted };
-}
-
-// ---------------------------------------------------------------------------------------------
-// The pick
-// ---------------------------------------------------------------------------------------------
-
-interface Candidate {
-  player: PlayerWithStats;
-  slot: number;
-  own: number; // completed-XI selection value
-  denial: number;
+interface Scored {
+  p: PlayerWithStats;
   total: number;
+  quality: number;
+  pitch: number;
+  need: number;
+  needKey?: string;
+  balance: number;
+  denial: number;
+  denialKey?: string;
+  fame: number;
+  home: number;
 }
 
 export function chooseAiPick(input: AiPickInput): AiPickResult | null {
   const { pool, squad, opponentSquad, challenge, difficulty } = input;
   if (pool.length === 0) return null;
-  const empties: number[] = [];
-  for (let i = 0; i < 11; i++) if (!squad[i]) empties.push(i);
-  if (empties.length === 0) return null;
+  const slotIndex = squad.findIndex((p) => !p);
+  if (slotIndex === -1) return null;
+  const format = (challenge.format || "T20") as MatchFormat;
+  const persona = PERSONAS[difficulty] ?? PERSONAS.normal;
+  const mine = squad.filter((p): p is PlayerWithStats => !!p);
+  const theirs = opponentSquad.filter((p): p is PlayerWithStats => !!p);
+  const ctx: PickContext = { pool, opponentSquad };
+  const left = 11 - mine.length;
+  const stage = mine.length / 11; // 0 at the first pick, ~0.9 at the last
 
-  const ctx = buildCtx(pool, challenge);
-  const pickCtx: PickContext = { pool, opponentSquad };
-  const none = new Set<string>();
-  const baseOwn = completedValue(squad, ctx, none);
-
-  // --- candidate (player, slot) pairs: legal, eligible, best fits only -------------------------
-  const build = (strict: boolean | null, shared = true): { player: PlayerWithStats; slot: number }[] => {
-    const pairs: { player: PlayerWithStats; slot: number }[] = [];
-    for (const p of pool) {
-      const slots: { slot: number; fit: number }[] = [];
-      for (const slot of empties) {
-        if (strict !== null && !slotEligible(p, slot, strict)) continue;
-        if (!canPickPlayer(p, squad, challenge, slot, shared ? pickCtx : undefined).allowed) continue;
-        slots.push({ slot, fit: affinity(p, slot, squad, ctx) });
-      }
-      slots.sort((a, b) => b.fit - a.fit);
-      for (const s of slots.slice(0, SLOTS_PER_PLAYER)) pairs.push({ player: p, slot: s.slot });
-    }
-    return pairs;
-  };
-  // Supply check: taking (p, slot) must not leave the two squads short of players for a slot class
-  // (openers, non-bowlers for 3-5, tail-capable for 9-11) that the shared pool can no longer staff.
-  const classOf = (slot: number): 0 | 1 | 2 | 3 => (slot <= 1 ? 0 : slot <= 4 ? 1 : slot >= 8 ? 2 : 3);
-  const inClass = (q: PlayerWithStats, k: number) => (k === 0 ? slotEligible(q, 0, false) : k === 1 ? q.primary_role !== "BOWL" : k === 2 ? isTailCapable(q) : true);
-  const need = [0, 0, 0, 0];
-  for (let i = 0; i < 11; i++) {
-    if (!squad[i]) need[classOf(i)]++;
-    if (!opponentSquad[i]) need[classOf(i)]++;
+  const legal = pool.filter((p) => canPickPlayer(p, squad, challenge, undefined, ctx).allowed);
+  if (legal.length === 0) {
+    // No legal pick at all (the draft room allows any player then): take the best one left
+    const best = [...pool].sort((a, b) => playerQuality(b, format) - playerQuality(a, format))[0];
+    return { player: best, slotIndex, reason: `${best.name} was the best player left.`, fallback: true, ownGain: 0, denial: 0 };
   }
-  const supply = [0, 1, 2].map((k) => pool.filter((q) => inClass(q, k)).length);
-  const staffed = (player: PlayerWithStats, slot: number): boolean => {
-    const own = classOf(slot);
-    for (const k of [0, 1, 2]) {
-      const left = supply[k] - (inClass(player, k) ? 1 : 0);
-      const needed = need[k] - (own === k ? 1 : 0);
-      if (left < needed) return false;
-    }
-    return pool.length - 1 >= need[0] + need[1] + need[2] + need[3] - 1;
-  };
-  const staffedPairs = (ps: { player: PlayerWithStats; slot: number }[]) => ps.filter((x) => staffed(x.player, x.slot));
-  let pairs = staffedPairs(build(true));
-  if (pairs.length === 0) pairs = build(true);
-  if (pairs.length === 0) pairs = staffedPairs(build(false));
-  if (pairs.length === 0) pairs = build(false);
-  // Last scored tier: anything the validator allows (the judge still decides between them)
-  if (pairs.length === 0) pairs = build(null);
-  // If the shared pool is already too thin for the opponent, protect only this squad's own legality
-  if (pairs.length === 0) pairs = build(false, false);
-  if (pairs.length === 0) pairs = build(null, false); // strict role fit left nothing: relax it before giving up
 
-  // --- own gain: the judge's score of the completed XI ----------------------------------------
-  const cands: Candidate[] = pairs.map(({ player, slot }) => {
-    const sq = squad.slice();
-    sq[slot] = player;
-    return { player, slot, own: completedValue(sq, ctx, new Set([player.id])), denial: 0, total: 0 };
+  // What my XI still needs, and how urgent it is
+  const myNeeds = rulesFor(challenge, mine, pool);
+  const open = (needs: Need[], xi: PlayerWithStats[]) => needs.map((n) => ({ n, count: Math.max(0, n.required - xi.filter(n.matches).length) })).filter((x) => x.count > 0);
+  const myOpen = open(myNeeds, mine);
+  // Same count as the pick rules: pace and spin are different players, bowling options can overlap with them
+  const of = (key: string) => myOpen.find((x) => x.n.key === key)?.count ?? 0;
+  const demand = of("WK") + Math.max(of("BOWL"), of("PACE") + of("SPIN"), of("AR"));
+  const urgency = Math.min(1, demand / Math.max(1, left));
+  const openers = mine.filter(isNaturalOpener).length;
+
+  // What the human still needs, for scarcity sniping
+  const theirOpen = persona.denial > 0 ? open(rulesFor(challenge, theirs, pool), theirs) : [];
+  const theirLeft = 11 - theirs.length;
+
+  const shape = SHAPE[format];
+  const counts = { BAT: 0, WK: 0, AR: 0, BOWL: 0 };
+  for (const q of mine) counts[bucket(q, mine)]++;
+  const pace = mine.filter(isPace).length;
+  const spin = mine.filter(isSpin).length;
+  const pitchType = challenge.venue.pitch_type;
+  const fav = favouriteCountry(input, pool);
+
+  const scored: Scored[] = legal.map((p) => {
+    const quality = playerQuality(p, format);
+
+    // Play to the conditions
+    let pitch = 0;
+    if (pitchType === "GREEN_SEAMER") {
+      if (isPace(p)) pitch += pace < 3 ? 8 : 2;
+      if (isSpin(p) && spin >= 1) pitch -= 6;
+    } else if (pitchType === "DUSTBOWL") {
+      if (isSpin(p)) pitch += spin < 3 ? 8 : 2;
+      if (isPace(p) && pace >= 2) pitch -= 6;
+    } else if (pitchType === "SLOW_LOW") {
+      if (isSpin(p) && spin < 2) pitch += 6;
+      if (isCutter(p) && frontline(p)) pitch += 4;
+    } else if (format !== "TEST" && p.primary_role !== "BOWL" && p.stats.bat_strike_rate >= (format === "T20" ? 140 : 95)) {
+      pitch += 4;
+    }
+    pitch *= persona.pitch;
+
+    // Fill what the rules still need: little early, a lot late
+    let need = 0;
+    let needKey: string | undefined;
+    for (const { n } of myOpen) {
+      if (!n.matches(p)) continue;
+      const v = 45 * urgency ** 3;
+      if (v > need) {
+        need = v;
+        needKey = n.key;
+      }
+    }
+    // Two proper openers, once the XI starts to take shape
+    if (openers < 2 && isNaturalOpener(p) && left <= 2 - openers + 4) {
+      const v = 15;
+      if (v > need) {
+        need = v;
+        needKey = "OPEN";
+      }
+    }
+    need *= persona.balance;
+
+    // Diminishing returns: the shape of a real XI
+    const b = bucket(p, mine);
+    const over = counts[b] + 1 - shape[b];
+    let balance = over > 0 ? -12 * over : 0;
+    if (b === "WK" && counts.WK === 0 && left <= 4) balance += 10; // the gloves, before it's too late
+    balance *= persona.balance * (0.3 + 0.7 * stage);
+
+    // Keep a scarce player from the human
+    let denial = 0;
+    let denialKey: string | undefined;
+    for (const { n, count } of theirOpen) {
+      if (!n.matches(p) || count > theirLeft) continue;
+      // Scarce: after this pick there are hardly any good ones of this type left for them.
+      // The Shark reacts one player earlier than the Captain.
+      const good = pool.filter((q) => q.id !== p.id && n.matches(q) && playerQuality(q, format) >= 55);
+      if (good.length > count + (persona.denial >= 1 ? 1 : 0)) continue;
+      // Worth more the bigger the drop to the best one they could still get
+      const nextBest = good.reduce((m, q) => Math.max(m, playerQuality(q, format)), 30);
+      const v = persona.denial * (8 + 0.5 * Math.max(0, quality - nextBest));
+      if (v > denial) {
+        denial = v;
+        denialKey = n.key;
+      }
+    }
+
+    const fame = persona.fame ? Math.min(15, (p.stats.matches / 10) * persona.fame) : 0;
+    const home = persona.home && p.country === fav ? persona.home : 0;
+    const noise = persona.noise ? (hash(input.noiseSeed, input.round, p.id) - 0.5) * 2 * persona.noise : 0;
+    const total = quality + pitch + need + balance + denial + fame + home + noise;
+    return { p, total, quality, pitch, need, needKey, balance, denial, denialKey, fame, home };
   });
 
-  // --- denial: how far the human's best completed XI falls without this player ------------------
-  const weight = DENIAL_WEIGHT[difficulty];
-  if (weight > 0 && cands.length > 0) {
-    const userBase = completedValue(opponentSquad, ctx, none);
-    const cache = new Map<string, number>();
-    for (const c of cands) {
-      let d = cache.get(c.player.id);
-      if (d === undefined) {
-        d = Math.max(0, userBase - completedValue(opponentSquad, ctx, new Set([c.player.id])));
-        cache.set(c.player.id, d);
-      }
-      c.denial = d;
-    }
-  }
+  scored.sort((a, b) => b.total - a.total || b.quality - a.quality || a.p.id.localeCompare(b.p.id));
+  const best = scored[0];
+  return {
+    player: best.p,
+    slotIndex,
+    reason: explain(best, scored, { format, pitch: pitchType, mine, persona, difficulty, seed: input.noiseSeed + input.round, fav }),
+    fallback: false,
+    ownGain: best.total - best.denial,
+    denial: best.denial,
+  };
+}
 
-  // Easy: the AI misreads the board. Noise is seeded per match and per pick, so it differs between
-  // matches but a given match always replays the same way.
-  let noise: (c: Candidate) => number = () => 0;
-  if (difficulty === "easy" && cands.length > 1) {
-    const owns = cands.map((c) => c.own);
-    const spread = Math.max(...owns) - Math.min(...owns);
-    noise = (c) => (hash(input.noiseSeed, input.round, c.player.id) - 0.5) * spread * 1.2;
-  }
+/** The Fanboy's favourite country: the host nation when it's in the pool, otherwise a seeded pick. */
+function favouriteCountry(input: AiPickInput, pool: PlayerWithStats[]): string {
+  const host = input.challenge.venue.country;
+  const all = [...pool, ...input.squad.filter((p): p is PlayerWithStats => !!p)];
+  const countries = [...new Set(all.map((p) => p.country))].sort();
+  if (countries.includes(host)) return host;
+  return countries[Math.floor(hash(input.noiseSeed, "fav") * countries.length)] ?? host;
+}
 
-  for (const c of cands) {
-    c.total = c.own + weight * c.denial + noise(c) + QUALITY_TIEBREAK * (ctx.quality.get(c.player.id) ?? 0);
-  }
-  cands.sort((a, b) => b.total - a.total);
+const COUNTRY_WORD: Record<string, string> = {
+  AUS: "an Australian", ENG: "an English", IND: "an Indian", PAK: "a Pakistani", RSA: "a South African", NZL: "a Kiwi",
+  WI: "a West Indian", SL: "a Sri Lankan", BAN: "a Bangladeshi", ZIM: "a Zimbabwean", IRE: "an Irish", AFG: "an Afghan",
+};
 
-  // --- Hard: one-pick lookahead. Assume the human takes the reply that suits them best. ----------
-  if (difficulty === "hard" && cands.length > 1) {
-    const head = cands.slice(0, LOOKAHEAD_CANDIDATES);
-    for (const c of head) {
-      const taken = new Set([c.player.id]);
-      const mine = squad.slice();
-      mine[c.slot] = c.player;
-      // The human's best reply: whichever remaining player lifts their completed XI most
-      const replies = ctx.sorted.filter((p) => !taken.has(p.id)).slice(0, 40);
-      let bestReply: PlayerWithStats | null = null;
-      let bestValue = -Infinity;
-      const replyPool = replies
-        .map((p) => ({ p, slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((s) => !opponentSquad[s]) }))
-        .slice(0, LOOKAHEAD_REPLIES + 12);
-      let tried = 0;
-      for (const { p, slots } of replyPool) {
-        if (tried >= LOOKAHEAD_REPLIES) break;
-        const slot = slots.find((s) => slotEligible(p, s) && canPickPlayer(p, opponentSquad, challenge, s).allowed);
-        if (slot === undefined) continue;
-        tried++;
-        const sq = opponentSquad.slice();
-        sq[slot] = p;
-        const v = completedValue(sq, ctx, new Set([...taken, p.id]));
-        if (v > bestValue) {
-          bestValue = v;
-          bestReply = p;
-        }
-      }
-      if (bestReply) {
-        const after = completedValue(mine, ctx, new Set([...taken, bestReply.id]));
-        c.total = after + weight * c.denial + QUALITY_TIEBREAK * (ctx.quality.get(c.player.id) ?? 0);
-        c.own = after;
-      }
-    }
-    // Only the head was re-scored (a different scale), so reorder within it and keep it on top
-    head.sort((a, b) => b.total - a.total);
-    cands.splice(0, head.length, ...head);
-  }
+/**
+ * The pick's main reason, in a sentence a friend would say. A factor is only named when it decided
+ * the pick (without it, the runner-up would have been taken); otherwise the reason is the player.
+ */
+function explain(
+  s: Scored,
+  all: Scored[],
+  c: { format: MatchFormat; pitch: string; mine: PlayerWithStats[]; persona: Persona; difficulty: Difficulty; seed: number; fav: string }
+): string {
+  const name = s.p.name;
+  const vary = <T,>(xs: T[]) => xs[Math.floor(hash(c.seed, name) * xs.length)];
+  const runner = all.find((x) => x !== s);
+  const margin = runner ? s.total - runner.total : Infinity;
+  // A factor decided the pick when it gave this player more than the runner-up by at least the winning margin
+  const decided = (key: "denial" | "home" | "fame" | "need" | "pitch") => s[key] > 0 && s[key] - (runner?.[key] ?? 0) >= margin;
 
-  // --- the best candidate that also keeps the shared pool completable for both squads -------------
-  for (const c of cands) {
-    if (!canPickPlayer(c.player, squad, challenge, c.slot).allowed) continue;
-    const gain = c.own - baseOwn;
-    const name = c.player.name;
-    let reason: string;
-    if (weight > 0 && c.denial >= 1 && weight * c.denial >= 0.4 * Math.max(0.01, c.own - baseOwn + weight * c.denial)) {
-      reason = `AI took ${name} to keep him from you: without ${name}, your best XI would lose about ${c.denial.toFixed(1)} selection points.`;
-    } else if (squad.every((p) => !p)) {
-      reason = `AI opened with ${name}, the pick that builds the strongest XI for ${challenge.venue.pitch_type.replace(/_/g, " ").toLowerCase()} conditions.`;
-    } else {
-      reason = `AI strategically secured ${name} for Slot #${c.slot + 1} (+${gain.toFixed(1)} selection points).`;
-    }
-    return { player: c.player, slotIndex: c.slot, reason, fallback: false, ownGain: gain, denial: c.denial };
+  const early = c.mine.length <= 2;
+  if (s.denial > 0 && s.denialKey && decided("denial")) {
+    const [what, word] = NEED_WORDS[s.denialKey] ?? ["that", "player"];
+    return vary([
+      `You still need ${what}, and ${name} was one of the last good ones left. Sorry.`,
+      `Took ${name} before you could: there aren't many good ${word}s left and you still need one.`,
+    ]);
   }
-
-  // --- fallback: nothing cleared the normal scoring, so take the best-quality legal player ----------
-  const slotsOpen = empties.slice();
-  for (const p of ctx.sorted) {
-    for (const slot of slotsOpen) {
-      if (canPickPlayer(p, squad, challenge, slot, pickCtx).allowed) {
-        return { player: p, slotIndex: slot, reason: `AI picked ${p.name} into Slot #${slot + 1}.`, fallback: true, ownGain: 0, denial: 0 };
-      }
-    }
+  if (decided("home")) return vary([`Had to have ${name}. Can't leave out ${COUNTRY_WORD[c.fav] ?? "a home"} hero.`, `${name}! Always wanted him in my side.`]);
+  if (decided("fame")) return vary([`${name}, a big name. Couldn't resist.`, `Everyone knows ${name}. He's in.`]);
+  if (s.needKey && decided("need") && !early) {
+    if (s.needKey === "OPEN") return `Needed a proper opener, and ${name} was the best one left.`;
+    const [what] = NEED_WORDS[s.needKey] ?? ["him"];
+    return vary([`Needed ${what}, and ${name} was the best one left.`, `${name} fills the gap: I still needed ${what}.`]);
   }
-  // Last resort: any player into any slot, so the draft never stalls
-  const p = ctx.sorted[0];
-  return { player: p, slotIndex: slotsOpen[0], reason: `AI picked ${p.name} into Slot #${slotsOpen[0] + 1}.`, fallback: true, ownGain: 0, denial: 0 };
+  if (decided("pitch") && !early) {
+    return vary([`${name} on ${PITCH_WORDS[c.pitch] ?? "this pitch"}: exactly what this ground wants.`, `These conditions are made for ${name}.`]);
+  }
+  const top = all.reduce((m, x) => Math.max(m, x.quality), 0);
+  if (s.quality >= top - 3 || early) {
+    return vary([`${name} is the best player left. Too good to pass up.`, `Couldn't let ${name} go past me.`, `${name}, the pick of what's left.`]);
+  }
+  // Otherwise: what he does for the side
+  const pace = c.mine.filter(isPace).length;
+  if (s.p.primary_role === "BOWL") return isPace(s.p) && pace <= 1 ? `${name} to lead my attack.` : vary([`${name} strengthens my bowling.`, `${name} gives my attack another weapon.`]);
+  if (s.p.primary_role === "AR") return vary([`${name} gives me runs and overs.`, `${name} balances my side: bat and ball.`]);
+  if (s.p.primary_role === "WK") return `${name} with the gloves and the bat.`;
+  return isNaturalOpener(s.p) ? `${name} to open the batting.` : vary([`${name} strengthens my top order.`, `${name} adds runs to my middle order.`]);
 }

@@ -1,6 +1,7 @@
 import type { MatchFormat } from "../../../src/core/types";
 import type { Difficulty } from "../api";
 import { POOL_THEMES, themeByKey, type ThemeKey } from "../../../src/core/themes";
+import { PERSONA_INFO } from "../../../src/core/personas";
 
 const FORMATS: { key: MatchFormat; title: string; text: string }[] = [
   { key: "T20", title: "T20", text: "20 overs a side. Hitters, finishers and death bowling." },
@@ -8,10 +9,10 @@ const FORMATS: { key: MatchFormat; title: string; text: string }[] = [
   { key: "TEST", title: "Test", text: "Two innings each. Patience at the top, and twenty wickets." },
 ];
 
-const LEVELS: { key: Difficulty; label: string }[] = [
-  { key: "easy", label: "Easy" },
-  { key: "normal", label: "Normal" },
-  { key: "hard", label: "Hard" },
+const LEVELS: { key: Difficulty; level: string }[] = [
+  { key: "easy", level: "Easy" },
+  { key: "normal", level: "Normal" },
+  { key: "hard", level: "Hard" },
 ];
 
 export function Setup(props: {
@@ -56,14 +57,16 @@ export function Setup(props: {
         <p class="muted" style="font-size:13px">{themeByKey(props.theme).description}</p>
       </div>
       <div class="stack" style="gap:8px">
-        <div class="label">AI opponent</div>
+        <div class="label">Your opponent</div>
         <div class="seg">
           {LEVELS.map((l) => (
             <button type="button" class={props.difficulty === l.key ? "on" : ""} onClick={() => props.onDifficulty(l.key)} aria-pressed={props.difficulty === l.key}>
-              {l.label}
+              <span style="display:block">{PERSONA_INFO[l.key].short}</span>
+              <span class="faint" style="display:block;font-size:11px;font-weight:600">{l.level}</span>
             </button>
           ))}
         </div>
+        <p class="muted" style="font-size:13px">{PERSONA_INFO[props.difficulty].blurb}</p>
       </div>
       <div class="actions">
         <button type="button" class="btn btn-primary" disabled={props.busy} onClick={props.onNext}>

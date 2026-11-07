@@ -6,6 +6,7 @@ import { playerQuality } from "./player-quality";
 import { computeAwards } from "./match-facts";
 import { computeContributions, PAR_RPO, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
+import { isBowlingOption } from "./validator";
 
 /**
  * "Did the XI you picked deserve to win?" This game is about selecting a better and more balanced
@@ -81,7 +82,6 @@ const PITCH_HINT: Record<string, string> = {
 };
 
 const players = (s: Squad) => s.filter((p): p is PlayerWithStats => p !== null);
-const isBowlingOption = (p: PlayerWithStats) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const r1 = (n: number) => Math.round(n * 10) / 10;
 

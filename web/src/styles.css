@@ -90,7 +90,7 @@ h1, h2, h3, p { margin: 0; }
 .choice b { font-size: 17px; }
 .choice.on { border-color: var(--gold); background: #1f1c12; }
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.seg button { min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; }
+.seg button { min-height: 52px; padding: 4px 0; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; }
 .seg button.on { border-color: var(--gold); background: #1f1c12; }
 .themes { display: flex; flex-wrap: wrap; gap: 8px; }
 .themes button { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; font-size: 14px; }

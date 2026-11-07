@@ -31,6 +31,18 @@ export function isOpenerCapable(p: PlayerWithStats): boolean {
   );
 }
 
+/**
+ * Someone the captain can actually throw the ball to: a bowler, an all-rounder, or a part-timer
+ * who bowls in at least 40% of his matches, about 1.5 overs or more each time. (Career overs alone
+ * counted almost every batter: two overs in a whole career made Kohli a "bowling option".)
+ */
+export function isBowlingOption(p: PlayerWithStats): boolean {
+  if (p.primary_role === "BOWL" || p.primary_role === "AR") return true;
+  const s = p.stats;
+  if (!s.bowl_innings || s.bowl_overs <= 0) return false;
+  return s.bowl_innings / Math.max(1, s.matches) >= 0.4 && s.bowl_overs / s.bowl_innings >= 1.5;
+}
+
 /** Frontline bowler or all-rounder: the only players who may bat 9-11. */
 export function isTailCapable(p: PlayerWithStats): boolean {
   return p.primary_role === "BOWL" || p.primary_role === "AR";
@@ -59,7 +71,7 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
 
   // Bowling rule: At least 5 bowling options (BOWL or AR, or >= 2 overs per match)
   const bowlingOptions = nonNullSquad.filter(
-    (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
+    isBowlingOption
   );
   if (bowlingOptions.length < 5) {
     violations.push(`Squad must have at least 5 bowling options (currently ${bowlingOptions.length}).`);
@@ -191,7 +203,7 @@ export function checkChallengeFeasibility(
   }
 
   const bowlers = pool.filter(
-    (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0
+    isBowlingOption
   );
   if (bowlers.length < 5) {
     return {
@@ -276,7 +288,7 @@ export function checkChallengeFeasibility(
   const requirements: { matches: (p: PlayerWithStats) => boolean; need: number }[] = [
     { matches: (p) => p.primary_role === "WK", need: 1 },
     {
-      matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
+      matches: isBowlingOption,
       need: 5,
     },
   ];
@@ -427,8 +439,6 @@ export function checkDraftFeasibility(
   });
 
   // --- Two-team necessary conditions (O(pool), no search) ---
-  const isBowlingOption = (p: PlayerWithStats) =>
-    p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0;
   if (pool.filter((p) => p.primary_role === "WK").length < 2) {
     return fail("Pool cannot support two disjoint XIs: fewer than 2 wicketkeepers.");
   }
@@ -539,8 +549,6 @@ export interface Need {
   waived?: boolean;
 }
 
-export const isBowlingOption = (p: PlayerWithStats): boolean =>
-  p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0;
 
 const categoryMatcher = (cat: "PACE" | "SPIN" | "WK" | "AR") => (p: PlayerWithStats) =>
   cat === "PACE" ? p.bowling_category === "PACE"
