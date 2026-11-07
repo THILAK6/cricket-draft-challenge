@@ -108,6 +108,18 @@ export interface AiSnipeInfo {
   player: PlayerWithStats;
   slotIndex: number;
   reason: string;
+  /** Pick number in the draft (1-22). */
+  pickNumber?: number;
+}
+
+export interface PickLogEntry {
+  /** Pick number in the draft (1-22). */
+  n: number;
+  by: "USER" | "AI";
+  playerId: string;
+  name: string;
+  country: string;
+  role: PlayerRole;
 }
 
 export interface DraftState {
@@ -119,10 +131,21 @@ export interface DraftState {
   currentTurn: "USER" | "AI";
   round: number;
   maxRounds: number;
+  /** DRAFTING: picks being made. READY_TO_PLAY: both XIs full, batting order can be set. COMPLETED: match played. */
   status: "WAITING" | "DRAFTING" | "SOLO_PICK" | "READY_TO_PLAY" | "COMPLETED";
   lastActionTimestamp: number;
   /** Fixed per-room RNG seed so a given pair of squads always produces the same match. */
   matchSeed?: number;
+  /** Who won the draft toss and so picks first. */
+  firstPick?: "USER" | "AI";
+  /** Snake order: who makes each of the 22 picks (1-2-2-...-2-1). */
+  pickOrder?: ("USER" | "AI")[];
+  /** Picks made so far (index into pickOrder). */
+  pickIndex?: number;
+  /** Every pick in order, for the draft board. */
+  pickLog?: PickLogEntry[];
+  /** The AI picks made since the user's last pick (one or two in a snake draft). */
+  lastAiPicks?: AiSnipeInfo[];
   /** The user's optional bowling plan (new-ball pair, death bowler); the rest is chosen from conditions. */
   bowlingPlan?: { newBall?: string[]; death?: string };
   simulation?: MatchSimulationResult;
@@ -132,6 +155,14 @@ export interface DraftState {
   userStuck?: boolean;
   /** AI opponent strength. easy: noisy reads of the board; normal: default, with counter-sniping; hard: pure best-value drafting. */
   difficulty?: "easy" | "normal" | "hard";
+}
+
+/** Snake draft: the first picker takes pick 1, then each side picks twice in turn, and the other side takes pick 22. */
+export function snakeOrder(first: "USER" | "AI", picksPerSide = 11): ("USER" | "AI")[] {
+  const second: "USER" | "AI" = first === "USER" ? "AI" : "USER";
+  const order: ("USER" | "AI")[] = [];
+  for (let r = 0; r < picksPerSide; r++) order.push(...(r % 2 === 0 ? [first, second] : [second, first]));
+  return order;
 }
 
 export interface SlotDefinition {

@@ -1,9 +1,11 @@
-import type { Challenge, DraftState, PlayerWithStats, ScoringBreakdown } from "../core/types";
-import { validateSquad, canPickPlayer, type PickContext } from "../core/validator";
-import { calculateDeterministicScore, applyBoundedAdjustment } from "../core/scoring";
+import type { AiSnipeInfo, DraftState, MatchFormat, PlayerWithStats } from "../core/types";
+import { snakeOrder } from "../core/types";
+import { canPickPlayer, type PickContext } from "../core/validator";
+import { calculateDeterministicScore } from "../core/scoring";
 import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
 import { chooseAiPick } from "../core/ai-draft";
+import { arrangeSquad } from "../core/batting-order";
 
 /** Stable per-room number: Easy's misjudgements differ from match to match but replay identically. */
 function roomSeed(roomId: string): number {
@@ -29,6 +31,15 @@ function generateSeed(): number {
   return (crypto.getRandomValues(new Uint32Array(1))[0] % 2147483646) + 1;
 }
 
+const TOTAL_PICKS = 22;
+type Result = { success: true } | { success: false; error: string; status: number };
+
+/**
+ * One head-to-head draft. Rules of the room:
+ * - A toss decides who picks first; picks then follow a snake order (1-2-2-...-2-1).
+ * - Picks are final. Players go into a natural batting order automatically.
+ * - Once both XIs are full the user can set their batting order, then play the match once.
+ */
 export class DraftRoom implements DurableObject {
   private state: DurableObjectState;
   private env: any;
@@ -46,12 +57,9 @@ export class DraftRoom implements DurableObject {
     // Load persisted state if not in memory (before WS upgrade so SYNC works after eviction)
     if (!this.draftState) {
       this.draftState = (await this.state.storage.get<DraftState>("draftState")) ?? null;
-      if (this.draftState) {
-        this.normalizeSquads(this.draftState);
-      }
+      if (this.draftState) this.normalize(this.draftState);
     }
 
-    // WebSocket upgrade
     if (request.headers.get("Upgrade") === "websocket") {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
@@ -61,186 +69,186 @@ export class DraftRoom implements DurableObject {
 
     if (url.pathname.endsWith("/init") && request.method === "POST") {
       // A room can only be initialized once; the public proxy also blocks this path.
-      if (this.draftState) {
-        return Response.json({ error: "Draft room already initialized" }, { status: 409 });
-      }
+      if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
       const body = await readJson<DraftState>(request);
       if (!body || !body.challenge || !Array.isArray(body.pool)) {
         return Response.json({ error: "Invalid init payload" }, { status: 400 });
       }
-      this.normalizeSquads(body);
       body.matchSeed = body.matchSeed ?? generateSeed();
+      // The toss: whoever wins it picks first
+      body.firstPick = body.firstPick ?? (generateSeed() % 2 === 0 ? "USER" : "AI");
+      body.pickOrder = snakeOrder(body.firstPick);
+      body.pickIndex = 0;
+      body.pickLog = [];
+      body.lastAiPicks = [];
+      body.status = "DRAFTING";
       this.draftState = body;
-      await this.state.storage.put("draftState", this.draftState);
-      this.broadcast({ type: "INIT", state: this.draftState });
+      this.normalize(body);
+      body.currentTurn = body.pickOrder[0];
+      this.runAiTurns();
+      await this.persistAndBroadcast("INIT");
       return Response.json({ success: true, state: this.draftState });
     }
 
     if (url.pathname.endsWith("/state") && request.method === "GET") {
-      if (!this.draftState) {
-        return Response.json({ error: "Draft room not initialized" }, { status: 404 });
-      }
+      if (!this.draftState) return Response.json({ error: "Draft room not initialized" }, { status: 404 });
       return Response.json({ state: this.draftState });
     }
 
     if (url.pathname.endsWith("/pick") && request.method === "POST") {
-      const body = await readJson<{ playerId?: unknown; targetIndex?: unknown }>(request);
+      const body = await readJson<{ playerId?: unknown }>(request);
       if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-
-      const result = this.applyUserPick(body.playerId, body.targetIndex);
-      if (!result.success) {
-        return Response.json({ error: result.error }, { status: result.status });
-      }
-
+      const result = this.applyUserPick(body.playerId);
+      if (!result.success) return Response.json({ error: result.error }, { status: result.status });
       await this.persistAndBroadcast();
-      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState!.lastAiSnipe });
+      return Response.json({ success: true, state: this.draftState, aiPicks: this.draftState!.lastAiPicks });
     }
 
     // "/referee" is kept as a legacy alias of "/start-match" with identical guards.
     if ((url.pathname.endsWith("/start-match") || url.pathname.endsWith("/referee")) && request.method === "POST") {
       const body = await readJson<{ newBall?: unknown; death?: unknown }>(request);
       const result = await this.startMatch(body ?? undefined);
-      if (!result.success) {
-        return Response.json({ error: result.error }, { status: result.status });
-      }
+      if (!result.success) return Response.json({ error: result.error }, { status: result.status });
       return Response.json({ success: true, results: this.draftState!.results, state: this.draftState });
     }
 
     if (url.pathname.endsWith("/remove") && request.method === "POST") {
-      if (!this.draftState) {
-        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
-      }
-
-      const body = await readJson<{ playerId?: unknown; slotIndex?: unknown }>(request);
-      if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-
-      let targetIdx = -1;
-      if (isValidSlot(body.slotIndex)) {
-        targetIdx = body.slotIndex;
-      } else if (typeof body.playerId === "string") {
-        targetIdx = this.draftState.userPicks.findIndex((p) => p !== null && p.id === body.playerId);
-      }
-
-      if (targetIdx === -1 || !this.draftState.userPicks[targetIdx]) {
-        return Response.json({ error: "Player not found in chosen slot" }, { status: 400 });
-      }
-
-      // Return player to available pool
-      const removed = this.draftState.userPicks[targetIdx]!;
-      this.draftState.userPicks[targetIdx] = null;
-      this.draftState.pool.unshift(removed);
-
-      // Squad changed: a fresh simulation is required once it is full again
-      if (this.draftState.status === "COMPLETED" || this.draftState.status === "READY_TO_PLAY") {
-        this.draftState.status = "DRAFTING";
-      }
-
-      // Set turn back to user so they can pick their replacement
-      this.draftState.currentTurn = "USER";
-      this.draftState.lastActionTimestamp = Date.now();
-
-      await this.persistAndBroadcast();
-      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
+      return Response.json({ error: "Picks are final: a drafted player can't be returned to the pool." }, { status: 409 });
     }
 
     if (url.pathname.endsWith("/reorder") && request.method === "POST") {
-      if (!this.draftState) {
-        return Response.json({ error: "Draft room not initialized" }, { status: 400 });
-      }
-
       const body = await readJson<{ fromIndex?: unknown; toIndex?: unknown }>(request);
-      if (!body || !isValidSlot(body.fromIndex) || !isValidSlot(body.toIndex)) {
-        return Response.json({ error: "Invalid slot indices (must be integers 0-10)" }, { status: 400 });
-      }
-      const { fromIndex, toIndex } = body;
-
-      // Validate the swap against slot rules (e.g. batting-hand order) before applying it
-      const swapped = [...this.draftState.userPicks];
-      [swapped[fromIndex], swapped[toIndex]] = [swapped[toIndex], swapped[fromIndex]];
-      for (const idx of [fromIndex, toIndex]) {
-        const moved = swapped[idx];
-        if (!moved) continue;
-        const check = canPickPlayer(moved, swapped, this.draftState.challenge, idx);
-        if (!check.allowed) {
-          return Response.json({ error: check.reason || "Illegal reorder" }, { status: 400 });
-        }
-      }
-      this.draftState.userPicks = swapped;
-
-      // Batting order changed after a completed match: allow a fresh simulation
-      if (this.draftState.status === "COMPLETED") {
-        this.draftState.status = "READY_TO_PLAY";
-      }
-      this.draftState.lastActionTimestamp = Date.now();
-
+      if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+      const result = this.reorder(body.fromIndex, body.toIndex);
+      if (!result.success) return Response.json({ error: result.error }, { status: result.status });
       await this.persistAndBroadcast();
-      return Response.json({ success: true, state: this.draftState, aiPick: this.draftState.lastAiSnipe });
+      return Response.json({ success: true, state: this.draftState });
     }
 
     return new Response("Not found", { status: 404 });
   }
 
-  /**
-   * Validates and applies a user pick, then lets the AI respond. Shared by HTTP and WebSocket.
-   */
-  private applyUserPick(
-    playerId: unknown,
-    targetIndex: unknown
-  ): { success: true } | { success: false; error: string; status: number } {
+  private format(): MatchFormat {
+    return (this.draftState?.challenge.format || "T20") as MatchFormat;
+  }
+
+  /** Validates and applies a user pick, then lets the AI make its pick(s). Shared by HTTP and WebSocket. */
+  private applyUserPick(playerId: unknown): Result {
     const ds = this.draftState;
-    if (!ds || (ds.status !== "DRAFTING" && ds.status !== "SOLO_PICK")) {
-      return { success: false, error: "Draft not in drafting state", status: 400 };
-    }
-    if (ds.currentTurn !== "USER") {
-      return { success: false, error: "Not user turn", status: 403 };
-    }
-    if (typeof playerId !== "string") {
-      return { success: false, error: "playerId is required", status: 400 };
-    }
-    if (targetIndex !== undefined && targetIndex !== null && !isValidSlot(targetIndex)) {
-      return { success: false, error: "targetIndex must be an integer 0-10", status: 400 };
+    if (!ds || ds.status !== "DRAFTING") return { success: false, error: "The draft is over", status: 400 };
+    if (ds.currentTurn !== "USER") return { success: false, error: "Not your pick yet", status: 403 };
+    if (typeof playerId !== "string") return { success: false, error: "playerId is required", status: 400 };
+    if (ds.userPicks.every(Boolean)) return { success: false, error: "Your XI is already full", status: 400 };
+
+    const player = ds.pool.find((p) => p.id === playerId);
+    if (!player) return { success: false, error: "That player has already been picked", status: 400 };
+
+    const ctx: PickContext = { pool: ds.pool, opponentSquad: ds.aiPicks };
+    const check = canPickPlayer(player, ds.userPicks, ds.challenge, undefined, ctx);
+    // Safety valve: if no pool player is legal for the user, any player may be taken so the draft can't stall
+    if (!check.allowed && !this.noLegalPick(ds.userPicks, ctx)) {
+      return { success: false, error: check.reason || "That pick isn't allowed", status: 400 };
     }
 
-    const pick = this.executePick(playerId, "USER", isValidSlot(targetIndex) ? targetIndex : undefined);
-    if (!pick.success) {
-      return { success: false, error: pick.error || "Illegal pick", status: 400 };
-    }
+    ds.lastAiPicks = [];
+    this.place("USER", player);
+    this.runAiTurns();
+    return { success: true };
+  }
 
-    // Trigger AI pick if AI still needs players; otherwise hand the turn back
-    if (ds.aiPicks.filter(Boolean).length < 11) {
-      this.executeAiPick();
-    } else {
-      ds.currentTurn = "USER";
-    }
+  /** Moves a drafted player to the next pick's squad, logs it, and advances the snake order. */
+  private place(by: "USER" | "AI", player: PlayerWithStats, aiSlot?: number) {
+    const ds = this.draftState!;
+    ds.pool = ds.pool.filter((p) => p.id !== player.id);
+    const key = by === "USER" ? "userPicks" : "aiPicks";
+    const squad = ds[key].slice();
+    if (by === "AI" && isValidSlot(aiSlot) && !squad[aiSlot]) squad[aiSlot] = player;
+    else squad[squad.indexOf(null)] = player;
+    ds[key] = arrangeSquad(squad, this.format());
+    ds.pickIndex = (ds.pickIndex ?? 0) + 1;
+    ds.pickLog = [...(ds.pickLog ?? []), { n: ds.pickIndex, by, playerId: player.id, name: player.name, country: player.country, role: player.primary_role }];
+    ds.round = Math.floor((ds.pickIndex) / 2) + 1;
+    ds.lastActionTimestamp = Date.now();
+    this.advance();
+  }
 
-    if (ds.userPicks.filter(Boolean).length >= 11 && ds.aiPicks.filter(Boolean).length >= 11) {
+  private advance() {
+    const ds = this.draftState!;
+    const order = ds.pickOrder ?? snakeOrder("USER");
+    const full = (sq: (PlayerWithStats | null)[]) => sq.every(Boolean);
+    if ((ds.pickIndex ?? 0) >= TOTAL_PICKS || (full(ds.userPicks) && full(ds.aiPicks)) || ds.pool.length === 0) {
       ds.status = "READY_TO_PLAY";
       ds.currentTurn = "USER";
+      return;
     }
+    let next = order[ds.pickIndex ?? 0] ?? "USER";
+    // A side whose XI is already full passes its turn
+    if (next === "USER" && full(ds.userPicks)) next = "AI";
+    if (next === "AI" && full(ds.aiPicks)) next = "USER";
+    ds.currentTurn = next;
+  }
+
+  /** The AI makes every pick it is due (two in a row in a snake draft) until it is the user's turn. */
+  private runAiTurns() {
+    const ds = this.draftState!;
+    let guard = 0;
+    while (ds.status === "DRAFTING" && ds.currentTurn === "AI" && guard++ < TOTAL_PICKS) {
+      const result = chooseAiPick({
+        pool: ds.pool,
+        squad: ds.aiPicks,
+        opponentSquad: ds.userPicks,
+        challenge: ds.challenge,
+        difficulty: ds.difficulty ?? "normal",
+        noiseSeed: roomSeed(ds.roomId),
+        round: ds.pickIndex ?? 0,
+      });
+      if (!result || !ds.pool.some((p) => p.id === result.player.id)) {
+        // Nothing the AI can take: hand the turn over rather than stall
+        ds.currentTurn = "USER";
+        break;
+      }
+      this.place("AI", result.player, result.slotIndex);
+      const info: AiSnipeInfo = {
+        player: result.player,
+        slotIndex: ds.aiPicks.findIndex((p) => p?.id === result.player.id),
+        reason: result.reason,
+        pickNumber: ds.pickIndex,
+      };
+      ds.lastAiPicks = [...(ds.lastAiPicks ?? []), info];
+      ds.lastAiSnipe = info;
+    }
+  }
+
+  private noLegalPick(squad: (PlayerWithStats | null)[], ctx: PickContext): boolean {
+    const ds = this.draftState!;
+    return !ds.pool.some((p) => canPickPlayer(p, squad, ds.challenge, undefined, ctx).allowed);
+  }
+
+  /** The batting order is the user's to set once both XIs are complete, until the match is played. */
+  private reorder(fromIndex: unknown, toIndex: unknown): Result {
+    const ds = this.draftState;
+    if (!ds) return { success: false, error: "Draft room not initialized", status: 400 };
+    if (!isValidSlot(fromIndex) || !isValidSlot(toIndex)) return { success: false, error: "Invalid slot indices (must be integers 0-10)", status: 400 };
+    if (ds.status === "DRAFTING") return { success: false, error: "Set your batting order once the draft is over", status: 409 };
+    if (ds.status === "COMPLETED") return { success: false, error: "The match has been played", status: 409 };
+    const order = ds.userPicks.slice();
+    const [moved] = order.splice(fromIndex, 1);
+    order.splice(toIndex, 0, moved);
+    ds.userPicks = order;
+    ds.lastActionTimestamp = Date.now();
     return { success: true };
   }
 
   /**
-   * Runs the match once per squad configuration. Repeat calls return the stored result,
-   * and the room's fixed seed means re-submitting identical squads cannot re-roll it.
+   * Runs the match once. Repeat calls return the stored result, and the room's fixed seed means
+   * the result can't be re-rolled.
    */
-  private async startMatch(planInput?: { newBall?: unknown; death?: unknown }): Promise<{ success: true } | { success: false; error: string; status: number }> {
+  private async startMatch(planInput?: { newBall?: unknown; death?: unknown }): Promise<Result> {
     const ds = this.draftState;
-    if (!ds) {
-      return { success: false, error: "Draft room not initialized", status: 400 };
-    }
-    if (ds.status === "COMPLETED" && ds.results) {
-      return { success: true };
-    }
-
-    const userFilled = ds.userPicks.filter(Boolean).length;
-    const aiFilled = ds.aiPicks.filter(Boolean).length;
-    if (userFilled < 11 || aiFilled < 11) {
-      return {
-        success: false,
-        error: "Both squads must be completely filled (11 players each) before starting match simulation",
-        status: 400,
-      };
+    if (!ds) return { success: false, error: "Draft room not initialized", status: 400 };
+    if (ds.status === "COMPLETED" && ds.results) return { success: true };
+    if (ds.userPicks.filter(Boolean).length < 11 || ds.aiPicks.filter(Boolean).length < 11) {
+      return { success: false, error: "Both XIs must be complete (11 players each) before the match", status: 400 };
     }
 
     // Keep only plan entries that are real bowlers in the user's XI (keepers never bowl)
@@ -255,56 +263,38 @@ export class DraftRoom implements DurableObject {
     return { success: true };
   }
 
-  /** Scan for a legal move so the UI can tell a stuck user to free a slot. Only runs near the end (cheap). */
-  private computeUserStuck(): boolean {
-    const st = this.draftState;
-    if (!st || st.status === "COMPLETED" || st.status === "READY_TO_PLAY") return false;
-    const empties = st.userPicks.map((p, i) => (p ? -1 : i)).filter((i) => i >= 0);
-    if (empties.length === 0 || empties.length > 5) return false;
-    const ctx = this.poolContext(st.userPicks);
-    for (const slot of empties) {
-      for (const p of st.pool) {
-        if (canPickPlayer(p, st.userPicks, st.challenge, slot, ctx).allowed) return false;
-      }
-    }
-    return true;
-  }
-
-  private async persistAndBroadcast() {
-    if (this.draftState) this.draftState.userStuck = this.computeUserStuck();
+  private async persistAndBroadcast(type: "UPDATE" | "INIT" = "UPDATE") {
+    const ds = this.draftState;
+    if (ds) ds.userStuck = ds.status === "DRAFTING" && ds.currentTurn === "USER" && this.noLegalPick(ds.userPicks, { pool: ds.pool, opponentSquad: ds.aiPicks });
     await this.state.storage.put("draftState", this.draftState);
-    this.broadcast({ type: "UPDATE", state: this.draftState });
+    this.broadcast({ type, state: this.draftState });
   }
 
-  private normalizeSquads(state: DraftState) {
-    if (!Array.isArray(state.userPicks) || state.userPicks.length !== 11) {
-      const existing = (state.userPicks || []).filter(Boolean);
-      state.userPicks = Array(11).fill(null);
-      for (let i = 0; i < Math.min(11, existing.length); i++) {
-        state.userPicks[i] = existing[i];
-      }
+  /** Fills in fields for rooms saved before toss/snake order existed. */
+  private normalize(state: DraftState) {
+    const fix = (sq: (PlayerWithStats | null)[] | undefined) => {
+      const players = (sq || []).filter((p): p is PlayerWithStats => !!p);
+      const out: (PlayerWithStats | null)[] = Array(11).fill(null);
+      if (Array.isArray(sq) && sq.length === 11) return sq;
+      players.slice(0, 11).forEach((p, i) => (out[i] = p));
+      return out;
+    };
+    state.userPicks = fix(state.userPicks);
+    state.aiPicks = fix(state.aiPicks);
+    if (!state.pickOrder) {
+      state.firstPick = state.firstPick ?? "USER";
+      state.pickOrder = snakeOrder(state.firstPick);
     }
-    if (!Array.isArray(state.aiPicks) || state.aiPicks.length !== 11) {
-      const existing = (state.aiPicks || []).filter(Boolean);
-      state.aiPicks = Array(11).fill(null);
-      for (let i = 0; i < Math.min(11, existing.length); i++) {
-        state.aiPicks[i] = existing[i];
-      }
-    }
+    if (state.pickIndex === undefined) state.pickIndex = state.userPicks.filter(Boolean).length + state.aiPicks.filter(Boolean).length;
+    state.pickLog = state.pickLog ?? [];
+    state.lastAiPicks = state.lastAiPicks ?? [];
   }
 
   private handleWebSocket(ws: WebSocket) {
     ws.accept();
     this.sockets.add(ws);
-
-    if (this.draftState) {
-      ws.send(JSON.stringify({ type: "SYNC", state: this.draftState }));
-    }
-
-    ws.addEventListener("close", () => {
-      this.sockets.delete(ws);
-    });
-
+    if (this.draftState) ws.send(JSON.stringify({ type: "SYNC", state: this.draftState }));
+    ws.addEventListener("close", () => this.sockets.delete(ws));
     ws.addEventListener("message", async (msg) => {
       let data: any;
       try {
@@ -312,9 +302,8 @@ export class DraftRoom implements DurableObject {
       } catch {
         return; // ignore malformed socket payload
       }
-
       if (data?.type === "PICK") {
-        const result = this.applyUserPick(data.playerId, data.targetIndex);
+        const result = this.applyUserPick(data.playerId);
         if (!result.success) {
           ws.send(JSON.stringify({ type: "ERROR", error: result.error }));
           return;
@@ -322,9 +311,7 @@ export class DraftRoom implements DurableObject {
         await this.persistAndBroadcast();
       } else if (data?.type === "START_MATCH") {
         const result = await this.startMatch();
-        if (!result.success) {
-          ws.send(JSON.stringify({ type: "ERROR", error: result.error }));
-        }
+        if (!result.success) ws.send(JSON.stringify({ type: "ERROR", error: result.error }));
       }
     });
   }
@@ -334,137 +321,30 @@ export class DraftRoom implements DurableObject {
     for (const ws of this.sockets) {
       try {
         ws.send(raw);
-      } catch (e) {
+      } catch {
         this.sockets.delete(ws);
       }
     }
   }
 
-  private executePick(
-    playerId: string,
-    actor: "USER" | "AI",
-    targetIndex?: number
-  ): { success: boolean; error?: string } {
-    if (!this.draftState) return { success: false, error: "No state" };
-
-    const pIdx = this.draftState.pool.findIndex((p) => p.id === playerId);
-    if (pIdx === -1) {
-      return { success: false, error: "Player not in available pool" };
-    }
-
-    const candidate = this.draftState.pool[pIdx];
-    const squad = actor === "USER" ? this.draftState.userPicks : this.draftState.aiPicks;
-
-    // Determine target slot
-    let slotIdx: number;
-    if (typeof targetIndex === "number" && targetIndex >= 0 && targetIndex < 11) {
-      slotIdx = targetIndex;
-    } else {
-      slotIdx = squad.findIndex((p) => p === null);
-      if (slotIdx === -1) {
-        return { success: false, error: "Squad is already full (11 players)" };
-      }
-    }
-
-    const check = canPickPlayer(candidate, squad, this.draftState.challenge, slotIdx, this.poolContext(squad));
-    if (!check.allowed) {
-      return { success: false, error: check.reason || "Illegal pick" };
-    }
-
-    // Remove candidate from pool
-    const [picked] = this.draftState.pool.splice(pIdx, 1);
-
-    // If target slot already had a player, return that player to pool
-    const existing = squad[slotIdx];
-    if (existing) {
-      this.draftState.pool.push(existing);
-    }
-
-    // Place player directly in target slot
-    squad[slotIdx] = picked;
-
-    if (actor === "USER") {
-      this.draftState.currentTurn = "AI";
-    } else {
-      this.draftState.currentTurn = "USER";
-      this.draftState.round += 1;
-    }
-
-    this.draftState.lastActionTimestamp = Date.now();
-    return { success: true };
-  }
-
-  /**
-   * Grandmaster AI Draft Algorithm:
-   * Format-Aware, Pitch-Aware, Value-Over-Replacement Draft Engine.
-   * Instead of rigid sequential slot filling, AI evaluates every legal (candidate, vacantSlot)
-   * pair in the pool. It takes the strongest players on the board (judged by career stats only) early,
-   * matches them to their optimal slot, and counters pitch conditions ruthlessly.
-   */
-  /** Pool + opponent squad, so legality checks can protect the shared pool. */
-  private poolContext(squad: (PlayerWithStats | null)[]): PickContext {
-    const state = this.draftState!;
-    const opponentSquad = squad === state.aiPicks ? state.userPicks : state.aiPicks;
-    return { pool: state.pool, opponentSquad };
-  }
-
-  /** The AI's reply to the user's pick: see core/ai-draft.ts for how it chooses. */
-  private executeAiPick() {
-    const ds = this.draftState;
-    if (!ds || ds.pool.length === 0) return;
-    const result = chooseAiPick({
-      pool: ds.pool,
-      squad: ds.aiPicks,
-      opponentSquad: ds.userPicks,
-      challenge: ds.challenge,
-      difficulty: ds.difficulty ?? "normal",
-      noiseSeed: roomSeed(ds.roomId),
-      round: ds.round,
-    });
-    if (!result) return;
-    const pIdx = ds.pool.findIndex((p) => p.id === result.player.id);
-    if (pIdx === -1) return;
-    const [picked] = ds.pool.splice(pIdx, 1);
-    ds.aiPicks[result.slotIndex] = picked;
-    ds.lastAiSnipe = { player: picked, slotIndex: result.slotIndex, reason: result.reason };
-    ds.currentTurn = "USER";
-    ds.round += 1;
-    ds.lastActionTimestamp = Date.now();
-  }
-
   private async finishDraft() {
-    if (!this.draftState) return;
-
-    this.draftState.status = "COMPLETED";
+    const ds = this.draftState;
+    if (!ds) return;
+    ds.status = "COMPLETED";
     // Rooms created before seeds existed get one now, persisted below
-    this.draftState.matchSeed = this.draftState.matchSeed ?? generateSeed();
+    ds.matchSeed = ds.matchSeed ?? generateSeed();
 
-    // 1. Run realistic ball-by-ball match simulation (fixed per-room seed: no re-rolls)
-    const simulation = simulateCricketMatch(
-      this.draftState.userPicks,
-      this.draftState.aiPicks,
-      this.draftState.challenge,
-      this.draftState.matchSeed,
-      { userPlan: this.draftState.bowlingPlan }
-    );
-    this.draftState.simulation = simulation;
+    // 1. Ball-by-ball match simulation (fixed per-room seed: no re-rolls)
+    const simulation = simulateCricketMatch(ds.userPicks, ds.aiPicks, ds.challenge, ds.matchSeed, { userPlan: ds.bowlingPlan });
+    ds.simulation = simulation;
 
-    // 2. Compute deterministic scores
-    const userBreakdown = calculateDeterministicScore(this.draftState.userPicks, this.draftState.challenge);
-    const aiBreakdown = calculateDeterministicScore(this.draftState.aiPicks, this.draftState.challenge);
+    // 2. Squad ratings (context only; the match decides the winner)
+    const userBreakdown = calculateDeterministicScore(ds.userPicks, ds.challenge);
+    const aiBreakdown = calculateDeterministicScore(ds.aiPicks, ds.challenge);
 
     // 3. Optional Gemini referee report (commentary only; null when unavailable)
-    const refereeReport = await generateRefereeReport(
-      this.draftState.userPicks,
-      this.draftState.aiPicks,
-      this.draftState.challenge,
-      simulation,
-      this.env?.GEMINI_API_KEY,
-      this.env?.GEMINI_MODEL
-    );
+    const refereeReport = await generateRefereeReport(ds.userPicks, ds.aiPicks, ds.challenge, simulation, this.env?.GEMINI_API_KEY, this.env?.GEMINI_MODEL);
 
-    // The simulated match is the single source of truth for the outcome. The 0-100 numbers are
-    // squad ratings (team balance), shown for context and never used to pick a winner.
     const completedResults = {
       winner: simulation.winner,
       decisiveDifference: simulation.decisiveDifference,
@@ -479,13 +359,9 @@ export class DraftRoom implements DurableObject {
       userBreakdown,
       aiBreakdown,
     };
+    ds.results = completedResults;
 
-    (this.draftState as any).results = completedResults;
-
-    await this.state.storage.put("draftState", this.draftState);
-    this.broadcast({
-      type: "COMPLETED",
-      results: completedResults,
-    });
+    await this.state.storage.put("draftState", ds);
+    this.broadcast({ type: "COMPLETED", results: completedResults });
   }
 }

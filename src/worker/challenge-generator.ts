@@ -5,12 +5,11 @@ import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
 
 /**
- * Players in each draft room. Every draft gets a fresh random 30 drawn from the most-capped
- * eligible players of the format (POOL_SOURCE_SIZE; not limited to the most-capped). 30 leaves 8 spare after both XIs are filled, which
- * keeps role and country rules satisfiable; 25 left too little slack (only 70-83% of random
- * pools could host any scenario, against 98-100% at 30).
+ * Players in each draft room: a fresh random 44 per draft. Both XIs take 22, so half the pool is
+ * still there for the last picks and they stay real choices. Role quotas (samplePool) are sized
+ * for two XIs plus spares, so neither side can be starved of a keeper or bowlers.
  */
-export const DRAFT_POOL_SIZE = 30;
+export const DRAFT_POOL_SIZE = 44;
 /** Players the random pool is drawn from. */
 export const POOL_SOURCE_SIZE = 1000;
 /** Minimum caps to be eligible for a random pool (any player with a real record, not just the top-N). */
@@ -61,10 +60,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "A baking summer afternoon at Chepauk. The red clay surface is cracked from ball one. Fast bowlers will get zero bounce, and spinners will turn the ball square.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
-      { type: "min_category", category: "SPIN", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 2 }],
   },
   {
     title: "Headingley Monsoon Green-Top",
@@ -76,11 +72,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "Overcast skies, 16°C drizzle, and a lush green outfield. The ball is expected to dart sideways under heavy cloud cover. Survival against seam is paramount.",
-    constraints: [
-      { type: "max_per_country", value: 1, exceptions: { ENG: 2 } },
-      { type: "min_category", category: "PACE", count: 3 },
-      { type: "batting_hand_order", positions: [1, 2], hand: "LHB" },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 3 }],
   },
   {
     title: "Wankhede Fireworks Festival",
@@ -92,10 +84,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "A true batsman's paradise with lightning-fast outfields and true bounce. Par score is 210+. Accumulators won't cut it—you need boundary riders and death specialists.",
-    constraints: [
-      { type: "max_per_country", value: 2 },
-      { type: "min_category", category: "AR", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "AR", count: 2 }],
   },
   {
     title: "Dhaka Slow Burner",
@@ -107,10 +96,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "A black-soil Mirpur gripper with unpredictable variable bounce. Spinners and cutters dominate, and any batsman with a strike rate above 120 is golden.",
-    constraints: [
-      { type: "max_per_country", value: 1, exceptions: { BAN: 2 } },
-      { type: "min_category", category: "SPIN", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 2 }],
   },
   // ODI Scenarios
   {
@@ -123,11 +109,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "50 overs under scorching sun. Overs 11-40 strike rotation and reverse swing will decide the match. Patience and tactical field-placing are paramount.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
-      { type: "min_category", category: "PACE", count: 2 },
-      { type: "min_category", category: "SPIN", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 2 }],
   },
   {
     title: "Wanderers 438 Tribute Match",
@@ -139,10 +121,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "High altitude and rock-hard pitch. Ball flies over boundaries; Dale Steyn style express pace needed to stem flow and break partnerships.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
-      { type: "min_category", category: "PACE", count: 3 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 3 }],
   },
   // TEST Scenarios
   {
@@ -155,11 +134,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "Red Dukes ball, emerald green pitch with Lord's slope. Swing bowlers like Anderson rule the morning session; top order must leave well.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { ENG: 3 } },
-      { type: "min_category", category: "PACE", count: 3 },
-      { type: "batting_hand_order", positions: [1, 2], hand: "LHB" },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 3 }],
   },
   {
     title: "Border-Gavaskar Trophy at The Gabba",
@@ -171,10 +146,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "Fast, bouncy deck with steep carry to the keeper. Taking 20 wickets with express pace is mandatory to triumph on this historic fortress.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
-      { type: "min_category", category: "PACE", count: 3 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 3 }],
   },
   {
     title: "Eden Gardens Day 4 Spin Cauldron",
@@ -186,11 +158,7 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     },
     narrative_intro:
       "Puff of dust on every delivery. Ball is spitting off the cracks. Subcontinental spin wizards are lethal; batters need soft hands and sweep technique.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
-      // The Test pool has only 3 spinners and both teams draft from it, so 1 each is the max
-      { type: "min_category", category: "SPIN", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 1 }],
   },
   // --- More scenarios (verified against random pools by tests/random-draft.test.ts) ---
   {
@@ -198,90 +166,63 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
     format: "T20",
     venue: { name: "Newlands, Cape Town", country: "RSA", pitch_type: "GREEN_SEAMER" },
     narrative_intro: "Table Mountain shadows and a cool sea breeze. The new ball nips around under lights; pace with bounce gets rewarded.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
-      { type: "min_category", category: "PACE", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 2 }],
   },
   {
     title: "Dubai Under The Lights",
     format: "T20",
     venue: { name: "Dubai International Stadium", country: "UAE", pitch_type: "SLOW_LOW" },
     narrative_intro: "A tacky, tired surface that grips under lights. Pace-off cutters and clever spin choke the powerplay; chasing is never easy.",
-    constraints: [
-      { type: "max_per_country", value: 2 },
-      { type: "min_category", category: "SPIN", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 1 }],
   },
   {
     title: "MCG Boxing Day Blast",
     format: "T20",
     venue: { name: "Melbourne Cricket Ground", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
     narrative_intro: "A huge outfield, a packed house and a flat deck. Clean hitters thrive, and bowlers must back their yorkers.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
-      { type: "min_category", category: "AR", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "AR", count: 1 }],
   },
   {
     title: "Lord's Final Showdown",
     format: "ODI",
     venue: { name: "Lord's Cricket Ground, London", country: "ENG", pitch_type: "GREEN_SEAMER" },
     narrative_intro: "A cloudy morning in St John's Wood. The ball swings and seams early, then the slope and the Lord's crowd take over.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { ENG: 3 } },
-      { type: "min_category", category: "PACE", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 2 }],
   },
   {
     title: "Colombo Spin Web",
     format: "ODI",
     venue: { name: "R. Premadasa Stadium, Colombo", country: "SL", pitch_type: "DUSTBOWL" },
     narrative_intro: "Humid air, a dry square and spinners from the first over. Rotating strike against turn decides who wins the middle overs.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { SL: 3 } },
-      { type: "min_category", category: "SPIN", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 2 }],
   },
   {
     title: "Melbourne 90,000 Roar",
     format: "ODI",
     venue: { name: "Melbourne Cricket Ground", country: "AUS", pitch_type: "HIGH_SCORING_FLAT" },
     narrative_intro: "The biggest ground in the game on a true surface. Boundaries are long but pace on the ball runs away; all-rounders carry the balance.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { AUS: 3 } },
-      { type: "min_category", category: "AR", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "AR", count: 1 }],
   },
   {
     title: "Galle Day 3 Turner",
     format: "TEST",
     venue: { name: "Galle International Stadium", country: "SL", pitch_type: "DUSTBOWL" },
     narrative_intro: "The Indian Ocean on one side and a crumbling pitch on the other. By day three every spinner is a threat and every defensive prod is risky.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { SL: 3 } },
-      { type: "min_category", category: "SPIN", count: 1 },
-    ],
+    constraints: [{ type: "min_category", category: "SPIN", count: 1 }],
   },
   {
     title: "Newlands Cape Town Seam",
     format: "TEST",
     venue: { name: "Newlands, Cape Town", country: "RSA", pitch_type: "GREEN_SEAMER" },
     narrative_intro: "Grass, cloud and pace. The ball does plenty off the seam on day one, and patient batters are rewarded after lunch.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { RSA: 3 } },
-      { type: "min_category", category: "PACE", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 2 }],
   },
   {
     title: "Sabina Park Slow Burn",
     format: "TEST",
     venue: { name: "Sabina Park, Kingston", country: "WI", pitch_type: "SLOW_LOW" },
     narrative_intro: "A slow, low surface that keeps low and tests patience. Reverse swing and relentless line and length decide who breaks through.",
-    constraints: [
-      { type: "max_per_country", value: 2, exceptions: { WI: 3 } },
-      { type: "min_category", category: "PACE", count: 2 },
-    ],
+    constraints: [{ type: "min_category", category: "PACE", count: 2 }],
   },
 ];
 
@@ -386,12 +327,14 @@ export function samplePool(
       }
     }
   };
+  // Sized for a 44-player pool (scaled for other sizes): enough of every role for two XIs plus spares
+  const k = size / 44;
   const quotas: [(p: PlayerWithStats) => boolean, number][] = [
-    [(p) => p.primary_role === "WK", 4],
-    [(p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", 6],
-    [(p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", 4],
-    [(p) => p.primary_role === "AR", 4],
-    [(p) => p.primary_role === "BAT", 10],
+    [(p) => p.primary_role === "WK", Math.max(4, Math.round(5 * k))],
+    [(p) => p.primary_role === "BOWL" && p.bowling_category === "PACE", Math.max(6, Math.round(9 * k))],
+    [(p) => p.primary_role === "BOWL" && p.bowling_category === "SPIN", Math.max(4, Math.round(6 * k))],
+    [(p) => p.primary_role === "AR", Math.max(4, Math.round(7 * k))],
+    [(p) => p.primary_role === "BAT", Math.max(10, Math.round(13 * k))],
   ];
   // Role quotas first, with the top-player share of each taken from the top players
   for (const [match, q] of quotas) take(topOrder, match, Math.min(q, Math.floor(q * topShare)));

@@ -65,14 +65,6 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
     violations.push(`Squad must have at least 5 bowling options (currently ${bowlingOptions.length}).`);
   }
 
-  // Slot-role rule (set level): need 2 opener-capable and 3 tail-capable players
-  if (nonNullSquad.filter(isOpenerCapable).length < OPENER_SLOTS.length) {
-    violations.push("Squad needs at least 2 specialist batters or keepers to open the innings.");
-  }
-  if (nonNullSquad.filter(isTailCapable).length < TAIL_SLOTS.length) {
-    violations.push("Squad needs at least 3 bowlers or all-rounders for batting slots 9-11.");
-  }
-
   // 2. Challenge Specific Constraints
   for (const constraint of challenge.constraints) {
     switch (constraint.type) {
@@ -287,8 +279,6 @@ export function checkChallengeFeasibility(
       matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
       need: 5,
     },
-    { matches: isOpenerCapable, need: OPENER_SLOTS.length },
-    { matches: isTailCapable, need: TAIL_SLOTS.length },
   ];
   for (const c of challenge.constraints) {
     if (c.type === "min_category") {
@@ -445,12 +435,6 @@ export function checkDraftFeasibility(
   if (pool.filter(isBowlingOption).length < 10) {
     return fail("Pool cannot support two disjoint XIs: fewer than 10 bowling options.");
   }
-  if (pool.filter(isOpenerCapable).length < 2 * OPENER_SLOTS.length) {
-    return fail("Pool cannot support two disjoint XIs: fewer than 4 openers.");
-  }
-  if (pool.filter(isTailCapable).length < 2 * TAIL_SLOTS.length) {
-    return fail("Pool cannot support two disjoint XIs: fewer than 6 bowlers or all-rounders for slots 9-11.");
-  }
   for (const c of challenge.constraints) {
     if (c.type === "min_category") {
       const available = pool.filter((p) =>
@@ -528,276 +512,43 @@ export interface PickLegalityResult {
   reason?: string;
 }
 
-/**
- * Checks in real time whether drafting this player is legal given the current
- * squad composition, remaining draft slots, and challenge constraints.
- */
-export function canPickPlayer(
-  player: PlayerWithStats,
-  currentSquad: (PlayerWithStats | null)[],
-  challenge: Challenge,
-  targetSlotIndex?: number,
-  ctx?: PickContext
-): PickLegalityResult {
-  const filledPlayers = currentSquad.filter((p): p is PlayerWithStats => p !== null);
-
-  // 1. Full squad check
-  const isReplacing =
-    typeof targetSlotIndex === "number" &&
-    targetSlotIndex >= 0 &&
-    targetSlotIndex < currentSquad.length &&
-    currentSquad[targetSlotIndex] !== null;
-
-  if (filledPlayers.length >= 11 && !isReplacing) {
-    return { allowed: false, reason: "Squad already full (11 players)" };
-  }
-
-  // 2. Duplicate player check
-  const isDuplicate = currentSquad.some(
-    (p, idx) => p !== null && p.id === player.id && idx !== targetSlotIndex
-  );
-  if (isDuplicate) {
-    return { allowed: false, reason: "Player already in your squad" };
-  }
-
-  // 3. Country Limits (Hard Cap)
-  const countryCounts = new Map<string, number>();
-  for (let i = 0; i < currentSquad.length; i++) {
-    const p = currentSquad[i];
-    if (p && i !== targetSlotIndex) {
-      countryCounts.set(p.country, (countryCounts.get(p.country) || 0) + 1);
-    }
-  }
-  const curCountryCount = countryCounts.get(player.country) || 0;
-
-  for (const constraint of challenge.constraints) {
-    if (constraint.type === "max_per_country") {
-      const maxAllowed = constraint.exceptions?.[player.country] ?? constraint.value;
-      if (curCountryCount >= maxAllowed) {
-        return {
-          allowed: false,
-          reason: `Country cap reached for ${player.country} (Max ${maxAllowed})`,
-        };
-      }
-    }
-  }
-
-  // Determine slot index
-  let slotIndex: number;
-  if (typeof targetSlotIndex === "number" && targetSlotIndex >= 0 && targetSlotIndex < 11) {
-    slotIndex = targetSlotIndex;
-  } else {
-    const nullIdx = currentSquad.findIndex((p) => p === null);
-    if (nullIdx !== -1) {
-      slotIndex = nullIdx;
-    } else {
-      slotIndex = currentSquad.length;
-    }
-  }
-
-  const targetSlot = slotIndex + 1; // 1-based slot index (1 to 11)
-
-  // 3b. Slot-role rules: openers must be batters/keepers, slots 9-11 bowlers/all-rounders
-  if (OPENER_SLOTS.includes(slotIndex) && !isOpenerCapable(player)) {
-    return { allowed: false, reason: `Slot ${targetSlot} needs a specialist batter or keeper to open` };
-  }
-  if (TAIL_SLOTS.includes(slotIndex) && !isTailCapable(player)) {
-    return { allowed: false, reason: `Slot ${targetSlot} needs a bowler or all-rounder` };
-  }
-
-  // 4. Batting Hand Order (Slot-specific constraint)
-  for (const constraint of challenge.constraints) {
-    if (constraint.type === "batting_hand_order") {
-      if (constraint.positions.includes(targetSlot)) {
-        if (player.batting_hand !== constraint.hand) {
-          return {
-            allowed: false,
-            reason: `Slot ${targetSlot} requires a ${constraint.hand} batter`,
-          };
-        }
-      }
-    }
-  }
-
-  // Remaining empty slots after this pick
-  const remainingSlotsAfterThisPick = Math.max(
-    0,
-    11 - (filledPlayers.length + (isReplacing ? 0 : 1))
-  );
-
-  // Which empty slots can still take each kind of player (slot-role rules)
-  const emptyAfter: number[] = [];
-  for (let i = 0; i < 11; i++) {
-    if (i === slotIndex) continue;
-    if (!currentSquad[i]) emptyAfter.push(i);
-  }
-  const keeperSlots = emptyAfter.filter((i) => !TAIL_SLOTS.includes(i)).length; // keepers can't bat 9-11
-  const bowlerSlots = emptyAfter.filter((i) => !OPENER_SLOTS.includes(i)).length; // bowlers can't open
-
-  // 5. Critical Slot Guards (Pigeonhole principle on minimum required roles)
-  const isWK = player.primary_role === "WK";
-  const isBowler =
-    player.primary_role === "BOWL" ||
-    player.primary_role === "AR" ||
-    player.stats.bowl_overs >= 2.0;
-
-  // 5a. Wicketkeeper Guard
-  const otherKeepers = currentSquad.filter(
-    (p, idx) => p !== null && idx !== targetSlotIndex && p.primary_role === "WK"
-  ).length;
-  const keepersWithThisPick = otherKeepers + (isWK ? 1 : 0);
-  const neededKeepers = Math.max(0, 1 - keepersWithThisPick);
-  if (keeperSlots < neededKeepers) {
-    return {
-      allowed: false,
-      reason: "Must pick a Wicketkeeper for remaining slot",
-    };
-  }
-
-  // 5b. Bowling Options Guard (At least 5 bowling options required)
-  const otherBowling = currentSquad.filter((p, idx) => {
-    if (!p || idx === targetSlotIndex) return false;
-    return (
-      p.primary_role === "BOWL" ||
-      p.primary_role === "AR" ||
-      p.stats.bowl_overs >= 2.0
-    );
-  }).length;
-  const bowlingWithThisPick = otherBowling + (isBowler ? 1 : 0);
-  const neededBowlers = Math.max(0, 5 - bowlingWithThisPick);
-  if (bowlerSlots < neededBowlers || neededKeepers + neededBowlers > remainingSlotsAfterThisPick) {
-    return {
-      allowed: false,
-      reason: `Must pick a bowler (${5 - otherBowling} more needed for remaining slots)`,
-    };
-  }
-
-  // 5c. Challenge min_category Guard
-  for (const constraint of challenge.constraints) {
-    if (constraint.type === "min_category") {
-      let candidateMatches = false;
-      if (constraint.category === "PACE" && player.bowling_category === "PACE") candidateMatches = true;
-      if (constraint.category === "SPIN" && player.bowling_category === "SPIN") candidateMatches = true;
-      if (constraint.category === "WK" && player.primary_role === "WK") candidateMatches = true;
-      if (constraint.category === "AR" && player.primary_role === "AR") candidateMatches = true;
-
-      const otherCatCount = currentSquad.filter((p, idx) => {
-        if (!p || idx === targetSlotIndex) return false;
-        if (constraint.category === "PACE") return p.bowling_category === "PACE";
-        if (constraint.category === "SPIN") return p.bowling_category === "SPIN";
-        if (constraint.category === "WK") return p.primary_role === "WK";
-        if (constraint.category === "AR") return p.primary_role === "AR";
-        return false;
-      }).length;
-
-      const catWithThisPick = otherCatCount + (candidateMatches ? 1 : 0);
-      const neededCat = Math.max(0, constraint.count - catWithThisPick);
-      // Keepers can't bat 9-11; bowling categories (PACE/SPIN/AR) can't open
-      const slotsForCat = constraint.category === "WK" ? keeperSlots : bowlerSlots;
-      if (slotsForCat < neededCat) {
-        return {
-          allowed: false,
-          reason: `Must pick a ${constraint.category} player (${constraint.count - otherCatCount} needed for remaining slots)`,
-        };
-      }
-    }
-  }
-
-  // 5c-joint. Competing needs share the same empty slots: add up what must still be filled.
-  {
-    const catNeeded = (cat: string) => {
-      let best = 0;
-      for (const c of challenge.constraints) {
-        if (c.type !== "min_category" || c.category !== cat) continue;
-        const matchesCat = (q: PlayerWithStats) =>
-          cat === "PACE" ? q.bowling_category === "PACE"
-          : cat === "SPIN" ? q.bowling_category === "SPIN"
-          : cat === "WK" ? q.primary_role === "WK"
-          : q.primary_role === "AR";
-        const have =
-          currentSquad.filter((q, idx) => q && idx !== slotIndex && idx !== targetSlotIndex && matchesCat(q)).length +
-          (matchesCat(player) ? 1 : 0);
-        best = Math.max(best, c.count - have);
-      }
-      return Math.max(0, best);
-    };
-    const keeperDemand = Math.max(neededKeepers, catNeeded("WK"));
-    // PACE and SPIN players are different people; AR and bowling options can overlap with them
-    const bowlerDemand = Math.max(neededBowlers, catNeeded("PACE") + catNeeded("SPIN"), catNeeded("AR"));
-    if (
-      keeperDemand > keeperSlots ||
-      bowlerDemand > bowlerSlots ||
-      keeperDemand + bowlerDemand > remainingSlotsAfterThisPick
-    ) {
-      return {
-        allowed: false,
-        reason: "That pick leaves too few open slots for the keeper, bowlers and categories you still need",
-      };
-    }
-  }
-
-  // 5d. At most two wicketkeepers in an XI (a second keeper must earn a place as a batter)
-  if (keepersWithThisPick > 2) {
-    return { allowed: false, reason: "At most 2 wicketkeepers allowed in an XI" };
-  }
-
-  // 6. Shared-pool reserve: both sides draw from one pool, so a pick must not leave
-  // either side unable to fill its remaining required roles.
-  if (ctx) {
-    const reserve = checkPoolReserve(player, currentSquad, challenge, targetSlotIndex, slotIndex, ctx);
-    if (reserve) return { allowed: false, reason: reserve };
-
-    // Endgame lookahead: with only a few slots left, prove each side can still finish a legal XI.
-    const poolAfter = ctx.pool.filter((q) => q.id !== player.id);
-    const mineAfter = currentSquad.slice();
-    mineAfter[slotIndex] = player;
-    if (!canCompleteSquad(mineAfter, poolAfter, challenge)) {
-      return { allowed: false, reason: "That pick would leave you unable to complete a legal XI from the remaining pool" };
-    }
-    if (!canCompleteSquad(ctx.opponentSquad, poolAfter, challenge)) {
-      return { allowed: false, reason: "That pick would leave your opponent unable to complete a legal XI from the remaining pool" };
-    }
-  }
-
-  return { allowed: true };
-}
-
 export interface PickContext {
   /** Players still available to both sides (may include the candidate). */
   pool: PlayerWithStats[];
-  /** The other side's current squad. */
-  opponentSquad: (PlayerWithStats | null)[];
+  /**
+   * The other side's current squad. Kept for callers that pass it; a pick is never refused because
+   * it hurts the other side. If the pool runs dry of a required type, that rule is waived for
+   * whoever can no longer meet it (see `rulesFor`).
+   */
+  opponentSquad?: (PlayerWithStats | null)[];
 }
 
-interface RoleNeed {
+/**
+ * Picks are players, not batting slots: the batting order is arranged automatically during the
+ * draft (core/batting-order.ts) and set by the user once the draft is over. So legality only asks
+ * whether the XI can still meet the squad rules: a keeper, five bowling options, the scenario rule
+ * and the country cap.
+ */
+export interface Need {
+  key: string;
+  /** Plain-language name for messages, e.g. "a wicketkeeper", "pace bowlers". */
   label: string;
   required: number;
   matches: (p: PlayerWithStats) => boolean;
+  /** True when the pool ran out of this type, so the rule no longer binds this side. */
+  waived?: boolean;
 }
 
-function roleNeeds(challenge: Challenge): RoleNeed[] {
-  const needs: RoleNeed[] = [
-    { label: "Wicketkeeper", required: 1, matches: (p) => p.primary_role === "WK" },
-    {
-      label: "bowling option",
-      required: 5,
-      matches: (p) => p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0,
-    },
-  ];
-  for (const c of challenge.constraints) {
-    if (c.type !== "min_category") continue;
-    needs.push({
-      label: c.category,
-      required: c.count,
-      matches: (p) =>
-        c.category === "PACE" ? p.bowling_category === "PACE"
-        : c.category === "SPIN" ? p.bowling_category === "SPIN"
-        : c.category === "WK" ? p.primary_role === "WK"
-        : p.primary_role === "AR",
-    });
-  }
-  return needs;
-}
+export const isBowlingOption = (p: PlayerWithStats): boolean =>
+  p.primary_role === "BOWL" || p.primary_role === "AR" || p.stats.bowl_overs >= 2.0;
+
+const categoryMatcher = (cat: "PACE" | "SPIN" | "WK" | "AR") => (p: PlayerWithStats) =>
+  cat === "PACE" ? p.bowling_category === "PACE"
+  : cat === "SPIN" ? p.bowling_category === "SPIN"
+  : cat === "WK" ? p.primary_role === "WK"
+  : p.primary_role === "AR";
+
+const CATEGORY_LABEL: Record<string, string> = { PACE: "pace bowlers", SPIN: "spinners", WK: "wicketkeepers", AR: "all-rounders" };
 
 function countryCap(challenge: Challenge, country: string): number {
   let cap = Infinity;
@@ -807,74 +558,101 @@ function countryCap(challenge: Challenge, country: string): number {
   return cap;
 }
 
-/** Returns a reason string if the pick would strand either side, otherwise null. */
-function checkPoolReserve(
-  player: PlayerWithStats,
-  squad: (PlayerWithStats | null)[],
-  challenge: Challenge,
-  replacedIndex: number | undefined,
-  slotIndex: number,
-  ctx: PickContext
-): string | null {
-  const mine = squad.filter((p, i): p is PlayerWithStats => p !== null && i !== replacedIndex);
-  mine.push(player);
-  const theirs = ctx.opponentSquad.filter((p): p is PlayerWithStats => p !== null);
-  const pool = ctx.pool.filter((p) => p.id !== player.id);
-
-  const eligibleFor = (squadPlayers: PlayerWithStats[], need: RoleNeed) => {
-    const counts = new Map<string, number>();
-    for (const p of squadPlayers) counts.set(p.country, (counts.get(p.country) || 0) + 1);
-    return pool.filter((p) => need.matches(p) && (counts.get(p.country) || 0) < countryCap(challenge, p.country)).length;
-  };
-
-  for (const need of roleNeeds(challenge)) {
-    const myNeed = Math.max(0, need.required - mine.filter(need.matches).length);
-    const theirNeed = Math.max(0, need.required - theirs.filter(need.matches).length);
-    if (myNeed > 0 && eligibleFor(mine, need) < myNeed) {
-      return `Taking this player would leave too few ${need.label} options in the pool for your squad`;
-    }
-    if (theirNeed > 0 && eligibleFor(theirs, need) < theirNeed) {
-      return `Taking this player would leave too few ${need.label} options in the pool for your opponent`;
-    }
-    if (myNeed + theirNeed > 0 && pool.filter(need.matches).length < myNeed + theirNeed) {
-      return `Not enough ${need.label} options left in the pool for both squads`;
-    }
-  }
-
-  // Slot groups: every empty opener / tail slot needs a capable player left in the pool.
-  const mineSlots = squad.slice();
-  mineSlots[slotIndex] = player;
-  const groups: { label: string; slots: number[]; capable: (p: PlayerWithStats) => boolean }[] = [
-    { label: "opener", slots: OPENER_SLOTS, capable: isOpenerCapable },
-    { label: "tail-end bowler", slots: TAIL_SLOTS, capable: isTailCapable },
+/**
+ * The squad rules for one side. With `pool` given, a rule is capped at what the side can still
+ * reach (what it has plus what the pool still offers under the country cap): when the other side
+ * has taken every spinner, "at least 2 spinners" stops binding instead of blocking the draft.
+ */
+export function rulesFor(challenge: Challenge, mine: PlayerWithStats[] = [], pool?: PlayerWithStats[]): Need[] {
+  const needs: Need[] = [
+    { key: "WK", label: "a wicketkeeper", required: 1, matches: categoryMatcher("WK") },
+    { key: "BOWL", label: "bowling options", required: 5, matches: isBowlingOption },
   ];
-  for (const g of groups) {
-    const empties = (sl: (PlayerWithStats | null)[]) => g.slots.filter((i) => !sl[i]).length;
-    const myEmpty = empties(mineSlots);
-    const theirEmpty = empties(ctx.opponentSquad);
-    const need: RoleNeed = { label: g.label, required: 0, matches: g.capable };
-    if (myEmpty > 0 && eligibleFor(mine, need) < myEmpty) {
-      return `Taking this player would leave too few ${g.label} options in the pool for your squad`;
-    }
-    if (theirEmpty > 0 && eligibleFor(theirs, need) < theirEmpty) {
-      return `Taking this player would leave too few ${g.label} options in the pool for your opponent`;
-    }
-    if (myEmpty + theirEmpty > 0 && pool.filter(g.capable).length < myEmpty + theirEmpty) {
-      return `Not enough ${g.label} options left in the pool for both squads`;
+  for (const c of challenge.constraints) {
+    if (c.type !== "min_category") continue;
+    const existing = needs.find((n) => n.key === c.category);
+    if (existing) existing.required = Math.max(existing.required, c.count);
+    else needs.push({ key: c.category, label: CATEGORY_LABEL[c.category], required: c.count, matches: categoryMatcher(c.category) });
+  }
+  if (pool) {
+    const counts = new Map<string, number>();
+    for (const p of mine) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+    const ids = new Set(mine.map((p) => p.id));
+    const open = pool.filter((p) => !ids.has(p.id) && (counts.get(p.country) || 0) < countryCap(challenge, p.country));
+    for (const n of needs) {
+      const reachable = mine.filter(n.matches).length + open.filter(n.matches).length;
+      if (reachable < n.required) {
+        n.required = reachable;
+        n.waived = true;
+      }
     }
   }
-  return null;
+  return needs;
 }
 
-/** Endgame lookahead only runs when this few slots remain (earlier, the cheap guards are enough). */
-const LOOKAHEAD_MAX_EMPTY = 5;
-/** Cap on canPickPlayer calls per lookahead so worst-case CPU stays tiny (Workers free plan). */
-const LOOKAHEAD_CALL_BUDGET = 600;
+/** What is still missing, and how many of the remaining picks it must take at the least. */
+function outstanding(needs: Need[], mine: PlayerWithStats[]): { missing: { need: Need; count: number }[]; demand: number } {
+  const missing = needs
+    .map((need) => ({ need, count: Math.max(0, need.required - mine.filter(need.matches).length) }))
+    .filter((m) => m.count > 0);
+  const of = (key: string) => missing.find((m) => m.need.key === key)?.count ?? 0;
+  // Pace and spin are different players; bowling options and all-rounders can overlap with them.
+  // Keepers almost never bowl, so they add on top.
+  const demand = of("WK") + Math.max(of("BOWL"), of("PACE") + of("SPIN"), of("AR"));
+  return { missing, demand };
+}
+
+const describeMissing = (missing: { need: Need; count: number }[]): string =>
+  missing
+    .map(({ need, count }) => (need.key === "WK" ? need.label : `${count} more ${count === 1 ? need.label.replace(/s$/, "").replace(/ options$/, " option") : need.label}`))
+    .join(", ");
 
 /**
- * Can this squad still be completed into a fully valid XI using only `pool`?
- * Exact depth-first fill of the empty slots, most constrained slots first. Returns true when the
- * search budget runs out (unknown is treated as feasible so a pick is never blocked on a guess).
+ * Checks whether picking this player is legal. `targetSlotIndex` is accepted for older callers and
+ * ignored: picks are final and never replace a player already in the squad.
+ */
+export function canPickPlayer(
+  player: PlayerWithStats,
+  currentSquad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  _targetSlotIndex?: number,
+  ctx?: PickContext
+): PickLegalityResult {
+  const mine = currentSquad.filter((p): p is PlayerWithStats => p !== null);
+  if (mine.length >= 11) return { allowed: false, reason: "Your XI is already full" };
+  if (mine.some((p) => p.id === player.id)) return { allowed: false, reason: "Already in your XI" };
+
+  const cap = countryCap(challenge, player.country);
+  if (mine.filter((p) => p.country === player.country).length >= cap) {
+    return { allowed: false, reason: `Country cap: at most ${cap} from ${player.country}` };
+  }
+
+  const after = [...mine, player];
+  const poolAfter = ctx ? ctx.pool.filter((q) => q.id !== player.id) : undefined;
+  const needs = rulesFor(challenge, after, poolAfter);
+  const left = 11 - after.length;
+  const { missing, demand } = outstanding(needs, after);
+  if (demand > left) {
+    const before = outstanding(rulesFor(challenge, mine, ctx?.pool), mine).missing;
+    return { allowed: false, reason: `${left + 1} pick${left === 0 ? "" : "s"} left and you still need ${describeMissing(before)}` };
+  }
+
+  // Endgame: prove the XI can still be finished from what is left in the pool.
+  if (poolAfter && left > 0 && left <= LOOKAHEAD_MAX_EMPTY && !canCompleteSquad(after, poolAfter, challenge)) {
+    return { allowed: false, reason: `You couldn't finish a legal XI after this pick: you still need ${describeMissing(missing) || "players the pool no longer has"}` };
+  }
+  return { allowed: true };
+}
+
+/** Endgame lookahead only runs when this few picks remain (earlier, the cheap counting check is enough). */
+const LOOKAHEAD_MAX_EMPTY = 5;
+/** Cap on search steps per lookahead so worst-case CPU stays tiny (Workers free plan). */
+const LOOKAHEAD_CALL_BUDGET = 4000;
+
+/**
+ * Can this squad still be completed into a legal XI using only `pool`? Searches combinations of
+ * the remaining picks (order does not matter). Rules the pool can no longer meet are waived, as in
+ * canPickPlayer. Returns true when the search budget runs out, so a pick is never blocked on a guess.
  */
 export function canCompleteSquad(
   squad: (PlayerWithStats | null)[],
@@ -882,43 +660,58 @@ export function canCompleteSquad(
   challenge: Challenge,
   callBudget = LOOKAHEAD_CALL_BUDGET
 ): boolean {
-  const work = squad.slice();
-  while (work.length < 11) work.push(null);
-  const empties = work.map((p, i) => (p ? -1 : i)).filter((i) => i >= 0);
-  if (empties.length === 0) return validateSquad(work, challenge).valid;
-  if (empties.length > LOOKAHEAD_MAX_EMPTY) return true;
+  const mine = squad.filter((p): p is PlayerWithStats => p !== null);
+  const left = 11 - mine.length;
+  if (left <= 0) return true;
+  if (left > LOOKAHEAD_MAX_EMPTY) return true;
+  const ids = new Set(mine.map((p) => p.id));
+  const cands = pool.filter((p) => !ids.has(p.id));
+  if (cands.length < left) return false;
+  const needs = rulesFor(challenge, mine, cands);
+  // Players who meet an outstanding need first, so a completion is found quickly
+  const useful = (p: PlayerWithStats) => needs.filter((n) => n.matches(p)).length;
+  cands.sort((a, b) => useful(b) - useful(a));
 
-  // Most constrained slots first: hand-order slots, openers, tail, then the middle
-  const handSlots = new Set<number>();
-  for (const c of challenge.constraints) {
-    if (c.type === "batting_hand_order") for (const pos of c.positions) handSlots.add(pos - 1);
-  }
-  const rank = (i: number) => (handSlots.has(i) ? 0 : OPENER_SLOTS.includes(i) ? 1 : TAIL_SLOTS.includes(i) ? 2 : 3);
-  empties.sort((a, b) => rank(a) - rank(b));
-
+  const counts = new Map<string, number>();
+  for (const p of mine) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+  const chosen = [...mine];
   let calls = 0;
   let exhausted = false;
-  const used = new Set(work.filter((p): p is PlayerWithStats => p !== null).map((p) => p.id));
-
-  const fill = (k: number): boolean => {
-    if (k === empties.length) return validateSquad(work, challenge).valid;
-    const slot = empties[k];
-    for (const cand of pool) {
-      if (used.has(cand.id)) continue;
+  const fill = (start: number, remaining: number): boolean => {
+    if (outstanding(needs, chosen).demand > remaining) return false;
+    if (remaining === 0) return true;
+    for (let i = start; i <= cands.length - remaining; i++) {
       if (++calls > callBudget) {
         exhausted = true;
         return true;
       }
-      if (!canPickPlayer(cand, work, challenge, slot).allowed) continue;
-      work[slot] = cand;
-      used.add(cand.id);
-      const ok = fill(k + 1);
-      work[slot] = null;
-      used.delete(cand.id);
-      if (ok) return true;
-      if (exhausted) return true;
+      const c = cands[i];
+      const n = counts.get(c.country) || 0;
+      if (n >= countryCap(challenge, c.country)) continue;
+      counts.set(c.country, n + 1);
+      chosen.push(c);
+      const ok = fill(i + 1, remaining - 1);
+      chosen.pop();
+      counts.set(c.country, n);
+      if (ok || exhausted) return true;
     }
     return false;
   };
-  return fill(0);
+  return fill(0, left);
+}
+
+/** What one side still needs, for the UI's need chips. */
+export function squadNeeds(
+  squad: (PlayerWithStats | null)[],
+  challenge: Challenge,
+  pool?: PlayerWithStats[]
+): { key: string; label: string; have: number; required: number; waived: boolean }[] {
+  const mine = squad.filter((p): p is PlayerWithStats => p !== null);
+  return rulesFor(challenge, mine, pool).map((n) => ({
+    key: n.key,
+    label: n.label,
+    have: mine.filter(n.matches).length,
+    required: n.required,
+    waived: !!n.waived,
+  }));
 }

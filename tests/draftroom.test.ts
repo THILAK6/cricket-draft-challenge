@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { generateRefereeReport } from "../src/core/gemini-referee";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
-import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, canCompleteSquad, validateSquad, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
+import { checkChallengeFeasibility, checkDraftFeasibility, canPickPlayer, canCompleteSquad, validateSquad, rulesFor, DEFAULT_SEARCH_NODE_BUDGET } from "../src/core/validator";
 import type { Challenge, DraftState, PlayerWithStats } from "../src/core/types";
 
 function mockPlayer(
@@ -88,6 +88,8 @@ function initState(): DraftState {
     maxRounds: 11,
     status: "DRAFTING",
     lastActionTimestamp: 0,
+    // Fixed toss so tests are deterministic; the room tosses when this is absent
+    firstPick: "USER",
   };
 }
 
@@ -156,14 +158,17 @@ describe("DraftRoom endpoint hardening", () => {
     expect((await call(room, "/reorder", { fromIndex: "0", toIndex: 1 })).status).toBe(400);
   });
 
-  it("rejects a reorder that breaks a slot rule", async () => {
-    // Slot 1 must be LHB; put an LHB there and an RHB in slot 2, then try to swap them.
-    expect((await call(room, "/pick", { playerId: "IND_lhb", targetIndex: 0 })).data.success).toBe(true);
-    expect((await call(room, "/pick", { playerId: "AUS_rhb", targetIndex: 1 })).data.success).toBe(true);
-    const res = await call(room, "/reorder", { fromIndex: 0, toIndex: 1 });
-    expect(res.status).toBe(400);
-    const state = (await call(room, "/state")).data.state as DraftState;
-    expect(state.userPicks[0]?.id).toBe("IND_lhb");
+  it("lets the user set the batting order only between the draft and the match", async () => {
+    await call(room, "/pick", { playerId: "IND_lhb" });
+    expect((await call(room, "/reorder", { fromIndex: 0, toIndex: 1 })).status).toBe(409);
+    const drafted = await draftToCompletion(room);
+    expect(drafted.status).toBe("READY_TO_PLAY");
+    const movedId = drafted.userPicks[10]!.id;
+    const res = await call(room, "/reorder", { fromIndex: 10, toIndex: 0 });
+    expect(res.status).toBe(200);
+    expect(res.data.state.userPicks[0].id).toBe(movedId);
+    await call(room, "/start-match");
+    expect((await call(room, "/reorder", { fromIndex: 0, toIndex: 1 })).status).toBe(409);
   });
 
   it("refuses to simulate (via /referee or /start-match) before both squads are full", async () => {
@@ -183,12 +188,9 @@ describe("DraftRoom endpoint hardening", () => {
     expect(again.data.results.simulation.summary).toBe(first.data.results.simulation.summary);
     expect(viaReferee.data.results.simulation.summary).toBe(first.data.results.simulation.summary);
 
-    // Removing and re-adding the same player reproduces the identical match (fixed room seed)
-    const removedId = drafted.userPicks[10]!.id;
-    await call(room, "/remove", { slotIndex: 10 });
-    expect((await call(room, "/pick", { playerId: removedId, targetIndex: 10 })).data.success).toBe(true);
-    const replay = await call(room, "/start-match");
-    expect(replay.data.results.simulation.summary).toBe(first.data.results.simulation.summary);
+    // Picks are final: nothing can be sent back to the pool to re-roll the match
+    expect((await call(room, "/remove", { slotIndex: 10 })).status).toBe(409);
+    expect((await call(room, "/start-match")).data.results.simulation.summary).toBe(first.data.results.simulation.summary);
   });
 });
 
@@ -228,41 +230,126 @@ describe("Feasibility search safeguards", () => {
   });
 });
 
-describe("Role rules while drafting", () => {
-  const open: Challenge = { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] };
-
-  it("rejects a third wicketkeeper", () => {
-    const pool = buildPool();
-    const squad = [pool.find((p) => p.id === "IND_wk")!, pool.find((p) => p.id === "AUS_wk")!, ...Array(9).fill(null)];
-    const res = canPickPlayer(pool.find((p) => p.id === "ENG_wk")!, squad, open, 2);
-    expect(res.allowed).toBe(false);
-    expect(res.reason).toMatch(/wicketkeepers/);
+describe("Draft order and final picks", () => {
+  it("follows the snake order: the AI answers the first pick with two picks in a row", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    await call(room, "/init", initState());
+    let st = (await call(room, "/pick", { playerId: "IND_lhb" })).data.state as DraftState;
+    expect(st.aiPicks.filter(Boolean)).toHaveLength(2);
+    expect(st.lastAiPicks).toHaveLength(2);
+    expect(st.currentTurn).toBe("USER");
+    // Picks 4 and 5 are both the user's
+    st = (await call(room, "/pick", { playerId: "AUS_rhb" })).data.state;
+    expect(st.aiPicks.filter(Boolean)).toHaveLength(2);
+    expect(st.currentTurn).toBe("USER");
+    st = (await call(room, "/pick", { playerId: "ENG_wk" })).data.state;
+    expect(st.aiPicks.filter(Boolean)).toHaveLength(4);
+    expect(st.pickLog!.map((e) => e.by).join(",")).toBe("USER,AI,AI,USER,USER,AI,AI");
   });
 
-  it("won't hoard the last bowlers the opponent still needs", () => {
+  it("lets the AI open the draft when it wins the toss", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    const st = (await call(room, "/init", { ...initState(), firstPick: "AI" })).data.state as DraftState;
+    expect(st.aiPicks.filter(Boolean)).toHaveLength(1);
+    expect(st.currentTurn).toBe("USER");
+    const drafted = await draftToCompletion(room);
+    expect(drafted.pickLog).toHaveLength(22);
+    expect(drafted.pickLog![21].by).toBe("USER");
+  });
+
+  it("tosses for first pick when none is given", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    const { firstPick, ...rest } = initState();
+    const st = (await call(room, "/init", rest)).data.state as DraftState;
+    expect(["USER", "AI"]).toContain(st.firstPick);
+    expect(st.pickOrder).toHaveLength(22);
+  });
+
+  it("puts every pick into a natural batting order", async () => {
+    const room = new DraftRoom(fakeState(), {});
+    await call(room, "/init", initState());
+    const st = (await call(room, "/pick", { playerId: "IND_pace" })).data.state as DraftState;
+    // A bowler drafted first bats at 11, not at 1
+    expect(st.userPicks[10]?.id).toBe("IND_pace");
+    expect(st.userPicks[0]).toBeNull();
+  });
+
+  it("allows a third wicketkeeper (as a batter)", () => {
+    const pool = buildPool();
+    const open: Challenge = { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] };
+    const squad = [pool.find((p) => p.id === "IND_wk")!, pool.find((p) => p.id === "AUS_wk")!, ...Array(9).fill(null)];
+    expect(canPickPlayer(pool.find((p) => p.id === "ENG_wk")!, squad, open).allowed).toBe(true);
+  });
+
+  it("never refuses a pick to protect the opponent; the opponent's rule is waived if the pool runs dry", () => {
     const all = buildPool();
     const byId = (id: string) => all.find((p) => p.id === id)!;
-    // I already have 5 bowling options; the opponent has none and needs 5.
+    const open: Challenge = { ...challenge, constraints: [{ type: "max_per_country", value: 2 }] };
     const mine = ["IND_pace", "AUS_pace", "ENG_pace", "RSA_spin", "NZL_spin", "PAK_wk"].map(byId);
     const squad = [...mine, ...Array(5).fill(null)];
     const opp = [byId("SL_wk"), ...Array(10).fill(null)];
     const bowlers = ["WI_pace", "WI_spin", "SL_pace", "SL_spin", "BAN_pace", "BAN_spin"].map(byId);
     const pool = [...bowlers, byId("AFG_rhb"), byId("AFG_lhb")];
-    const ctx = { pool, opponentSquad: opp };
-    // A 6th bowler for me would leave only 4 for an opponent who needs 5
-    const hoard = canPickPlayer(bowlers[0], squad, open, 6, ctx);
-    expect(hoard.allowed).toBe(false);
-    expect(hoard.reason).toMatch(/Not enough|too few/);
-    // A batter is fine
-    expect(canPickPlayer(byId("AFG_rhb"), squad, open, 6, ctx).allowed).toBe(true);
+    // A 6th bowler for me leaves the opponent short of five: allowed anyway
+    expect(canPickPlayer(bowlers[0], squad, open, undefined, { pool, opponentSquad: opp }).allowed).toBe(true);
+    // ...and the opponent's bowling rule then only asks for what the pool can still give them
+    // Say the AI takes two more: four bowlers are left, so the opponent's "five bowlers" becomes four
+    const oppNeeds = rulesFor(open, [byId("SL_wk")], pool.slice(2));
+    const bowl = oppNeeds.find((n) => n.key === "BOWL")!;
+    expect(bowl.waived).toBe(true);
+    expect(bowl.required).toBe(4);
   });
 
-  it("never strands a naive batter-first drafter", async () => {
+  it("never strands a naive drafter", async () => {
     const room = new DraftRoom(fakeState(), {});
     await call(room, "/init", initState());
     const drafted = await draftToCompletion(room);
     expect(drafted.userPicks.filter(Boolean)).toHaveLength(11);
     expect(drafted.aiPicks.filter(Boolean)).toHaveLength(11);
+  });
+});
+
+describe("Endgame lookahead", () => {
+  // Two picks that must each be both a pace bowler and an all-rounder
+  const tight: Challenge = {
+    ...challenge,
+    constraints: [
+      { type: "min_category", category: "PACE", count: 2 },
+      { type: "min_category", category: "AR", count: 2 },
+    ],
+  };
+  const all = buildPool();
+  const byId = (id: string) => all.find((p) => p.id === id)!;
+  const spinAr = (id: string, c: string) => ({ ...mockPlayer(id, c, "AR", "RHB", "SPIN") });
+  // 8 picks: keeper, 4 batters, 3 spinners (3 bowling options, no pace, no all-rounder)
+  const base = () => [byId("IND_wk"), byId("IND_rhb"), byId("AUS_rhb"), byId("ENG_rhb"), byId("RSA_rhb"), byId("NZL_spin"), byId("PAK_spin"), byId("WI_spin")];
+
+  it("detects a squad that can no longer be completed", () => {
+    const squad = [...base(), byId("SL_rhb"), null, null];
+    // Two picks left, needing two pace bowlers and two all-rounders: only pace all-rounders would do
+    expect(canCompleteSquad(squad, [byId("BAN_pace"), spinAr("x1", "AFG"), byId("AFG_pace"), spinAr("x2", "ZIM")], tight)).toBe(false);
+    expect(canCompleteSquad(squad, [byId("BAN_ar"), byId("AFG_ar"), byId("AFG_pace")], tight)).toBe(true);
+  });
+
+  it("stops a pick that would strand the last picks", () => {
+    const squad = [...base(), null, null, null];
+    const pool = [byId("BAN_ar"), spinAr("x1", "AFG"), byId("AFG_pace"), byId("SL_rhb")];
+    const ctx = { pool };
+    // A batter now leaves two picks that would each have to be a pace all-rounder
+    const res = canPickPlayer(byId("SL_rhb"), squad, tight, undefined, ctx);
+    expect(res.allowed).toBe(false);
+    expect(res.reason).toMatch(/couldn't finish/);
+    // The pace all-rounder keeps the XI completable
+    expect(canPickPlayer(byId("BAN_ar"), squad, tight, undefined, ctx).allowed).toBe(true);
+  });
+
+  it("never stalls: with no legal pick left, the user may take any player", async () => {
+    const squad = [...base(), byId("SL_rhb"), null, null];
+    const pool = [byId("BAN_pace"), byId("AFG_pace"), spinAr("x1", "ZIM"), spinAr("x2", "SCO")];
+    const r = new DraftRoom(fakeState(), {});
+    await call(r, "/init", { ...initState(), challenge: tight, userPicks: squad, pool });
+    const st = (await call(r, "/pick", { playerId: "BAN_pace" })).data;
+    expect(st.success).toBe(true);
   });
 });
 
@@ -334,69 +421,5 @@ describe("AI drafting is stats-driven and fair", () => {
       expect(ai).toHaveLength(11);
       expect(validateSquad(drafted.aiPicks, st.challenge).valid, `${pitch}: ${validateSquad(drafted.aiPicks, st.challenge).violations}`).toBe(true);
     }
-  });
-});
-
-describe("Endgame lookahead", () => {
-  const lhbOpener: Challenge = { ...challenge, constraints: [{ type: "batting_hand_order", positions: [1], hand: "LHB" }] };
-
-  function almostFullSquad(all: PlayerWithStats[], missingSlot: number) {
-    const ids = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
-    const squad: (PlayerWithStats | null)[] = ids.map((id) => all.find((p) => p.id === id)!);
-    squad[missingSlot] = null;
-    return squad;
-  }
-
-  it("detects a squad whose last slot can no longer be filled legally", () => {
-    const all = buildPool();
-    const squad = almostFullSquad(all, 0); // slot 1 must be an LHB opener
-    const onlyRhb = all.filter((p) => p.batting_hand === "RHB" && !squad.includes(p));
-    expect(canCompleteSquad(squad, onlyRhb, lhbOpener)).toBe(false);
-    const withLhb = [...onlyRhb, all.find((p) => p.id === "PAK_lhb")!];
-    expect(canCompleteSquad(squad, withLhb, lhbOpener)).toBe(true);
-  });
-
-  it("stops a pick that would strand the last slot", () => {
-    const all = buildPool();
-    const squad = almostFullSquad(all, 0); // hole at slot 1 (needs an LHB opener)
-    squad[4] = null; // and a middle-order hole at slot 5
-    const lhb = all.find((p) => p.id === "PAK_lhb")!;
-    const rhb = all.find((p) => p.id === "PAK_rhb")!;
-    // Opponent already has a full XI, so only my own squad can be stranded
-    const fullOpp = almostFullSquad(all, 0).map((p) => p ?? all.find((x) => x.id === "IND_lhb")!);
-    const ctx = { pool: [lhb, rhb], opponentSquad: fullOpp };
-    // Spending the only LHB on slot 5 would leave slot 1 impossible to fill
-    const stranding = canPickPlayer(lhb, squad, lhbOpener, 4, ctx);
-    expect(stranding.allowed).toBe(false);
-    expect(stranding.reason).toMatch(/too few|unable to complete/);
-    // The RHB in the middle is fine, and so is the LHB at the top
-    expect(canPickPlayer(rhb, squad, lhbOpener, 4, ctx).allowed).toBe(true);
-    expect(canPickPlayer(lhb, squad, lhbOpener, 0, ctx).allowed).toBe(true);
-  });
-
-  describe("stuck-draft detection", () => {
-    async function stuckRoom(pool: PlayerWithStats[]) {
-      const all = buildPool();
-      const ids = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
-      const userPicks: (PlayerWithStats | null)[] = ids.map((id) => all.find((p) => p.id === id)!);
-      userPicks[0] = null; // slot 1 must be an LHB
-      const r = new DraftRoom(fakeState(), {});
-      await call(r, "/init", { ...initState(), userPicks, pool });
-      await call(r, "/state");
-      return r;
-    }
-
-    it("flags a user who has open slots but no legal player left", async () => {
-      const rhbOnly = buildPool().filter((p) => p.batting_hand === "RHB" && !["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"].includes(p.id));
-      const r = await stuckRoom(rhbOnly);
-      expect((r as any).computeUserStuck()).toBe(true);
-    });
-
-    it("does not flag a user who still has a legal pick", async () => {
-      const used = ["IND_rhb", "AUS_rhb", "ENG_wk", "RSA_rhb", "NZL_rhb", "PAK_ar", "WI_pace", "SL_spin", "BAN_pace", "AFG_spin", "IND_ar"];
-      const pool = buildPool().filter((p) => !used.includes(p.id) && (p.batting_hand === "RHB" || p.id === "PAK_lhb"));
-      const r = await stuckRoom(pool);
-      expect((r as any).computeUserStuck()).toBe(false);
-    });
   });
 });

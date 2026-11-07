@@ -18,7 +18,7 @@ const d1 = {
 
 describe("random drafts", () => {
   for (const format of ["T20", "ODI", "TEST"] as MatchFormat[]) {
-    it(`${format}: 30 unique players, playable scenario, and real variety`, async () => {
+    it(`${format}: ${DRAFT_POOL_SIZE} unique players, playable scenario, and real variety`, async () => {
       const titles = new Set<string>();
       const pools = new Set<string>();
       for (let i = 0; i < 25; i++) {
@@ -62,11 +62,14 @@ describe("random drafts", () => {
         pitches.add(challenge.venue.pitch_type);
         titles.add(challenge.title);
         rules.add(JSON.stringify(challenge.constraints));
+        // One house rule per match
+        expect(challenge.constraints).toHaveLength(1);
       }
       expect(venues.size).toBeGreaterThanOrEqual(8);
       expect(pitches.size).toBeGreaterThanOrEqual(3);
       expect(titles.size).toBeGreaterThanOrEqual(15);
-      expect(rules.size).toBeGreaterThanOrEqual(10);
+      // Exactly one rule per match, so fewer distinct rule sets than before (pace/spin/all-rounder counts, country caps)
+      expect(rules.size).toBeGreaterThanOrEqual(5);
       // generous bound for CI noise; the Worker budget is 10 ms CPU and the DB read is separate
       expect(worst).toBeLessThan(150);
     });

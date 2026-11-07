@@ -85,41 +85,28 @@ const PITCH_FLAVOUR: Record<PitchType, string> = {
 type Rand = () => number;
 const pick = <T,>(xs: T[], rand: Rand): T => xs[Math.floor(rand() * xs.length)];
 
+/**
+ * One selection rule per match, like the one house rule in a school draft. Usually it comes from
+ * the conditions (pace on a green seamer, spin on a turner); sometimes it is a country cap instead.
+ */
 function buildConstraints(format: MatchFormat, ground: Ground, pitch: PitchType, rand: Rand): Constraint[] {
-  const out: Constraint[] = [];
-  // Country cap, usually with a home-side allowance
-  const cap = pick([2, 2, 3], rand);
-  out.push({ type: "max_per_country", value: cap, ...(rand() < 0.6 ? { exceptions: { [ground.country]: cap + 1 } } : {}) });
-
-  // Bowling-attack rule driven by the conditions
-  const attack: Constraint[] = [];
-  if (pitch === "GREEN_SEAMER") attack.push({ type: "min_category", category: "PACE", count: pick([2, 3], rand) });
-  else if (pitch === "DUSTBOWL") attack.push({ type: "min_category", category: "SPIN", count: pick([1, 2], rand) });
-  else if (pitch === "SLOW_LOW") attack.push(rand() < 0.5 ? { type: "min_category", category: "SPIN", count: 1 } : { type: "min_category", category: "PACE", count: 2 });
-  else attack.push(pick<Constraint>([
-    { type: "min_category", category: "PACE", count: 2 },
-    { type: "min_category", category: "SPIN", count: 1 },
-    { type: "min_category", category: "AR", count: 2 },
-  ], rand));
-  out.push(...attack);
-
-  // Optional extra criteria, so no two scenarios read the same
-  const extras: Constraint[] = [
-    { type: "batting_hand_order", positions: [pick([1, 2, 3], rand)], hand: pick<"LHB" | "RHB">(["LHB", "LHB", "RHB"], rand) },
-    { type: "min_category", category: "AR", count: pick([1, 2], rand) },
-    { type: "min_strike_rate_top_order", threshold: format === "T20" ? 125 : format === "ODI" ? 78 : 50 },
-    { type: "min_bowlers_economy_under", threshold: format === "T20" ? 8.5 : format === "ODI" ? 5.6 : 3.4, min_count: pick([2, 3], rand) },
+  if (rand() < 0.25) {
+    const cap = pick([2, 3, 3], rand);
+    return [{ type: "max_per_country", value: cap, ...(rand() < 0.6 ? { exceptions: { [ground.country]: cap + 1 } } : {}) }];
+  }
+  if (pitch === "GREEN_SEAMER") return [{ type: "min_category", category: "PACE", count: pick([2, 3], rand) }];
+  if (pitch === "DUSTBOWL") return [{ type: "min_category", category: "SPIN", count: pick([1, 2], rand) }];
+  if (pitch === "SLOW_LOW") return [rand() < 0.5 ? { type: "min_category", category: "SPIN", count: 1 } : { type: "min_category", category: "PACE", count: 2 }];
+  return [
+    pick<Constraint>(
+      [
+        { type: "min_category", category: "PACE", count: 2 },
+        { type: "min_category", category: "SPIN", count: 1 },
+        { type: "min_category", category: "AR", count: 2 },
+      ],
+      rand
+    ),
   ];
-  if (rand() < 0.6) out.push(pick(extras, rand));
-  if (rand() < 0.2) out.push(pick(extras, rand));
-  // Drop duplicates of the same rule type + category
-  const seen = new Set<string>();
-  return out.filter((c) => {
-    const key = c.type + ("category" in c ? c.category : "");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 /** A random scenario for the format. Not guaranteed playable: check it against the pool. */

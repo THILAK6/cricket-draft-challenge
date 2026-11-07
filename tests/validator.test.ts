@@ -249,6 +249,7 @@ describe("Constraint Validator - Feasibility Solver", () => {
 });
 
 describe("Constraint Validator - Proactive In-Draft Checks (canPickPlayer)", () => {
+  // Picks are players, not slots: only squad-level rules apply while drafting.
   const challenge: Challenge = {
     id: "c-proactive",
     title: "Proactive Test",
@@ -258,110 +259,67 @@ describe("Constraint Validator - Proactive In-Draft Checks (canPickPlayer)", () 
     constraints: [
       { type: "max_per_country", value: 2, exceptions: { IND: 3 } },
       { type: "min_category", category: "SPIN", count: 2 },
-      { type: "batting_hand_order", positions: [1, 2], hand: "LHB" },
     ],
   };
 
   it("blocks pick when country cap is reached", () => {
-    const squad: PlayerWithStats[] = [
-      createMockPlayer("p1", "AUS", "BAT", "LHB"),
-      createMockPlayer("p2", "AUS", "BAT", "LHB"),
-    ];
-
-    const thirdAus = createMockPlayer("p3", "AUS", "BOWL", "RHB", "PACE");
-    const result = canPickPlayer(thirdAus, squad, challenge);
-
+    const squad: PlayerWithStats[] = [createMockPlayer("p1", "AUS", "BAT", "LHB"), createMockPlayer("p2", "AUS", "BAT", "LHB")];
+    const result = canPickPlayer(createMockPlayer("p3", "AUS", "BOWL", "RHB", "PACE"), squad, challenge);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("Country cap reached for AUS (Max 2)");
+    expect(result.reason).toContain("Country cap: at most 2 from AUS");
   });
 
   it("respects country cap exceptions", () => {
-    const squad: PlayerWithStats[] = [
-      createMockPlayer("p1", "IND", "BAT", "LHB"),
-      createMockPlayer("p2", "IND", "BAT", "LHB"),
-    ];
-
-    // IND allows up to 3 via exception
-    const thirdInd = createMockPlayer("p3", "IND", "BOWL", "RHB", "PACE");
-    const result = canPickPlayer(thirdInd, squad, challenge);
-
-    expect(result.allowed).toBe(true);
+    const squad: PlayerWithStats[] = [createMockPlayer("p1", "IND", "BAT", "LHB"), createMockPlayer("p2", "IND", "BAT", "LHB")];
+    expect(canPickPlayer(createMockPlayer("p3", "IND", "BOWL", "RHB", "PACE"), squad, challenge).allowed).toBe(true);
   });
 
-  it("blocks non-LHB for positions specified in batting_hand_order", () => {
-    // Current squad is empty, so pick 1 is slot 1
-    const rhbBatter = createMockPlayer("p1", "ENG", "BAT", "RHB");
-    const result = canPickPlayer(rhbBatter, [], challenge);
-
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain("Slot 1 requires a LHB batter");
-
-    const lhbBatter = createMockPlayer("p1", "ENG", "BAT", "LHB");
-    expect(canPickPlayer(lhbBatter, [], challenge).allowed).toBe(true);
+  it("does not lock batting slots: a bowler can be the first pick", () => {
+    expect(canPickPlayer(createMockPlayer("b", "C1", "BOWL", "RHB", "PACE"), [], challenge).allowed).toBe(true);
+    expect(canPickPlayer(createMockPlayer("x", "C2", "BAT", "RHB"), [], challenge).allowed).toBe(true);
   });
 
-  it("blocks non-WK on final pick if 0 WKs currently drafted", () => {
-    // 10 drafted, 0 WKs; the only empty slot is a middle-order slot (index 5)
-    const squad: (PlayerWithStats | null)[] = [];
-    for (let i = 0; i < 11; i++) {
-      if (i === 5) squad.push(null);
-      else squad.push(createMockPlayer(`p${i}`, `C${i}`, i < 5 ? "BAT" : "BOWL", "RHB", i < 5 ? "NONE" : i < 8 ? "SPIN" : "PACE"));
-    }
-    const batter = createMockPlayer("p11", "ENG", "BAT", "RHB");
-    const keeper = createMockPlayer("p11_wk", "ENG", "WK", "RHB");
-
-    const batterResult = canPickPlayer(batter, squad, challenge, 5);
-    expect(batterResult.allowed).toBe(false);
-    expect(batterResult.reason).toContain("Must pick a Wicketkeeper for remaining slot");
-
-    expect(canPickPlayer(keeper, squad, challenge, 5).allowed).toBe(true);
-  });
-
-  it("blocks a keeper from being the only way to fill a tail slot", () => {
-    // 10 drafted without a keeper, only slot 11 (a tail slot) empty: no legal pick exists.
+  it("blocks a non-keeper with the last pick when there is no keeper yet", () => {
     const squad: (PlayerWithStats | null)[] = [];
     for (let i = 0; i < 10; i++) {
-      squad.push(createMockPlayer(`p${i}`, `C${i}`, i < 6 ? "BAT" : "BOWL", "RHB", i < 6 ? "NONE" : "PACE"));
+      squad.push(createMockPlayer(`p${i}`, `C${i}`, i < 5 ? "BAT" : "BOWL", "RHB", i < 5 ? "NONE" : i < 8 ? "SPIN" : "PACE"));
     }
     squad.push(null);
-    const keeper = createMockPlayer("k", "ENG", "WK", "RHB");
-    const res = canPickPlayer(keeper, squad, challenge, 10);
-    expect(res.allowed).toBe(false);
-    expect(res.reason).toContain("Slot 11 needs a bowler or all-rounder");
+    const batter = canPickPlayer(createMockPlayer("p11", "ENG", "BAT", "RHB"), squad, challenge);
+    expect(batter.allowed).toBe(false);
+    expect(batter.reason).toContain("a wicketkeeper");
+    expect(canPickPlayer(createMockPlayer("p11_wk", "ENG", "WK", "RHB"), squad, challenge).allowed).toBe(true);
   });
 
-  it("blocks non-bowlers when remaining slots must all be bowlers to satisfy 5 bowling options", () => {
-    // 8 drafted, only 2 bowlers (needs 3 more); empty: slot 6 (middle), slots 10 and 11 (tail)
+  it("blocks non-bowlers when every remaining pick must be a bowling option", () => {
+    // 8 drafted with only 2 bowling options (both spinners): the last 3 picks must all bowl
     const squad: (PlayerWithStats | null)[] = [
       createMockPlayer("p1", "C1", "BAT", "LHB"),
       createMockPlayer("p2", "C2", "BAT", "LHB"),
       createMockPlayer("p3", "C3", "BAT", "RHB"),
       createMockPlayer("p4", "C4", "BAT", "RHB"),
       createMockPlayer("p5", "C5", "BAT", "RHB"),
-      null,
       createMockPlayer("p6", "C6", "WK", "RHB"),
       createMockPlayer("p7", "C7", "BOWL", "RHB", "SPIN"),
       createMockPlayer("p8", "C8", "BOWL", "RHB", "SPIN"),
       null,
       null,
+      null,
     ];
-    const nonBowler = createMockPlayer("p9_bat", "C9", "BAT", "RHB");
-    const bowler = createMockPlayer("p9_bowl", "C9", "BOWL", "RHB", "PACE");
-
-    const nonBowlerResult = canPickPlayer(nonBowler, squad, challenge, 5);
-    expect(nonBowlerResult.allowed).toBe(false);
-    expect(nonBowlerResult.reason).toContain("Must pick a bowler");
-
-    expect(canPickPlayer(bowler, squad, challenge, 5).allowed).toBe(true);
+    const res = canPickPlayer(createMockPlayer("p9_bat", "C9", "BAT", "RHB"), squad, challenge);
+    expect(res.allowed).toBe(false);
+    expect(res.reason).toContain("3 more bowling options");
+    expect(canPickPlayer(createMockPlayer("p9_bowl", "C9", "BOWL", "RHB", "PACE"), squad, challenge).allowed).toBe(true);
   });
 
-  it("enforces slot roles: openers are batters/keepers, slots 9-11 are bowlers/all-rounders", () => {
-    const empty: (PlayerWithStats | null)[] = Array(11).fill(null);
-    const bowler = createMockPlayer("b", "C1", "BOWL", "RHB", "PACE");
-    const batter = createMockPlayer("x", "C2", "BAT", "RHB");
-    expect(canPickPlayer(bowler, empty, challenge, 0).reason).toContain("open");
-    expect(canPickPlayer(batter, empty, challenge, 9).reason).toContain("bowler or all-rounder");
-    expect(canPickPlayer(bowler, empty, challenge, 9).allowed).toBe(true);
-    expect(canPickPlayer(batter, empty, challenge, 2).allowed).toBe(true);
+  it("waives a scenario rule for a side once the pool has none of that type left", () => {
+    // Needs 2 spinners, has none, and the pool has no spinners at all: the rule no longer binds
+    const squad: (PlayerWithStats | null)[] = [];
+    for (let i = 0; i < 9; i++) squad.push(createMockPlayer(`p${i}`, `C${i}`, i === 0 ? "WK" : i < 4 ? "BAT" : "BOWL", "RHB", i < 4 ? "NONE" : "PACE"));
+    squad.push(null, null);
+    const pool = [createMockPlayer("q1", "D1", "BAT", "RHB"), createMockPlayer("q2", "D2", "BAT", "RHB"), createMockPlayer("q3", "D3", "BOWL", "RHB", "PACE")];
+    expect(canPickPlayer(pool[0], squad, challenge, undefined, { pool }).allowed).toBe(true);
+    // Without the pool context the rule still binds
+    expect(canPickPlayer(pool[0], squad, challenge).allowed).toBe(false);
   });
 });
