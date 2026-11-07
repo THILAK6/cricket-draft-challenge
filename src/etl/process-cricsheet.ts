@@ -49,7 +49,18 @@ const COUNTRY_MAP: Record<string, string> = {
   "Papua New Guinea": "PNG",
   "United Arab Emirates": "UAE",
   "Canada": "CAN",
+  "Indonesia": "INA",
+  "Austria": "AUT",
+  "Hong Kong": "HKG",
+  "Kenya": "KEN",
+  "Bermuda": "BER",
 };
+
+/**
+ * Team name to country code. Unknown names never fall back to their first three letters: that
+ * turned Indonesia into IND and Austria into AUS. They get an OTHER: code and are filtered out.
+ */
+const countryCode = (team: string): string => COUNTRY_MAP[team] ?? `OTHER:${team}`;
 
 async function main() {
   const dataDir = path.resolve(process.cwd(), "data");
@@ -107,7 +118,7 @@ async function main() {
         agg = {
           cricsheet_id: cricsheetId,
           name: canonicalNameMap.get(cricsheetId) || name,
-          country: COUNTRY_MAP[country] || country.slice(0, 3).toUpperCase(),
+          country: countryCode(country),
           matches: 0,
           bat_innings: 0,
           bat_runs: 0,
@@ -261,6 +272,9 @@ async function main() {
     }
   }
 
+  // Per-format role corrections, written to player_format_roles
+  const formatRoles: { id: string; format: string; role: string }[] = [];
+
   // Enrich unique players
   console.log(`[Process] Total unique international players across all formats: ${formatStatsMap.size}`);
   let enrichedCount = 0;
@@ -300,7 +314,9 @@ async function main() {
     const wpm = totalMatches > 0 ? totalWickets / totalMatches : 0;
     const avgOvers = totalMatches > 0 ? (totalBallsBowled / 6) / totalMatches : 0;
 
-    if (totalStumpings > 0) {
+    // A keeper is someone who keeps and bowls little. One stumping in a career (Mahmudullah,
+    // Dilshan) used to make a frontline bowler a keeper in every format.
+    if (totalStumpings > 0 && avgOvers < 2) {
       meta.primary_role = "WK";
       meta.bowling_category = "NONE";
     } else if (
@@ -357,6 +373,14 @@ async function main() {
       meta.bowling_category = "NONE";
     }
 
+    // Keepers by format: a keeper with 10+ matches and no stumpings in a format played there as a
+    // batter (Rahul Dravid, KL Rahul and Tom Latham in Tests)
+    if (meta.primary_role === "WK") {
+      for (const { agg, format } of statsList) {
+        if (agg.matches >= 10 && agg.stumpings === 0) formatRoles.push({ id: `crick_${cricsheetId}`, format, role: "BAT" });
+      }
+    }
+
     allPlayersMeta.set(cricsheetId, { meta, country: primaryAgg.country });
     enrichedCount++;
     if (enrichedCount % 100 === 0 || enrichedCount === formatStatsMap.size) {
@@ -394,6 +418,10 @@ async function main() {
         `INSERT OR REPLACE INTO player_format_stats (player_id, format, matches, bat_innings, bat_runs, bat_balls, bat_average, bat_strike_rate, top_order_innings, middle_order_innings, finisher_innings, bowl_innings, bowl_overs, bowl_wickets, bowl_runs_conceded, bowl_average, bowl_economy) VALUES ('${pId}', '${format}', ${agg.matches}, ${agg.bat_innings}, ${agg.bat_runs}, ${agg.bat_balls}, ${batAvg}, ${batSr}, ${agg.top_order_innings}, ${agg.middle_order_innings}, ${agg.finisher_innings}, ${agg.bowl_innings}, ${bowlOvers}, ${agg.bowl_wickets}, ${agg.bowl_runs_conceded}, ${bowlAvg}, ${bowlEcon});`
       );
     }
+  }
+
+  for (const r of formatRoles) {
+    sqlLines.push(`INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bowling_category) VALUES ('${r.id}', '${r.format}', '${r.role}', 'NONE');`);
   }
 
   // Pre-seed iconic challenges for all 3 formats

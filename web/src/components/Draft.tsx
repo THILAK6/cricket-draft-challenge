@@ -171,7 +171,7 @@ export function Draft(props: RoomProps) {
           const rk = roleKey(p);
           return (
             <div class={`prow ${l.ok ? "" : "dim"}`} key={p.id}>
-              <div class="rating" title="Pool rating (1-99)">
+              <div class="rating" title="Rating from career stats in this format (1-99)">
                 {p.rating ?? "–"}
                 <small>RATING</small>
               </div>

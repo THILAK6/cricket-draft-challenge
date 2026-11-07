@@ -3,15 +3,15 @@ import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
-import { playerQuality } from "../core/player-quality";
+import { displayRating, playerQuality, stature } from "../core/player-quality";
+import { correctRole } from "../core/roles";
 
-/** Adds a 1-99 rating to each player: their percentile in this pool by format quality. */
+/**
+ * Adds a 1-99 rating to each player: format quality on one scale for every pool, so a 95 is a
+ * star wherever he turns up (about 30 is a fringe international).
+ */
 export function ratePool(pool: PlayerWithStats[], format: MatchFormat): PlayerWithStats[] {
-  const q = new Map(pool.map((p) => [p.id, playerQuality(p, format)]));
-  const sorted = [...pool].sort((a, b) => q.get(a.id)! - q.get(b.id)!);
-  const rank = new Map(sorted.map((p, i) => [p.id, i]));
-  const n = Math.max(1, pool.length - 1);
-  return pool.map((p) => ({ ...p, rating: Math.max(1, Math.round((rank.get(p.id)! / n) * 98) + 1) }));
+  return pool.map((p) => ({ ...p, rating: displayRating(playerQuality(p, format)) }));
 }
 
 /**
@@ -24,11 +24,20 @@ export const DRAFT_POOL_SIZE = 44;
 export const POOL_SOURCE_SIZE = 1000;
 /** Minimum caps to be eligible for a random pool (any player with a real record, not just the top-N). */
 export const POOL_MIN_MATCHES = 15;
-/** The most-capped players count as "top players"; at least this share of every random pool comes from them. */
+/** The highest-stature players (quality plus career length) count as "top players"; at least this share of every random pool comes from them. */
 export const TOP_PLAYER_COUNT = 50;
 export const TOP_PLAYER_SHARE = 0.6;
 /** The fixed top-N pool the built-in templates are verified against (tests/templates.test.ts). */
 export const VERIFIED_POOL_SIZE = 50;
+/** ICC Full Members: the default pool leaves associate nations out. */
+export const FULL_MEMBERS = new Set(["AUS", "ENG", "IND", "PAK", "RSA", "NZL", "WI", "SL", "BAN", "ZIM", "IRE", "AFG"]);
+const fmCache = new WeakMap<PlayerWithStats[], PlayerWithStats[]>();
+/** The full-member players of a cached source list (the same array each time, so per-list caches work). */
+function fullMembers(source: PlayerWithStats[]): PlayerWithStats[] {
+  let out = fmCache.get(source);
+  if (!out) fmCache.set(source, (out = source.filter((p) => FULL_MEMBERS.has(p.country))));
+  return out;
+}
 
 /**
  * Free-plan budget: Workers AI gives ~10k neurons/day, so ask the model once per request and
@@ -245,24 +254,34 @@ export async function fetchPlayerPool(
   limit = 70,
   minMatches = 5
 ): Promise<PlayerWithStats[]> {
-  const query = `
-    SELECT 
+  // Per-format roles override the player's general role (a keeper in ODIs who batted in Tests)
+  const query = (withRoles: boolean) => `
+    SELECT
       p.id, p.cricinfo_id, p.name, p.short_name, p.country,
-      p.batting_hand, p.bowling_category, p.bowling_style, p.primary_role,
+      p.batting_hand, p.bowling_style,
+      ${withRoles ? "COALESCE(r.bowling_category, p.bowling_category)" : "p.bowling_category"} AS bowling_category,
+      ${withRoles ? "COALESCE(r.primary_role, p.primary_role)" : "p.primary_role"} AS primary_role,
       s.matches, s.bat_innings, s.bat_runs, s.bat_balls, s.bat_average,
       s.bat_strike_rate, s.top_order_innings, s.middle_order_innings,
       s.finisher_innings, s.bowl_innings, s.bowl_overs, s.bowl_wickets,
       s.bowl_average, s.bowl_economy
     FROM players p
     JOIN player_format_stats s ON p.id = s.player_id
+    ${withRoles ? "LEFT JOIN player_format_roles r ON r.player_id = p.id AND r.format = s.format" : ""}
     WHERE s.format = ? AND s.matches >= ?
     ORDER BY s.matches DESC, s.bat_runs DESC
     LIMIT ?;
   `;
 
-  const { results } = await db.prepare(query).bind(format, minMatches, limit).all();
+  let results: any[] | undefined;
+  try {
+    ({ results } = await db.prepare(query(true)).bind(format, minMatches, limit).all());
+  } catch {
+    // Database without player_format_roles yet (data/data-fixes.sql not applied): general roles only
+    ({ results } = await db.prepare(query(false)).bind(format, minMatches, limit).all());
+  }
 
-  return (results || []).map((row: any) => ({
+  const players: PlayerWithStats[] = (results || []).map((row: any) => ({
     id: row.id,
     cricinfo_id: row.cricinfo_id,
     name: row.name,
@@ -290,6 +309,8 @@ export async function fetchPlayerPool(
       bowl_economy: row.bowl_economy,
     },
   }));
+  // Roles the stats clearly contradict are corrected for this format
+  return players.map((p) => correctRole(p, format));
 }
 
 /**
@@ -306,6 +327,22 @@ const shuffled = <T,>(xs: T[], rand: () => number): T[] => {
   return a;
 };
 
+/** The highest-stature players of the format (see stature()). Cached per source list. */
+const topCache = new WeakMap<PlayerWithStats[], Map<string, Set<string>>>();
+export function topPlayerIds(source: PlayerWithStats[], format: MatchFormat, n = TOP_PLAYER_COUNT): Set<string> {
+  const key = `${format}:${n}`;
+  const hit = topCache.get(source)?.get(key);
+  if (hit) return hit;
+  const ids = computeTopIds(source, format, n);
+  if (!topCache.has(source)) topCache.set(source, new Map());
+  topCache.get(source)!.set(key, ids);
+  return ids;
+}
+function computeTopIds(source: PlayerWithStats[], format: MatchFormat, n: number): Set<string> {
+  const st = new Map(source.map((p) => [p.id, stature(p, format)]));
+  return new Set([...source].sort((x, y) => st.get(y.id)! - st.get(x.id)! || x.id.localeCompare(y.id)).slice(0, n).map((p) => p.id));
+}
+
 /**
  * Draws a random pool: role quotas first (so a keeper, pace, spin and all-rounders are always
  * available), then random fill with at most a fifth of the pool from one country.
@@ -315,11 +352,12 @@ export function samplePool(
   size: number,
   rand: () => number = Math.random,
   topN = TOP_PLAYER_COUNT,
-  topShare = TOP_PLAYER_SHARE
+  topShare = TOP_PLAYER_SHARE,
+  format: MatchFormat = (source[0]?.stats.format ?? "T20") as MatchFormat
 ): PlayerWithStats[] {
   const order = shuffled(source, rand);
-  // The most-capped players of the format; at least topShare of every pool comes from them.
-  const topIds = new Set([...source].sort((x, y) => y.stats.matches - x.stats.matches).slice(0, topN).map((p) => p.id));
+  // The stars of the format; at least topShare of every pool comes from them.
+  const topIds = topPlayerIds(source, format, topN);
   const topOrder = order.filter((p) => topIds.has(p.id));
   const topTarget = Math.min(topOrder.length, Math.ceil(size * topShare));
   const picked: PlayerWithStats[] = [];
@@ -381,7 +419,7 @@ export async function buildRandomDraft(
   format: MatchFormat,
   rand: () => number = Math.random
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[] }> {
-  const source = await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES);
+  const source = fullMembers(await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES));
   const templates = FALLBACK_SCENARIOS.filter((s) => s.format === format);
   if (source.length < DRAFT_POOL_SIZE || templates.length === 0) {
     throw new Error(`Not enough ${format} players in the database (found ${source.length}). Run database seeding.`);
@@ -392,7 +430,7 @@ export async function buildRandomDraft(
     format,
   });
   for (let attempt = 0; attempt < 8; attempt++) {
-    const pool = samplePool(source, DRAFT_POOL_SIZE, rand);
+    const pool = samplePool(source, DRAFT_POOL_SIZE, rand, TOP_PLAYER_COUNT, TOP_PLAYER_SHARE, format);
     // A freshly generated ground, conditions and selection rules, checked against this very pool
     for (let tries = 0; tries < 12; tries++) {
       const challenge = make(generateScenario(format, rand));

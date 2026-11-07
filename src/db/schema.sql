@@ -35,6 +35,16 @@ CREATE TABLE IF NOT EXISTS player_format_stats (
     PRIMARY KEY (player_id, format)
 );
 
+-- A player's role in one format when it differs from players.primary_role
+-- (e.g. a keeper in ODIs who played Tests as a batter). Written by the ETL and data/data-fixes.sql.
+CREATE TABLE IF NOT EXISTS player_format_roles (
+    player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    format TEXT NOT NULL,                      -- 'T20' | 'ODI' | 'TEST'
+    primary_role TEXT NOT NULL,                -- 'BAT' | 'WK' | 'AR' | 'BOWL'
+    bowling_category TEXT NOT NULL,            -- 'NONE' | 'PACE' | 'SPIN'
+    PRIMARY KEY (player_id, format)
+);
+
 -- Pre-generated or cached AI challenges
 CREATE TABLE IF NOT EXISTS challenges (
     id TEXT PRIMARY KEY,
