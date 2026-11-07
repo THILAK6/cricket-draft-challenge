@@ -29,7 +29,7 @@
     "binding": "AI"
   },
   "assets": {
-    "directory": "./public",
+    "directory": "./dist",
     "binding": "ASSETS"
   }
 }

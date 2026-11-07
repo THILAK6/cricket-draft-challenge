@@ -21,6 +21,8 @@ export interface Player {
   primary_role: PlayerRole;
   active_span_start?: number;
   active_span_end?: number;
+  /** 1-99: where the player ranks in this draft's pool by format quality (career stats only). Set when the pool is drawn. */
+  rating?: number;
 }
 
 export interface PlayerStats {

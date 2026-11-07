@@ -3,6 +3,16 @@ import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
+import { playerQuality } from "../core/player-quality";
+
+/** Adds a 1-99 rating to each player: their percentile in this pool by format quality. */
+export function ratePool(pool: PlayerWithStats[], format: MatchFormat): PlayerWithStats[] {
+  const q = new Map(pool.map((p) => [p.id, playerQuality(p, format)]));
+  const sorted = [...pool].sort((a, b) => q.get(a.id)! - q.get(b.id)!);
+  const rank = new Map(sorted.map((p, i) => [p.id, i]));
+  const n = Math.max(1, pool.length - 1);
+  return pool.map((p) => ({ ...p, rating: Math.max(1, Math.round((rank.get(p.id)! / n) * 98) + 1) }));
+}
 
 /**
  * Players in each draft room: a fresh random 44 per draft. Both XIs take 22, so half the pool is
@@ -386,17 +396,17 @@ export async function buildRandomDraft(
     // A freshly generated ground, conditions and selection rules, checked against this very pool
     for (let tries = 0; tries < 12; tries++) {
       const challenge = make(generateScenario(format, rand));
-      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool };
+      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format) };
     }
     // Otherwise one of the hand-written scenarios
     for (const t of shuffled(templates, rand)) {
       const challenge = make(t);
-      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool };
+      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format) };
     }
   }
   // Extremely unlikely: fall back to the fixed pool every template is verified against.
   const pool = await getPlayerPool(db, format, VERIFIED_POOL_SIZE);
-  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool };
+  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: ratePool(pool, format) };
 }
 
 export async function generateValidatedChallenge(

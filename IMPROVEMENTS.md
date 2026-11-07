@@ -10,54 +10,54 @@ Items are grouped into phases and listed in the order they will be built. Tick e
 
 ## Phase 1 — Draft rules (make every pick count)
 
-- [ ] **1.1 Picks are final.** Remove the "remove player" action during the draft, and stop a pick
+- [x] **1.1 Picks are final.** Remove the "remove player" action during the draft, and stop a pick
   into an occupied slot from swapping the old player back into the pool. After the draft, only the
   batting order can change (reorder stays).
   _Today:_ `/remove` returns a player to the pool at any time, and once the AI has 11 you can swap
   with the leftovers forever (`src/durable-objects/DraftRoom.ts`).
-- [ ] **1.2 Toss for first pick.** A coin toss decides who picks first, and the draft screen shows the result.
-- [ ] **1.3 Snake draft order.** The order is 1-2-2-2…-1, so the side that picks first doesn't get
+- [x] **1.2 Toss for first pick.** A coin toss decides who picks first, and the draft screen shows the result.
+- [x] **1.3 Snake draft order.** The order is 1-2-2-2…-1, so the side that picks first doesn't get
   the better player in every round. The AI may make two picks in a row, and the UI must show both.
-- [ ] **1.4 Pick now, set the order later.** You choose a player, not a batting slot. The batting
+- [x] **1.4 Pick now, set the order later.** You choose a player, not a batting slot. The batting
   order is arranged once after the draft (the AI suggests an order you can change).
-- [ ] **1.5 Fewer hard rules.** Keep these as hard rules: 11 players, at least 1 keeper, at least 5
+- [x] **1.5 Fewer hard rules.** Keep these as hard rules: 11 players, at least 1 keeper, at least 5
   bowling options. Batting-hand slot rules, strike-rate/economy minimums and slot-role locks become
   scoring nudges or are dropped. Keep at most one scenario twist (for example a country cap or "2 spinners").
-- [ ] **1.6 No "protect the opponent" block.** Stop refusing a pick because it hurts the other side
+- [x] **1.6 No "protect the opponent" block.** Stop refusing a pick because it hurts the other side
   (`validator.ts`, "would leave your opponent unable to complete…"). Instead, build each pool so both
   XIs can always be completed: enough keepers and bowlers for two sides plus spares.
-- [ ] **1.7 Bigger pool.** 40–44 players instead of 30, so the last picks are still real choices.
+- [x] **1.7 Bigger pool.** 40–44 players instead of 30, so the last picks are still real choices.
 
 ## Phase 1b — Mobile-first UI (built together with Phase 1)
 
 Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport).
 
-- [ ] **U.1 Fix the "+ Draft" button that lies.** The pool offered "+ Draft" on a player and then
+- [x] **U.1 Fix the "+ Draft" button that lies.** The pool offered "+ Draft" on a player and then
   refused the pick ("Must pick a PACE player"), leaving the squad stuck at 10/11 until a different
   player was tried. The button must only appear when the server will accept the pick: one legality
   check, used by both the pool and the server.
-- [ ] **U.2 Compact player list.** Each pool card is about 133px tall, and the search box, filters and
+- [x] **U.2 Compact player list.** Each pool card is about 133px tall, and the search box, filters and
   tips take about 40% of the screen, so only about 2½ players are visible and the 30-player pool is
   about 7 screens of scrolling. Use one row per player (name, country, role icon, the 2 stats that
   matter in this format), so 8–10 players fit on screen. Tapping a row opens a bottom sheet with the
   full stats and a "Draft" button.
-- [ ] **U.3 Sort and filter that fit.** One sticky row: search icon, role filter chips that scroll
+- [x] **U.3 Sort and filter that fit.** One sticky row: search icon, role filter chips that scroll
   sideways, and a sort control (rating, batting, bowling, caps).
-- [ ] **U.4 Drop the "AI COUNTER-SNIPE!" pop-up.** It needs a tap after every AI pick (20 taps to make
+- [x] **U.4 Drop the "AI COUNTER-SNIPE!" pop-up.** It needs a tap after every AI pick (20 taps to make
   11 picks). Show the AI's pick as a short banner or ticker that doesn't block the screen, with the
   banter line when Phase 4 is on.
-- [ ] **U.5 Draft board.** A round-by-round pick log for both sides (the "list on paper" from school),
+- [x] **U.5 Draft board.** A round-by-round pick log for both sides (the "list on paper" from school),
   plus need chips for each XI (Keeper ✓, Pace 2/3, Spin 0/1, Bowlers 4/5).
-- [ ] **U.6 One toast at a time.** Two toasts currently stack over the content above the tab bar.
-- [ ] **U.7 Your XI screen.** Rows are tall, with ▲▼ and × buttons on every player. Use a compact
+- [x] **U.6 One toast at a time.** Two toasts currently stack over the content above the tab bar.
+- [x] **U.7 Your XI screen.** Rows are tall, with ▲▼ and × buttons on every player. Use a compact
   list during the draft, and a single "set batting order" step at the end (ties to 1.4).
-- [ ] **U.8 Pre-match screen.** Put the bowling plan (new ball, death bowler) in a simple bottom sheet
+- [x] **U.8 Pre-match screen.** Put the bowling plan (new ball, death bowler) in a simple bottom sheet
   with sensible defaults, and make "Play match" the main action.
-- [ ] **U.9 Result screen on mobile.** A sticky scoreline, collapsible sections, and scorecards closed by
+- [x] **U.9 Result screen on mobile.** A sticky scoreline, collapsible sections, and scorecards closed by
   default (the layout itself is Phase 6).
-- [ ] **U.10 Plain language.** Replace jargon such as "selection points", "Venue & conditions
+- [x] **U.10 Plain language.** Replace jargon such as "selection points", "Venue & conditions
   telemetry" and "AI COUNTER-SNIPE!" with cricket language.
-- [ ] **U.11 Phone test in CI.** A Playwright test at 390px wide checks there is no horizontal scroll,
+- [x] **U.11 Phone test in CI.** A Playwright test at 390px wide checks there is no horizontal scroll,
   and that a full draft can be finished with draft taps only (no refused picks, no pop-ups to dismiss).
 
 ## Phase 2 — Player pool and ratings
@@ -131,6 +131,14 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 ---
 
 ## Working notes
+
+- **Phase 1 + 1b done.** The UI is now Preact + Vite + TypeScript in `web/` (builds to `dist/`),
+  sharing the rule code with the server. Picks are slotless: each XI is put into a natural batting
+  order automatically (`src/core/batting-order.ts`), and the user sets the final order between the
+  draft and the match. A rule the pool can no longer meet (for example when the other side has
+  taken every all-rounder) is waived for that side instead of blocking the draft; the need chips
+  show it as "pool ran out". Each pool player carries a 1-99 pool rating, used for "Best" sorting.
+  U.9 covers the mobile layout only; the result content itself is Phase 6.
 
 - Work happens directly on `main`.
 - Each phase ends with `npm test` and `npm run build` passing. Tests that encode the old rules are

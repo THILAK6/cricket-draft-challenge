@@ -22,7 +22,7 @@ cricket-draft-challenge/
 │   ├── etl/                   # Cricsheet parser & Wikidata enrichment scripts
 │   ├── worker/                # Worker API routes & challenge generation
 │   └── index.ts               # Cloudflare Worker entry point
-├── public/                    # Static UI & front-end assets
+├── web/                       # Game UI (Preact + Vite + TypeScript), builds to dist/
 ├── tests/                     # Unit tests for CSP solver and scoring formulas
 ├── wrangler.jsonc             # Cloudflare Workers, D1 & DO configuration
 ├── package.json
@@ -51,8 +51,23 @@ npm run db:seed:local
 npm run dev
 ```
 
+`npm run dev` builds the UI into `dist/` and starts the Worker on port 8787. For hot reload while
+working on the UI, keep `wrangler dev` running and start the Vite dev server alongside it
+(`/api` is proxied to port 8787):
+
+```bash
+npm run dev:web
+```
+
+The UI imports the same rule code as the server (`src/core/validator.ts`), so the "Draft" button
+only appears when the server will accept the pick. `npm run deploy` builds the UI before deploying.
+
 ### 4. Run Tests
 ```bash
 npm run test
 ```
+
+`tests/e2e/phone.test.ts` builds the UI and plays a full draft on an emulated iPhone with
+Playwright (skipped when Playwright isn't installed). `npm run build` typechecks the Worker and
+the UI and builds `dist/`.
 
