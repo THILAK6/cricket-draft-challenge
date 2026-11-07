@@ -155,6 +155,8 @@ export interface DraftState {
   lastAiSnipe?: AiSnipeInfo;
   /** True when the user's squad is incomplete and no pool player can legally go in any empty slot. */
   userStuck?: boolean;
+  /** Pool theme the players were drawn from (see core/themes.ts). */
+  theme?: string;
   /** AI opponent strength. easy: noisy reads of the board; normal: default, with counter-sniping; hard: pure best-value drafting. */
   difficulty?: "easy" | "normal" | "hard";
 }

@@ -107,11 +107,11 @@ app.post("/api/challenges/generate", async (c) => {
 // Start a new draft room session with a challenge
 app.post("/api/draft/start", async (c) => {
   try {
-    const body = await c.req.json<{ challengeId?: string; format?: MatchFormat; difficulty?: string }>();
+    const body = await c.req.json<{ challengeId?: string; format?: MatchFormat; difficulty?: string; theme?: string }>();
     const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
     // The scenario and the 30-player pool are both random per draft; nothing is selectable.
     const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
-    const { challenge, pool } = await buildRandomDraft(c.env.DB, format);
+    const { challenge, pool, theme } = await buildRandomDraft(c.env.DB, format, Math.random, body.theme);
     await saveChallenge(c.env.DB, challenge);
 
     // Instantiate unique Durable Object room
@@ -131,6 +131,7 @@ app.post("/api/draft/start", async (c) => {
       status: "DRAFTING",
       lastActionTimestamp: Date.now(),
       difficulty,
+      theme,
     };
 
     // Initialize state inside the Durable Object
@@ -151,6 +152,7 @@ app.post("/api/draft/start", async (c) => {
       roomId,
       challenge,
       poolSize: pool.length,
+      theme,
     });
   } catch (err: any) {
     console.error("[API] Failed to start draft room:", err);

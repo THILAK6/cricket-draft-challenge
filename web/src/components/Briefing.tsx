@@ -1,5 +1,6 @@
 import type { DraftState } from "../../../src/core/types";
 import { BASE_RULES, FORMAT_LABEL, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
+import { themeByKey } from "../../../src/core/themes";
 
 export function Briefing(props: { state: DraftState; busy: boolean; onBack: () => void; onReroll: () => void; onStart: () => void }) {
   const { challenge, firstPick, lastAiPicks, pool } = props.state;
@@ -39,7 +40,7 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
           ))}
         </ul>
         <p class="muted" style="font-size:13px;margin-top:8px">
-          {pool.length + (lastAiPicks?.length ?? 0)} players in the pool. Picks go 1-2-2-2…: after the first pick, each side picks twice in a row.
+          {pool.length + (lastAiPicks?.length ?? 0)} players in the pool ({themeByKey(props.state.theme).label.toLowerCase()}). Picks go 1-2-2-2…: after the first pick, each side picks twice in a row.
         </p>
       </div>
 

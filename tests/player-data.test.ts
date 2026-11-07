@@ -73,3 +73,28 @@ describe("player ratings", () => {
     expect(tops).toBeLessThan(5);
   });
 });
+
+describe("pool themes", () => {
+  it("draws only the theme's players, and plays two-nation themes at home grounds", async () => {
+    const { PLAYER_MID_YEAR } = await import("../src/core/era-data");
+    for (const f of ["T20", "ODI", "TEST"] as MatchFormat[]) {
+      const ashes = await buildRandomDraft(d1, f, Math.random, "ashes");
+      expect(ashes.theme).toBe("ashes");
+      expect(ashes.pool.every((p) => p.country === "ENG" || p.country === "AUS")).toBe(true);
+      expect(["ENG", "AUS"]).toContain(ashes.challenge.venue.country);
+      expect(ashes.challenge.constraints.some((c) => c.type === "max_per_country")).toBe(false);
+
+      const modern = await buildRandomDraft(d1, f, Math.random, "modern");
+      expect(modern.pool.every((p) => (PLAYER_MID_YEAR[f][p.id] ?? 0) >= 2016)).toBe(true);
+
+      const legends = await buildRandomDraft(d1, f, Math.random, "legends");
+      const mixed = await buildRandomDraft(d1, f, Math.random, "mixed");
+      const avg = (xs: PlayerWithStats[]) => xs.reduce((s, p) => s + (p.rating ?? 0), 0) / xs.length;
+      expect(avg(legends.pool)).toBeGreaterThan(avg(mixed.pool));
+    }
+  });
+
+  it("falls back to the mixed pool for an unknown theme", async () => {
+    expect((await buildRandomDraft(d1, "T20", Math.random, "no-such-theme")).theme).toBe("mixed");
+  });
+});

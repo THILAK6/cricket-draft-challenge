@@ -19,8 +19,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  start: (format: MatchFormat, difficulty: Difficulty) =>
-    request<{ roomId: string }>("/api/draft/start", { format, difficulty }),
+  start: (format: MatchFormat, difficulty: Difficulty, theme: string) =>
+    request<{ roomId: string; theme: string }>("/api/draft/start", { format, difficulty, theme }),
   state: (roomId: string) => request<{ state: DraftState }>(`/api/room/${roomId}/state`),
   pick: (roomId: string, playerId: string) => request<{ state: DraftState }>(`/api/room/${roomId}/pick`, { playerId }),
   reorder: (roomId: string, fromIndex: number, toIndex: number) =>

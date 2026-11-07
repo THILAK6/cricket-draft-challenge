@@ -89,8 +89,8 @@ const pick = <T,>(xs: T[], rand: Rand): T => xs[Math.floor(rand() * xs.length)];
  * One selection rule per match, like the one house rule in a school draft. Usually it comes from
  * the conditions (pace on a green seamer, spin on a turner); sometimes it is a country cap instead.
  */
-function buildConstraints(format: MatchFormat, ground: Ground, pitch: PitchType, rand: Rand): Constraint[] {
-  if (rand() < 0.25) {
+function buildConstraints(format: MatchFormat, ground: Ground, pitch: PitchType, rand: Rand, countryCapAllowed = true): Constraint[] {
+  if (countryCapAllowed && rand() < 0.25) {
     const cap = pick([2, 3, 3], rand);
     return [{ type: "max_per_country", value: cap, ...(rand() < 0.6 ? { exceptions: { [ground.country]: cap + 1 } } : {}) }];
   }
@@ -110,12 +110,16 @@ function buildConstraints(format: MatchFormat, ground: Ground, pitch: PitchType,
 }
 
 /** A random scenario for the format. Not guaranteed playable: check it against the pool. */
-export function generateScenario(format: MatchFormat, rand: Rand = Math.random): Omit<Challenge, "id"> {
-  const ground = pick(GROUNDS.filter((g) => g.formats.includes(format)), rand);
+export function generateScenario(format: MatchFormat, rand: Rand = Math.random, opts: { hosts?: string[] } = {}): Omit<Challenge, "id"> {
+  const grounds = GROUNDS.filter((g) => g.formats.includes(format));
+  // Two-nation themes play at a ground in one of the two countries
+  const home = opts.hosts ? grounds.filter((g) => opts.hosts!.includes(g.country)) : [];
+  const ground = pick(home.length ? home : grounds, rand);
   const pitch = pick(ground.pitches, rand);
   const options = CONDITIONS.filter((c) => c.pitches.includes(pitch) && (!c.formats || c.formats.includes(format)));
   const condition = pick(options.length ? options : CONDITIONS, rand);
-  const constraints = buildConstraints(format, ground, pitch, rand);
+  // A country cap makes no sense when the whole pool is two countries
+  const constraints = buildConstraints(format, ground, pitch, rand, !opts.hosts);
   const dayNote = format === "TEST" ? "A five-day contest." : format === "ODI" ? "Fifty overs a side." : "Twenty overs a side.";
   return {
     title: `${ground.short.replace(/^the /, "").replace(/^./, (c) => c.toUpperCase())}: ${condition.label}`,

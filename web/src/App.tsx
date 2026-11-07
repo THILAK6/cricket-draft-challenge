@@ -7,6 +7,7 @@ import { Draft } from "./components/Draft";
 import { Lineup } from "./components/Lineup";
 import { Result } from "./components/Result";
 import { Toast, useToast } from "./components/Toast";
+import { themeByKey, type ThemeKey } from "../../src/core/themes";
 
 type Screen = "loading" | "setup" | "briefing" | "room";
 
@@ -16,6 +17,7 @@ export function App() {
   const [state, setState] = useState<DraftState | null>(null);
   const [format, setFormat] = useState<MatchFormat>("T20");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+  const [theme, setTheme] = useState<ThemeKey>("mixed");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
@@ -40,7 +42,8 @@ export function App() {
   const newRoom = async () => {
     setBusy(true);
     try {
-      const { roomId } = await api.start(format, difficulty);
+      const { roomId, theme: used } = await api.start(format, difficulty, theme);
+      if (used !== theme) toast.show(`Not enough ${themeByKey(theme).label} players for a ${format} draft, so this one uses a mixed pool.`);
       const { state } = await api.state(roomId);
       setRoomId(roomId);
       setState(state);
@@ -63,7 +66,9 @@ export function App() {
   let body;
   if (screen === "loading") body = <div class="loading">Loading…</div>;
   else if (screen === "setup")
-    body = <Setup format={format} difficulty={difficulty} busy={busy} onFormat={setFormat} onDifficulty={setDifficulty} onNext={newRoom} />;
+    body = (
+      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={setFormat} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} />
+    );
   else if (screen === "briefing" && state)
     body = <Briefing state={state} busy={busy} onBack={() => setScreen("setup")} onReroll={newRoom} onStart={() => setScreen("room")} />;
   else if (state && roomId) {

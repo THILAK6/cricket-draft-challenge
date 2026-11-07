@@ -1,5 +1,6 @@
 import type { MatchFormat } from "../../../src/core/types";
 import type { Difficulty } from "../api";
+import { POOL_THEMES, themeByKey, type ThemeKey } from "../../../src/core/themes";
 
 const FORMATS: { key: MatchFormat; title: string; text: string }[] = [
   { key: "T20", title: "T20", text: "20 overs a side. Hitters, finishers and death bowling." },
@@ -16,9 +17,11 @@ const LEVELS: { key: Difficulty; label: string }[] = [
 export function Setup(props: {
   format: MatchFormat;
   difficulty: Difficulty;
+  theme: ThemeKey;
   busy: boolean;
   onFormat: (f: MatchFormat) => void;
   onDifficulty: (d: Difficulty) => void;
+  onTheme: (t: ThemeKey) => void;
   onNext: () => void;
 }) {
   return (
@@ -40,6 +43,17 @@ export function Setup(props: {
             <span class="muted">{f.text}</span>
           </button>
         ))}
+      </div>
+      <div class="stack" style="gap:8px">
+        <div class="label">Player pool</div>
+        <div class="themes">
+          {POOL_THEMES.map((t) => (
+            <button type="button" class={props.theme === t.key ? "on" : ""} onClick={() => props.onTheme(t.key)} aria-pressed={props.theme === t.key}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p class="muted" style="font-size:13px">{themeByKey(props.theme).description}</p>
       </div>
       <div class="stack" style="gap:8px">
         <div class="label">AI opponent</div>

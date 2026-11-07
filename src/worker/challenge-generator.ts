@@ -5,6 +5,8 @@ import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
 import { displayRating, playerQuality, stature } from "../core/player-quality";
 import { correctRole } from "../core/roles";
+import { themeByKey, type PoolTheme, type ThemeKey } from "../core/themes";
+import { PLAYER_MID_YEAR } from "../core/era-data";
 
 /**
  * Adds a 1-99 rating to each player: format quality on one scale for every pool, so a 95 is a
@@ -353,7 +355,9 @@ export function samplePool(
   rand: () => number = Math.random,
   topN = TOP_PLAYER_COUNT,
   topShare = TOP_PLAYER_SHARE,
-  format: MatchFormat = (source[0]?.stats.format ?? "T20") as MatchFormat
+  format: MatchFormat = (source[0]?.stats.format ?? "T20") as MatchFormat,
+  /** At most this many from one country (a fifth of the pool by default; two-nation themes lift it). */
+  maxPerCountry = Math.ceil(size / 5)
 ): PlayerWithStats[] {
   const order = shuffled(source, rand);
   // The stars of the format; at least topShare of every pool comes from them.
@@ -395,7 +399,7 @@ export function samplePool(
   }
   const perCountry = new Map<string, number>();
   for (const p of picked) perCountry.set(p.country, (perCountry.get(p.country) ?? 0) + 1);
-  const cap = Math.ceil(size / 5);
+  const cap = maxPerCountry;
   const fill = (from: PlayerWithStats[], until: () => boolean) => {
     for (const p of from) {
       if (until()) break;
@@ -414,37 +418,76 @@ export function samplePool(
  * A fresh draft: a random pool and a random scenario that the pool can actually host. The check
  * is the cheap constructive one (about 0.03 ms), so it fits the free-plan CPU budget. No AI call.
  */
+/** The players a theme allows, from the full-member source. */
+export function themedSource(source: PlayerWithStats[], format: MatchFormat, theme: PoolTheme): PlayerWithStats[] {
+  let out = source;
+  if (theme.countries) out = out.filter((p) => theme.countries!.includes(p.country));
+  if (theme.era) {
+    const [from, to] = theme.era;
+    const years = PLAYER_MID_YEAR[format] ?? {};
+    out = out.filter((p) => {
+      const y = years[p.id];
+      return y !== undefined && y >= from && y <= to;
+    });
+  }
+  if (theme.legendsOnly) {
+    const top = topPlayerIds(source, format, theme.legendsOnly);
+    out = out.filter((p) => top.has(p.id));
+  }
+  return out;
+}
+
+/**
+ * A fresh draft: a random pool (from the chosen theme) and a random scenario that the pool can
+ * actually host. The check is the cheap constructive one, so it fits the free-plan CPU budget.
+ * A theme that can't host a fair two-XI draft in this format falls back to the mixed pool, and
+ * the returned `theme` says which one was used.
+ */
 export async function buildRandomDraft(
   db: D1Database,
   format: MatchFormat,
-  rand: () => number = Math.random
-): Promise<{ challenge: Challenge; pool: PlayerWithStats[] }> {
-  const source = fullMembers(await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES));
+  rand: () => number = Math.random,
+  themeKey: ThemeKey | string = "mixed"
+): Promise<{ challenge: Challenge; pool: PlayerWithStats[]; theme: ThemeKey }> {
+  const all = fullMembers(await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES));
   const templates = FALLBACK_SCENARIOS.filter((s) => s.format === format);
-  if (source.length < DRAFT_POOL_SIZE || templates.length === 0) {
-    throw new Error(`Not enough ${format} players in the database (found ${source.length}). Run database seeding.`);
+  if (all.length < DRAFT_POOL_SIZE || templates.length === 0) {
+    throw new Error(`Not enough ${format} players in the database (found ${all.length}). Run database seeding.`);
   }
   const make = (t: Omit<Challenge, "id">): Challenge => ({
     id: `ch_${Date.now()}_${Math.floor(rand() * 1e9).toString(36)}`,
     ...t,
     format,
   });
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const pool = samplePool(source, DRAFT_POOL_SIZE, rand, TOP_PLAYER_COUNT, TOP_PLAYER_SHARE, format);
-    // A freshly generated ground, conditions and selection rules, checked against this very pool
-    for (let tries = 0; tries < 12; tries++) {
-      const challenge = make(generateScenario(format, rand));
-      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format) };
+  const attempt = (theme: PoolTheme) => {
+    const source = theme.key === "mixed" ? all : themedSource(all, format, theme);
+    if (source.length < DRAFT_POOL_SIZE) return null;
+    const perCountry = theme.countries ? DRAFT_POOL_SIZE : Math.ceil(DRAFT_POOL_SIZE / 5);
+    // Small themed sources: the top-player share is the whole source anyway
+    for (let i = 0; i < 8; i++) {
+      const pool = samplePool(source, DRAFT_POOL_SIZE, rand, TOP_PLAYER_COUNT, TOP_PLAYER_SHARE, format, perCountry);
+      if (pool.length < DRAFT_POOL_SIZE) return null;
+      // A freshly generated ground, conditions and selection rule, checked against this very pool
+      for (let tries = 0; tries < 12; tries++) {
+        const challenge = make(generateScenario(format, rand, { hosts: theme.countries }));
+        if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format), theme: theme.key };
+      }
+      if (!theme.countries) {
+        // Otherwise one of the hand-written scenarios
+        for (const t of shuffled(templates, rand)) {
+          const challenge = make(t);
+          if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format), theme: theme.key };
+        }
+      }
     }
-    // Otherwise one of the hand-written scenarios
-    for (const t of shuffled(templates, rand)) {
-      const challenge = make(t);
-      if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format) };
-    }
-  }
+    return null;
+  };
+  const chosen = themeByKey(themeKey);
+  const result = (chosen.key !== "mixed" && attempt(chosen)) || attempt(themeByKey("mixed"));
+  if (result) return result;
   // Extremely unlikely: fall back to the fixed pool every template is verified against.
   const pool = await getPlayerPool(db, format, VERIFIED_POOL_SIZE);
-  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: ratePool(pool, format) };
+  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: ratePool(pool, format), theme: "mixed" };
 }
 
 export async function generateValidatedChallenge(
