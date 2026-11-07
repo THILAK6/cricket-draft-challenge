@@ -28,6 +28,38 @@ Items are grouped into phases and listed in the order they will be built. Tick e
   XIs can always be completed: enough keepers and bowlers for two sides plus spares.
 - [ ] **1.7 Bigger pool.** 40–44 players instead of 30, so the last picks are still real choices.
 
+## Phase 1b — Mobile-first UI (built together with Phase 1)
+
+Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport).
+
+- [ ] **U.1 Fix the "+ Draft" button that lies.** The pool offered "+ Draft" on a player and then
+  refused the pick ("Must pick a PACE player"), leaving the squad stuck at 10/11 until a different
+  player was tried. The button must only appear when the server will accept the pick: one legality
+  check, used by both the pool and the server.
+- [ ] **U.2 Compact player list.** Each pool card is about 133px tall, and the search box, filters and
+  tips take about 40% of the screen, so only about 2½ players are visible and the 30-player pool is
+  about 7 screens of scrolling. Use one row per player (name, country, role icon, the 2 stats that
+  matter in this format), so 8–10 players fit on screen. Tapping a row opens a bottom sheet with the
+  full stats and a "Draft" button.
+- [ ] **U.3 Sort and filter that fit.** One sticky row: search icon, role filter chips that scroll
+  sideways, and a sort control (rating, batting, bowling, caps).
+- [ ] **U.4 Drop the "AI COUNTER-SNIPE!" pop-up.** It needs a tap after every AI pick (20 taps to make
+  11 picks). Show the AI's pick as a short banner or ticker that doesn't block the screen, with the
+  banter line when Phase 4 is on.
+- [ ] **U.5 Draft board.** A round-by-round pick log for both sides (the "list on paper" from school),
+  plus need chips for each XI (Keeper ✓, Pace 2/3, Spin 0/1, Bowlers 4/5).
+- [ ] **U.6 One toast at a time.** Two toasts currently stack over the content above the tab bar.
+- [ ] **U.7 Your XI screen.** Rows are tall, with ▲▼ and × buttons on every player. Use a compact
+  list during the draft, and a single "set batting order" step at the end (ties to 1.4).
+- [ ] **U.8 Pre-match screen.** Put the bowling plan (new ball, death bowler) in a simple bottom sheet
+  with sensible defaults, and make "Play match" the main action.
+- [ ] **U.9 Result screen on mobile.** A sticky scoreline, collapsible sections, and scorecards closed by
+  default (the layout itself is Phase 6).
+- [ ] **U.10 Plain language.** Replace jargon such as "selection points", "Venue & conditions
+  telemetry" and "AI COUNTER-SNIPE!" with cricket language.
+- [ ] **U.11 Phone test in CI.** A Playwright test at 390px wide checks there is no horizontal scroll,
+  and that a full draft can be finished with draft taps only (no refused picks, no pop-ups to dismiss).
+
 ## Phase 2 — Player pool and ratings
 
 - [ ] **2.1 Pool by stature, not caps.** "Top players" are chosen by a quality/peak rating, not by
@@ -35,6 +67,9 @@ Items are grouped into phases and listed in the order they will be built. Tick e
 - [ ] **2.2 Fix rating distortions.** Shrink small samples harder (lightly capped players such as
   Corbin Bosch or Mahammad Bilal Zalmai currently rank near the top). Rate an all-rounder by their
   better skill plus part of the other, not both added together.
+- [ ] **2.2b Fix wrong countries.** Indonesian players are stored as India (`IND`), for example
+  Danilson Hawoe and Apriliandi Abdillah Rahayu. Map country codes correctly in the ETL and re-seed.
+  Also consider leaving associate-nation players out of the default pool.
 - [ ] **2.3 Roles per format.** A player's role can differ by format (Rahul Dravid is tagged as a
   keeper in Tests).
 - [ ] **2.4 Themed pools (optional draft mode).** Examples: All-time legends, a World Cup year,
