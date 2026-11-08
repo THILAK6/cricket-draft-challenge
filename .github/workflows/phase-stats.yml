@@ -1,7 +1,10 @@
-name: Phase stats from Cricsheet
+name: Player splits from Cricsheet
 
-# Builds data/phase-stats.sql (powerplay, middle and death numbers for every T20I player) from
-# Cricsheet's ball-by-ball data and commits it. Run it from the Actions tab ("Run workflow").
+# Builds the match engine's ball-by-ball data from Cricsheet and commits it:
+#   data/phase-stats.sql            powerplay / middle / death numbers (T20, ODI)
+#   data/player-splits.sql          batting position, region of the ground, batting first v chasing
+#   src/core/data-norms.generated.ts  typical international numbers and par scores at the game's grounds
+# Run it from the Actions tab ("Run workflow").
 on:
   workflow_dispatch:
 
@@ -18,17 +21,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Download T20I ball-by-ball data
+      - name: Download ball-by-ball data
         run: |
-          mkdir -p data/raw/t20s_json
-          curl -sSfL https://cricsheet.org/downloads/t20s_json.zip -o data/raw/t20s_json.zip
-          unzip -q data/raw/t20s_json.zip -d data/raw/t20s_json
-      - run: npx tsx src/etl/phase-stats.ts data/raw/t20s_json data/phase-stats.sql
+          for f in t20s odis tests; do
+            mkdir -p data/raw/${f}_json
+            curl -sSfL https://cricsheet.org/downloads/${f}_json.zip -o data/raw/${f}_json.zip
+            unzip -q data/raw/${f}_json.zip -d data/raw/${f}_json
+          done
+      - run: npx tsx src/etl/splits.ts data/raw
       - name: Commit if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/phase-stats.sql
+          git add data/phase-stats.sql data/player-splits.sql src/core/data-norms.generated.ts
           git diff --cached --quiet && echo "No change" && exit 0
-          git commit -m "data: T20 phase stats from Cricsheet"
+          git commit -m "data: player splits from Cricsheet"
           git push
