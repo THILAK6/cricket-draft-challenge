@@ -3,7 +3,9 @@
 --   npx wrangler d1 execute cricdraft-db --remote --file=src/db/schema.sql
 --   npx wrangler d1 execute cricdraft-db --remote --file=data/data-fixes.sql
 -- The ETL (src/etl/process-cricsheet.ts) now gets these right on its own, so a fresh seed
--- needs only the per-format roles below that the ETL can't infer from stumpings.
+-- needs only the per-format roles below that the ETL can't infer from stumpings, and the spinners at
+-- the end (Cricsheet has no bowling styles; when the Cricinfo lookup fails the ETL falls back to
+-- "Right-arm medium").
 
 CREATE TABLE IF NOT EXISTS player_format_roles (
     player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
@@ -112,3 +114,79 @@ INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bow
   ('crick_df5a6881', 'TEST', 'BAT', 'NONE'),
   ('crick_abb83e27', 'ODI', 'BAT', 'NONE'),  -- Jonny Bairstow opened in white-ball cricket
   ('crick_abb83e27', 'T20', 'BAT', 'NONE');
+
+-- Spinners the source data filed under its default style, "Right-arm medium" (Warne, Kumble, Lyon,
+-- MacGill...). They were treated as seamers by the match engine, the pitch fit and the AI.
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_d094e7d1'; -- Abdur Rehman (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_864c199e'; -- Adam Voges (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_fbd4f01f'; -- Ajaz Patel (NZL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_54279e23'; -- Alok Kapali (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_e957b38f'; -- Andy McBrine (IRE)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_0c2730df'; -- Anil Kumble (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_34ff9e07'; -- Aravinda de Silva (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_a4af4849'; -- Ashley Giles (ENG)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_1a448be0'; -- Ben White (IRE)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_dadb9703'; -- Brandon Mavuta (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_4b685e2d'; -- Dan Lawrence (ENG)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_537f5ab2'; -- Dane Piedt (RSA)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_0be1b885'; -- Danish Kaneria (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_53fe6ee4'; -- Darren Lehmann (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_33085ffb'; -- Dean Elgar (RSA)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_7a80ddf2'; -- Devendra Bishoo (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_5531248e'; -- Dilruwan Perera (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_656202a7'; -- Dougie Marillier (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_0480aba6'; -- Enamul Haque (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_33b3d2df'; -- Gareth Delany (IRE)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_348195ea'; -- Grant Flower (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_94253925'; -- Hanuma Vihari (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_818e8bf2'; -- Ian Blackwell (ENG)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_cc23e91e'; -- Jomel Warrican (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_3b50c63a'; -- Kaushal Lokuarachchi (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_49dc9cb4'; -- Kavem Hodge (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_df08c69e'; -- Keith Dabengwa (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_7d5af2ea'; -- Kraigg Brathwaite (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_b54b66b3'; -- Lasith Embuldeniya (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_4fc516bd'; -- Malinga Bandara (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_e8d7b493'; -- Manjural Islam Rana (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_99464591'; -- Marcus North (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_c8574282'; -- Mark Craig (NZL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_fa433be6'; -- Marnus Labuschagne (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_2c54c49b'; -- Matthew Humphreys (IRE)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_7ff3fcaa'; -- Mohammad Rafique (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_de0a3209'; -- Mominul Haque (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_5a37ec26'; -- Monty Panesar (ENG)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_abfeb126'; -- Murali Kartik (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_8ea6e670'; -- Nathan Hauritz (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_96a6a7ad'; -- Nathan Lyon (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_1670dcfd'; -- Nayeem Hasan (BAN)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_6a0537aa'; -- Nicky Boje (RSA)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_59ddd811'; -- Nkrumah Bonner (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_54c58a5e'; -- Noman Ali (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_fd093ca9'; -- Paul Harris (RSA)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_98ae73b1'; -- Piyush Chawla (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_127bc5ca'; -- Prabath Jayasuriya (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_6c6591ab'; -- Pragyan Ojha (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_9de271ef'; -- Prosper Utseya (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_1be67d37'; -- Ramesh Mendis (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_5d096f3d'; -- Ramesh Powar (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_67af6f81'; -- Ray Price (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_b08252b8'; -- Ryan Burl (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak' WHERE id = 'crick_d2c2b2d5'; -- Sachin Tendulkar (IND)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_bbc192a4'; -- Sajid Khan (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_afe57f7a'; -- Sean Williams (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_0dc00542'; -- Shahid Afridi (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_d76b0d2d'; -- Shane Shillingford (WI)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_bb18be76'; -- Shane Warne (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_e36e9dd3'; -- Shoaib Bashir (ENG)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_c9945bdf'; -- Simi Singh (IRE)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_23638956'; -- Simon Harmer (RSA)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_60dac349'; -- Stuart MacGill (AUS)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Right-arm offbreak' WHERE id = 'crick_f5f18a18'; -- Suraj Randiv (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_4b2d6789'; -- Tendai Chisoro (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_434e36b1'; -- Upul Chandana (SL)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_4bc0a378'; -- Wellington Masakadza (ZIM)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Legbreak googly' WHERE id = 'crick_f2800ef3'; -- Yasir Shah (PAK)
+UPDATE players SET bowling_category = 'SPIN', bowling_style = 'Slow left-arm orthodox' WHERE id = 'crick_3a0f6df2'; -- Zulfiqar Babar (PAK)
+-- Per-format roles follow the corrected category
+UPDATE player_format_roles SET bowling_category = 'SPIN'
+  WHERE bowling_category = 'PACE' AND player_id IN (SELECT id FROM players WHERE bowling_category = 'SPIN');

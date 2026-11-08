@@ -136,13 +136,20 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 
 ## Phase 6 — Result screen
 
-- [ ] **6.1 Head-to-head first.** Compare openers, middle order, keeper, all-rounders, pace attack, spin
-  attack and batting depth, with a winner arrow for each. This is the school argument.
-- [ ] **6.2 Series or win chance.** Play a best-of-3 series, or show "your XI wins X% of 500 simulated
-  matches" next to the featured match.
-- [ ] **6.3 Draft awards.** Steal of the draft (a late pick who performed), biggest regret, best pick.
-- [ ] **6.4 Trim the screen.** Order: scoreline → head-to-head → 3 turning points → draft awards →
-  full scorecards (collapsed). Remove the 0–100 rating headline that can contradict the result.
+- [x] **6.1 Head-to-head first.** Compare openers, middle order, keeper, all-rounders, pace attack, spin
+  attack, batting depth and fit for the pitch, with a winner arrow for each. This is the school argument.
+- [x] **6.2 Series or win chance.** "Your XI wins X% of 200 replays" next to the featured match, with a
+  plain reading ("Unlucky: yours is the better XI...").
+- [x] **6.3 Draft awards.** Steal of the draft (a late pick who performed), biggest regret, best pick.
+- [x] **6.4 Trim the screen.** Order: scoreline → win chance → head-to-head → 3 turning points → draft
+  awards → full scorecards (collapsed). The 0–100 selection score and the team report are gone.
+
+  _Found while building it:_ about 70 spinners were stored as medium pacers (Warne, Kumble, Lyon,
+  MacGill, Kaneria, Panesar...), so the match, the pitch fit and the AI treated them as seamers. Fixed
+  in `data/data-fixes.sql`. Tests also had a time bug: a side could "declare" while behind, and the
+  other side won a one-run chase. Captains now only declare ahead (and with 40+ overs left to bowl), and
+  otherwise bat on to a draw. Test draws went from 4% to 13%, and the better-drafted XI now wins 65% of
+  Tests (was 56%).
 
 ## Later
 
@@ -153,6 +160,8 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 
 ## Working notes
 
+- **Phase 6 done.** Production needs `npx wrangler d1 execute cricdraft-db --remote --file=data/data-fixes.sql`
+  again for the spinner fix (the file is safe to re-run).
 - **Phases 2 and 3 done.** Production needs one database step before (or right after) deploying:
   `npx wrangler d1 execute cricdraft-db --remote --file=src/db/schema.sql` then
   `npx wrangler d1 execute cricdraft-db --remote --file=data/data-fixes.sql`. Until then the game

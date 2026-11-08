@@ -236,10 +236,14 @@ export function simulateCricketMatch(
     r: () => number,
     inn = 1,
     det = false,
-    declareAt?: number
+    declareAt?: number,
+    declareAfter?: { over: number; runs: number }
   ) =>
     simulateInnings(bat, bowl, ch, overs, name, tgt, r, inn, det, {
       declareAt,
+      declareAfter,
+      // Tests: leave at least 40 overs to bowl at, or bat on to the close
+      declareBefore: ch.format === "TEST" && declareAfter ? overs - 40 : undefined,
       plan: name === "AI XI" ? options.userPlan : undefined,
       tactics,
       claims,
@@ -264,23 +268,28 @@ export function simulateCricketMatch(
     const TOTAL_OVERS = 450 - lost;
     let used = 0;
     const oversOf = (i: InningsScorecard) => i.totalBalls / 6;
+    const testScore = (i: InningsScorecard) => (i.totalWickets >= 10 ? `${i.totalRuns}` : `${i.totalRuns}/${i.totalWickets}${i.declared ? "d" : ""}`);
     const left = () => Math.max(0, TOTAL_OVERS - used);
     const A = userBatsFirst ? { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const } : { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const };
     const B = userBatsFirst ? { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const } : { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const };
-    const bat = (t: typeof A, overs: number, inn: number, det: boolean, tgt?: number, declareAt?: number) => {
+    const bat = (t: typeof A, overs: number, inn: number, det: boolean, tgt?: number, declareAt?: number, declareAfter?: { over: number; runs: number }) => {
       const cap = Math.max(1, Math.floor(overs));
-      const i = inningsOf(t.squad, t.opp, challenge, cap, t.name, tgt, rng, inn, det, declareAt);
+      const i = inningsOf(t.squad, t.opp, challenge, cap, t.name, tgt, rng, inn, det, declareAt, declareAfter);
       // Batting on until the time set aside runs out (not all out, not chasing) is a declaration:
-      // the captain closes the innings to leave time to win
-      if (tgt === undefined && i.totalWickets < 10 && i.totalBalls >= cap * 6) i.declared = true;
+      // the captain closes the innings to leave time to win. Batting to the close of the match is not.
       used += oversOf(i);
+      if (tgt === undefined && i.totalWickets < 10 && i.totalBalls >= cap * 6 && left() >= 1) i.declared = true;
       return i;
     };
     const day = () => Math.min(5, Math.max(1, Math.ceil(used / 90)));
 
     // First innings: a big total is declared on (with time left to win the match)
+    // A captain only declares ahead of the game. Behind (or not far enough ahead), a side bats on,
+    // and if the time runs out the match is drawn.
+    const MIN_LEAD = 200; // the lead worth declaring on once time is short
     const a1 = bat(A, Math.min(170, left() - 200), 1, false, undefined, 600);
-    const b1 = bat(B, Math.min(170, left() - 120), 1, false, undefined, a1.totalRuns + 300);
+    const b1 = bat(B, left(), 1, false, undefined, a1.totalRuns + 300, { over: Math.min(170, left() - 120), runs: a1.totalRuns + 75 });
+    const dayFirstInnings = day();
     const firstLead = a1.totalRuns - b1.totalRuns;
     const followOn = firstLead >= 200 && left() >= 150;
 
@@ -292,14 +301,14 @@ export function simulateCricketMatch(
     if (followOn) {
       thirdTeam = B;
       chaseTeam = A;
-      third = bat(B, left(), 2, true);
+      third = bat(B, left(), 2, true, undefined, undefined, { over: Math.max(10, left() - 90), runs: a1.totalRuns - b1.totalRuns + MIN_LEAD });
       target = b1.totalRuns + third.totalRuns - a1.totalRuns + 1;
     } else {
       thirdTeam = A;
       chaseTeam = B;
-      // Declare once the lead is big enough, leaving about 90 overs to bowl the other side out
+      // Declare once the lead is big enough, or once about 90 overs are left with a lead worth bowling at
       const declLead = firstLead >= 0 ? 380 : 330;
-      third = bat(A, Math.max(10, left() - 90), 2, true, undefined, Math.max(1, declLead - firstLead));
+      third = bat(A, left(), 2, true, undefined, Math.max(1, declLead - firstLead), { over: Math.max(10, left() - 90), runs: Math.max(1, MIN_LEAD - firstLead) });
       target = a1.totalRuns + third.totalRuns - b1.totalRuns + 1;
     }
 
@@ -307,10 +316,15 @@ export function simulateCricketMatch(
     let winner: "USER" | "AI" | "DRAW" | "TIE" = "DRAW";
     let summary = "";
     const thirdAllOut = third.totalWickets >= 10;
+    const dayThird = day();
     if (target <= 0 && thirdAllOut) {
       // Bowled out twice and still behind: an innings defeat
       winner = chaseTeam.side;
       summary = `${chaseTeam.name} won by an innings and ${1 - target} runs!`;
+    } else if (left() < 1) {
+      // The third innings batted to the close: no time for a chase
+      winner = "DRAW";
+      summary = `Match drawn! ${thirdTeam.name} batted out the last day (${testScore(third)})${lost ? `, with ${lost} overs lost to the weather` : ""}.`;
     } else if (target <= 0) {
       // Declared behind is never sensible; treat the target as a token one-run chase
       target = 1;
@@ -332,7 +346,7 @@ export function simulateCricketMatch(
         }
       } else {
         winner = "DRAW";
-        summary = `Match Drawn! ${chaseTeam.name} batted out Day 5 (${fourth.totalRuns}/${fourth.totalWickets} in ${fourth.oversString} ov)${lost ? `, with ${lost} overs lost to the weather` : ""}.`;
+        summary = `Match drawn! ${chaseTeam.name} batted out the last day (${fourth.totalRuns}/${fourth.totalWickets} in ${fourth.oversString} ov, needing ${target})${lost ? `, with ${lost} overs lost to the weather` : ""}.`;
       }
     }
 
@@ -368,23 +382,24 @@ export function simulateCricketMatch(
       pitchType
     );
 
+    // Turning points from what actually happened, on the days it happened
     keyMoments.push({
-      over: "Day 1 - 2",
-      title: "Opening Exchange",
-      description: `${userBatsFirst ? "Your XI" : "AI XI"} set the foundation on a fresh wicket with early lateral movement.`,
-      impactTeam: userBatsFirst ? "USER" : "AI",
-    });
-
-    keyMoments.push({
-      over: "Day 3",
-      title: "First Innings Lead",
-      description: `${leadFirstInnings.team === "USER" ? "Your XI" : "AI XI"} claimed a crucial first-innings advantage of ${leadFirstInnings.runs} runs.`,
+      over: dayFirstInnings > 1 ? `Day 1-${dayFirstInnings}` : "Day 1",
+      title: "First innings",
+      description: `${A.name} made ${testScore(a1)} and ${B.name} replied with ${testScore(b1)}.`,
       impactTeam: leadFirstInnings.team,
     });
-
     keyMoments.push({
-      over: "Day 5",
-      title: "Final Innings Resolution",
+      over: `Day ${dayThird}`,
+      title: followOn ? "Made to follow on" : "Second innings",
+      description: followOn
+        ? `${B.name}, ${firstLead} behind, followed on and made ${testScore(third)}.`
+        : `${A.name} made ${testScore(third)}${fourth ? `, leaving ${B.name} ${target} to win` : ""}.`,
+      impactTeam: followOn ? B.side : A.side,
+    });
+    keyMoments.push({
+      over: `Day ${day()}`,
+      title: "The finish",
       description: summary,
       impactTeam: winner === "DRAW" || winner === "TIE" ? "USER" : winner,
     });
@@ -399,6 +414,14 @@ export function simulateCricketMatch(
     if (winner !== d.side) analysis.whyLoserLost.push(d.text);
   }
   addClusterLines(analysis, testFacts, keyMoments);
+    if (winner === "DRAW") {
+      // Explain the draw from the innings that saved it
+      const saver = fourth ?? third;
+      const saverName = fourth ? chaseTeam.name : thirdTeam.name;
+      analysis.decisiveDifference = lost && saver.totalBalls < 60 * 6
+        ? `The weather had the final say: ${lost} overs were lost, and ${saverName} closed on ${testScore(saver)}.`
+        : `${saverName} batted out ${saver.oversString} overs to save the match, closing on ${testScore(saver)} with ${10 - saver.totalWickets} wicket${saver.totalWickets === 9 ? "" : "s"} in hand.`;
+    }
     const testPerf = computeMatchPerformance("TEST", testUserInns, testAiInns);
     const testSel = buildSelectionReport({ userSquad, aiSquad, challenge, winner, userInnings: testUserInns, aiInnings: testAiInns, performance: testPerf, contributions: testContribs, facts: testFacts });
 
@@ -622,7 +645,19 @@ function simulateInnings(
   rng: () => number,
   inningsNumber = 1,
   isDeterioratedPitch = false,
-  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; claims?: TacticClaim[]; bowlingSide?: string; declareAt?: number } = {}
+  opts: {
+    wicketLimit?: number;
+    phase?: "PP" | "MID" | "DEATH";
+    plan?: BowlingPlan;
+    tactics?: string[];
+    claims?: TacticClaim[];
+    bowlingSide?: string;
+    declareAt?: number;
+    /** Tests: once this many overs are bowled, declare as soon as the total reaches `runs` (time is short, the lead will do). */
+    declareAfter?: { over: number; runs: number };
+    /** Tests: no declaration after this over (too little time left to bowl the other side out). */
+    declareBefore?: number;
+  } = {}
 ): InningsScorecard {
   const wicketLimit = opts.wicketLimit ?? 10;
   const { pitch_type, country } = challenge.venue;
@@ -755,7 +790,12 @@ function simulateInnings(
     if (totalWickets >= wicketLimit) break;
     if (target && totalRuns >= target) break;
     // Tests: the captain declares at the end of the over in which the side reaches its declaration total
-    if (opts.declareAt !== undefined && totalRuns >= opts.declareAt) {
+    const mayDeclare = opts.declareBefore === undefined || over <= opts.declareBefore;
+    if (mayDeclare && opts.declareAt !== undefined && totalRuns >= opts.declareAt) {
+      declared = true;
+      break;
+    }
+    if (mayDeclare && opts.declareAfter && over > opts.declareAfter.over && totalRuns >= opts.declareAfter.runs) {
       declared = true;
       break;
     }

@@ -296,9 +296,8 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     // always point the same way as the score they explain.
     const qDiff = catFor(cat("quality"), side) - catFor(cat("quality"), opp);
     if (Math.abs(qDiff) >= 3) {
-      const rating = `average pick rating ${Math.round(me.avgRating)} against ${Math.round(them.avgRating)}`;
-      if (qDiff > 0) add(side, "good", qDiff + 1, `Higher-rated players on career numbers (${rating}), led by ${me.topPicks.slice(0, 2).join(" and ")}.`);
-      else add(side, "bad", -qDiff + 1, `Lower-rated picks on career numbers (${rating}). The opposition's top-rated were ${them.topPicks.slice(0, 2).join(" and ")}.`);
+      if (qDiff > 0) add(side, "good", qDiff + 1, `Stronger career numbers across the XI, led by ${me.topPicks.slice(0, 2).join(" and ")}.`);
+      else add(side, "bad", -qDiff + 1, `Weaker career numbers across the XI. The opposition's best were ${them.topPicks.slice(0, 2).join(" and ")}.`);
     }
 
     // Batting depth, backed by what the lower order actually scored
@@ -429,7 +428,7 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
   };
   consider("role", 0.8, userIssues.length ? `Fix the balance: ${userIssues.slice(0, 2).join(" and ")}. Aim for a keeper, openers who open, 5-6 bowling options and a finisher` : "Check the balance: a keeper, true openers, 5-6 bowling options and a finisher");
   consider("pitch", 0.75, `Read the pitch: on a ${pitchLabel}, ${PITCH_HINT[pitch] ?? "match your squad to the conditions"}. You picked ${pitchTraits(prof.USER, pitch)}`);
-  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. Your picks' average rating was ${Math.round(prof.USER.avgRating)} against the AI's ${Math.round(prof.AI.avgRating)}`);
+  consider("quality", 0.7, `Raise the quality: favour players with strong career numbers in this format. The AI's best picks were ${prof.AI.topPicks.slice(0, 2).join(" and ")}`);
   consider("depth", 0.65, "Add batting depth: pick bowlers and all-rounders who can score down to #8");
   adviceCandidates.sort((a, b) => b.score - a.score).slice(0, 3).forEach((a) => nextTime.push(a.text));
   if (nextTime.length === 0) {

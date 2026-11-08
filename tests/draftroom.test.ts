@@ -365,7 +365,9 @@ describe("Single source of truth for the result", () => {
     expect(r.winner).toBe(r.simulation.winner);
     expect(r.verdictSummary).toBe(r.simulation.summary);
     expect(r.refereeReport).toBeNull(); // no Gemini key: commentary is optional, result is unaffected
-    expect(typeof r.userRating).toBe("number");
+    expect(r).not.toHaveProperty("userRating"); // no 0-100 rating that could contradict the result
+    expect(r.review.headToHead.rows).toHaveLength(8);
+    expect(r.review.winChance.played).toBe(200);
     expect(r).not.toHaveProperty("userAdjustment");
   });
 

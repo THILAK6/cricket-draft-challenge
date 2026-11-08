@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
+import { buildDraftAwards, buildHeadToHead, type DraftAward, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
 import { PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 
@@ -8,7 +9,7 @@ const score = (i?: InningsScorecard) => (i ? `${i.totalRuns}/${i.totalWickets}${
 const scoreLine = (a?: InningsScorecard, b?: InningsScorecard) =>
   [a, b].filter((i): i is InningsScorecard => !!i && i.totalBalls > 0).map((i) => (i.totalWickets >= 10 ? `${i.totalRuns}` : score(i))).join(" & ");
 
-/** The match result: score line first, then why it went that way, then the full scorecards. */
+/** The match result: score line, how often this XI wins, head to head, turning points, draft awards, then the details. */
 export function Result(props: RoomProps) {
   const sim = props.state.simulation as MatchSimulationResult | undefined;
   const results = props.state.results;
@@ -17,8 +18,11 @@ export function Result(props: RoomProps) {
   const test = sim.format === "TEST";
   const headline =
     sim.winner === "USER" ? "You won" : sim.winner === "AI" ? "The AI won" : sim.winner === "DRAW" ? "Match drawn" : "Match tied";
-  const sel = sim.selection;
-  const perf = sim.performance;
+  // Rooms finished before the review existed get the head-to-head and awards worked out here
+  const review: MatchReview = results?.review ?? {
+    headToHead: buildHeadToHead(props.state.userPicks, props.state.aiPicks, props.state.challenge),
+    awards: buildDraftAwards(props.state.pickLog, sim.matchFacts?.contributions),
+  };
 
   const innings: { key: string; label: string; inn: InningsScorecard }[] = [
     { key: "u1", label: test ? "Your 1st" : "Your XI", inn: sim.userInnings },
@@ -61,60 +65,38 @@ export function Result(props: RoomProps) {
         <p class="faint" style="font-size:13px;margin-top:8px">{sim.toss?.narrative}</p>
       </div>
 
-      {sel && (
-        <div class="card stack" style="gap:10px">
-          <div class="label">Your selection</div>
-          <p style="font-weight:700">{sel.headline}</p>
-          <div class="cmp">
-            <span class="l you">You</span>
-            <span class="lbl" />
-            <span class="r ai">AI</span>
-            {sel.categories.map((c) => (
-              <>
-                <span class={`l ${c.user > c.ai ? "good" : ""}`}>{fmtPts(c.user)}</span>
-                <span class="lbl">
-                  {c.label} <span class="faint">/{c.max}</span>
-                </span>
-                <span class={`r ${c.ai > c.user ? "good" : ""}`}>{fmtPts(c.ai)}</span>
-              </>
-            ))}
-          </div>
-          {sel.userPoints.length > 0 && (
-            <div>
-              <div class="label" style="margin-bottom:4px">What your picks did</div>
-              <ul class="pts">
-                {sel.userPoints.map((p) => (
-                  <li class={p.tone === "good" ? "" : "muted"}>
-                    {p.tone === "good" ? "✓ " : "✗ "}
-                    {p.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {sel.nextTime.length > 0 && (
-            <div>
-              <div class="label" style="margin-bottom:4px">Next time</div>
-              <ul class="pts">
-                {sel.nextTime.map((t) => (
-                  <li>{t}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      <WinChanceLine chance={review.winChance} winner={sim.winner} />
+
+      <HeadToHeadCard h2h={review.headToHead} />
 
       {(results?.decisiveDifference || sim.keyMoments.length > 0) && (
         <div class="card stack" style="gap:8px">
-          <div class="label">How it was decided</div>
+          <div class="label">Turning points</div>
           {results?.decisiveDifference && <p>{results.decisiveDifference}</p>}
-          {sim.keyMoments.slice(0, 5).map((m) => (
+          {sim.keyMoments.slice(0, 3).map((m) => (
             <div class="moment">
               <span class="ov">{typeof m.over === "number" ? `Ov ${m.over}` : m.over}</span>
               <div class="grow">
                 <b class={m.impactTeam === "USER" ? "you" : "ai"}>{m.title}</b>
                 <div class="muted" style="font-size:13px">{m.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {review.awards.length > 0 && (
+        <div class="card stack" style="gap:8px">
+          <div class="label">Draft awards</div>
+          {review.awards.map((a) => (
+            <div class="award">
+              <span class="ic" aria-hidden="true">{AWARD_ICON[a.kind]}</span>
+              <div class="grow">
+                <span class="muted" style="font-size:12px">{a.title}</span>
+                <div>
+                  <b class={a.team === "USER" ? "you" : "ai"}>{a.name}</b>
+                </div>
+                <div class="muted" style="font-size:13px">{a.text}</div>
               </div>
             </div>
           ))}
@@ -141,36 +123,6 @@ export function Result(props: RoomProps) {
           <Scorecard inn={current.inn} />
         </div>
       </details>
-
-      {perf && (
-        <details class="box">
-          <summary>Team report</summary>
-          <div class="inner">
-            <div class="cmp">
-              <span class="l you">You</span>
-              <span class="lbl" />
-              <span class="r ai">AI</span>
-              {(
-                [
-                  ["Batting", perf.USER.battingScore, perf.AI.battingScore],
-                  ["Bowling", perf.USER.bowlingScore, perf.AI.bowlingScore],
-                  ["Fielding", perf.USER.fieldingScore, perf.AI.fieldingScore],
-                  ["Overall", perf.USER.overallScore, perf.AI.overallScore],
-                  ["Sixes", perf.USER.stats.sixes, perf.AI.stats.sixes],
-                  ["Fours", perf.USER.stats.fours, perf.AI.stats.fours],
-                  ["Dropped catches", perf.USER.stats.droppedCatches, perf.AI.stats.droppedCatches],
-                ] as [string, number, number][]
-              ).map(([label, u, a]) => (
-                <>
-                  <span class="l">{Math.round(u)}</span>
-                  <span class="lbl">{label}</span>
-                  <span class="r">{Math.round(a)}</span>
-                </>
-              ))}
-            </div>
-          </div>
-        </details>
-      )}
 
       {test && sim.dayChronicle && sim.dayChronicle.length > 0 && (
         <details class="box">
@@ -209,7 +161,87 @@ export function Result(props: RoomProps) {
   );
 }
 
-const fmtPts = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
+const AWARD_ICON: Record<DraftAward["kind"], string> = { steal: "💎", best: "⭐", regret: "😬" };
+
+/** "Hope", "de Villiers": enough of a name to argue about. */
+function surname(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  const last = parts[parts.length - 1];
+  const prev = parts[parts.length - 2];
+  return /^(de|du|van|von|der|ul|al|le)$/i.test(prev) ? `${prev} ${last}` : last;
+}
+
+function names(xs: string[]): string {
+  if (!xs.length) return "nobody";
+  const s = xs.map(surname);
+  return s.length === 2 ? `${s[0]} & ${s[1]}` : s.join(", ");
+}
+
+function HeadToHeadCard({ h2h }: { h2h: HeadToHead }) {
+  const level = h2h.rows.length - h2h.won.USER - h2h.won.AI;
+  return (
+    <div class="card stack" style="gap:6px">
+      <div class="label">Head to head</div>
+      <p class="h2h-sum">
+        <b class="you">You {h2h.won.USER}</b>
+        <span class="muted"> · </span>
+        <b class="ai">AI {h2h.won.AI}</b>
+        {level > 0 && <span class="muted"> · {level} level</span>}
+      </p>
+      <div class="h2h">
+        {h2h.rows.map((r) => (
+          <div class={`row ${r.edge === "USER" ? "u" : r.edge === "AI" ? "a" : "e"}`}>
+            <div class="lbl">
+              <span class="arrow l" aria-hidden="true">{r.edge === "USER" ? "◀" : ""}</span>
+              <span>{r.label}</span>
+              <span class="arrow r" aria-hidden="true">{r.edge === "AI" ? "▶" : ""}</span>
+              <span class="sr-only">{r.edge === "USER" ? ": yours" : r.edge === "AI" ? ": the AI's" : ": level"}</span>
+            </div>
+            <div class="side l">
+              <div class="who">{names(r.user.names)}</div>
+              <div class="st">{r.user.stat}</div>
+            </div>
+            <div class="side r">
+              <div class="who">{names(r.ai.names)}</div>
+              <div class="st">{r.ai.stat}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p class="faint" style="font-size:12px">Career numbers in this format. The arrow points to the stronger unit.</p>
+    </div>
+  );
+}
+
+function WinChanceLine({ chance, winner }: { chance?: WinChance; winner: string }) {
+  if (!chance || !chance.played) return null;
+  const pct = (n: number) => Math.round((n / chance.played) * 100);
+  const w = pct(chance.wins);
+  const d = pct(chance.draws);
+  const l = 100 - w - d;
+  const read =
+    winner === "USER" && w < 40 ? "This one went your way, but their XI is the stronger draft."
+    : winner === "AI" && w > 55 ? "Unlucky: yours is the better XI and wins this more often than not."
+    : w >= 60 ? "You drafted the better XI."
+    : l >= 60 ? "Their XI was the better draft."
+    : "Two well-matched XIs: it could go either way.";
+  return (
+    <div class="card stack" style="gap:8px">
+      <div class="label">Played {chance.played} times</div>
+      <p>
+        Your XI wins <b class="you">{w}%</b>
+        {d > 0 ? <>, draws {d}%</> : null} and loses <b class="ai">{l}%</b>.
+      </p>
+      <div class="chance" role="img" aria-label={`Win ${w}%, draw ${d}%, lose ${l}%`}>
+        <span class="w" style={{ width: `${w}%` }} />
+        <span class="d" style={{ width: `${d}%` }} />
+        <span class="l" style={{ width: `${l}%` }} />
+      </div>
+      <p class="muted" style="font-size:13px">{read}</p>
+    </div>
+  );
+}
 
 function Scorecard({ inn }: { inn: InningsScorecard }) {
   return (

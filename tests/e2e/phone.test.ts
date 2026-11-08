@@ -110,6 +110,14 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.click("text=Play the match");
         await page.waitForSelector(".scorehead", { timeout: 20_000 });
         expect(await overflow()).toBe(0);
+        // Result: how often this XI wins, then the head-to-head, with the scorecards closed
+        await page.waitForSelector("text=Head to head");
+        expect(await page.locator(".h2h .row").count()).toBe(8);
+        expect(await page.locator(".chance").count()).toBe(1);
+        expect(await page.locator("details.box[open]").count()).toBe(0);
+        await page.click("summary:has-text('Scorecards')");
+        expect(await overflow()).toBe(0);
+        if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `result-${format}.png`), fullPage: true });
         expect(errors).toEqual([]);
       } finally {
         await browser.close();

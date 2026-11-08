@@ -1,9 +1,9 @@
 import type { AiSnipeInfo, DraftState, MatchFormat, PlayerWithStats } from "../core/types";
 import { snakeOrder } from "../core/types";
 import { canPickPlayer, type PickContext } from "../core/validator";
-import { calculateDeterministicScore } from "../core/scoring";
 import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
+import { buildMatchReview } from "../core/match-review";
 import { chooseAiPick } from "../core/ai-draft";
 import { arrangeSquad } from "../core/batting-order";
 import { buildRandomDraft, saveChallenge } from "../worker/challenge-generator";
@@ -380,12 +380,21 @@ export class DraftRoom implements DurableObject {
     const simulation = simulateCricketMatch(ds.userPicks, ds.aiPicks, ds.challenge, ds.matchSeed, { userPlan: ds.bowlingPlan });
     ds.simulation = simulation;
 
-    // 2. Squad ratings (context only; the match decides the winner)
-    const userBreakdown = calculateDeterministicScore(ds.userPicks, ds.challenge);
-    const aiBreakdown = calculateDeterministicScore(ds.aiPicks, ds.challenge);
-
-    // 3. Optional Gemini referee report (commentary only; null when unavailable)
+    // 2. Optional Gemini referee report (commentary only; null when unavailable)
     const refereeReport = await generateRefereeReport(ds.userPicks, ds.aiPicks, ds.challenge, simulation, this.env?.GEMINI_API_KEY, this.env?.GEMINI_MODEL);
+
+    // 3. The argument after the game: head-to-head, draft awards, and how often this XI wins
+    const seed = ds.matchSeed;
+    const plan = ds.bowlingPlan;
+    const review = buildMatchReview({
+      userSquad: ds.userPicks,
+      aiSquad: ds.aiPicks,
+      challenge: ds.challenge,
+      simulation,
+      pickLog: ds.pickLog,
+      seed,
+      replay: (s) => simulateCricketMatch(ds.userPicks, ds.aiPicks, ds.challenge, s, { userPlan: plan }),
+    });
 
     const completedResults = {
       winner: simulation.winner,
@@ -395,11 +404,8 @@ export class DraftRoom implements DurableObject {
       groundConditionsAnalysis: simulation.groundConditionsAnalysis,
       verdictSummary: simulation.summary,
       refereeReport,
-      userRating: userBreakdown.deterministic_total,
-      aiRating: aiBreakdown.deterministic_total,
+      review,
       simulation,
-      userBreakdown,
-      aiBreakdown,
     };
     ds.results = completedResults;
 

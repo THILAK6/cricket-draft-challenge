@@ -36,7 +36,7 @@ The game is built to stay inside the Free plan (limits as published by Cloudflar
 | Limit (Free plan) | What the game uses |
 |---|---|
 | Worker CPU: 10 ms per request | The Worker only forwards: about 0.1-0.3 ms per request, about 3 ms on a cold isolate. Drafts are built inside the room (Durable Object, 30 s CPU per request). |
-| Durable Object CPU: 30 s per request | Creating a draft about 6-45 ms (first one in an isolate is the slowest), a pick with the AI's replies about 1-14 ms, playing the match about 10-25 ms. |
+| Durable Object CPU: 30 s per request | Creating a draft about 6-45 ms (first one in an isolate is the slowest), a pick with the AI's replies about 1-14 ms, playing the match about 10-25 ms, plus 200 replays for the win chance on the result screen (about 0.15 s in T20, 0.5 s in a Test). |
 | 100,000 Worker / Durable Object requests per day | About 15-20 of each per game, so roughly 5,000 games a day. Page loads and UI files are static assets: free and unlimited. |
 | Durable Object duration: 13,000 GB-s per day | Rooms use plain HTTP, so they are only billed while handling a request (about 1 s per game). |
 | 100,000 rows written per day (D1 and Durable Objects) | About 15 per game (one saved room state per request) plus one D1 row for the scenario. |
