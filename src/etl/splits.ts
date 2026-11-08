@@ -123,6 +123,14 @@ const norms: Record<Fmt, { phase: Record<string, { bat: Bat; bowl: Bowl }>; pos:
   ODI: { phase: {}, pos: {}, region: {}, chase: {}, all: { bat: z3(), bowl: z3() } },
   TEST: { phase: {}, pos: {}, region: {}, chase: {}, all: { bat: z3(), bowl: z3() } },
 };
+/**
+ * Era baselines: Full Member v Full Member deliveries by era bucket (as core/era.ts buckets them:
+ * three years in T20, five otherwise). Associate matches are left out: since 2019 they are most
+ * T20Is, and counting them made the 2020s look like a low-scoring era.
+ */
+const eraBucket = (fmt: Fmt, year: number) => String(fmt === "T20" ? Math.floor(year / 3) * 3 : Math.floor(year / 5) * 5);
+const era: Record<Fmt, Record<string, { bat: Bat; bowl: Bowl }>> = { T20: {}, ODI: {}, TEST: {} };
+
 /** First-innings totals: at each game ground (all internationals), and Full Member matches overall. */
 const par: Record<Fmt, { ground: Record<string, number[]>; all: number[] }> = { T20: { ground: {}, all: [] }, ODI: { ground: {}, all: [] }, TEST: { ground: {}, all: [] } };
 
@@ -152,6 +160,8 @@ for (const src of SOURCES) {
     const fullMembers = teams.length === 2 && teams.every((t) => FULL_MEMBERS.has(t));
     const region = regionOf(info);
     const ground = GROUNDS.find(([, re]) => re.test(String(info.venue ?? "")))?.[0];
+    const year = Number(String(info.dates?.[0] ?? "").slice(0, 4));
+    const eraSlot = fullMembers && year > 1900 ? slot(era[src.fmt], eraBucket(src.fmt, year), () => ({ bat: z3(), bowl: z3() })) : null;
     for (const names of Object.values(info.players ?? {}) as string[][]) for (const n of names) if (people[n]) get(src.fmt, people[n]).matches++;
 
     const innings = (match.innings ?? []).filter((i: any) => !i.super_over);
@@ -219,6 +229,10 @@ for (const src of SOURCES) {
             const n = norms[src.fmt];
             addBat(n.all.bat);
             addBowl(n.all.bowl);
+            if (eraSlot) {
+              addBat(eraSlot.bat);
+              addBowl(eraSlot.bowl);
+            }
             if (phase) {
               const s = slot(n.phase, phase, () => ({ bat: z3(), bowl: z3() }));
               addBat(s.bat);
@@ -265,6 +279,13 @@ for (const fmt of ["T20", "ODI", "TEST"] as Fmt[]) {
     pos: Object.fromEntries(POS.filter((k) => n.pos[k]).map((k) => [k, batNorm(n.pos[k])])),
     region: Object.fromEntries(REGIONS.filter((k) => n.region[k]).map((k) => [k, both(n.region[k])])),
     chase: Object.fromEntries(Object.entries(n.chase).map(([k, v]) => [k, batNorm(v)])),
+    // League numbers in the form core/era.ts uses: strike rate, batting average, economy, bowling average
+    era: Object.fromEntries(
+      [...Object.entries(era[fmt]).sort(), ["all", n.all] as const].map(([k, v]) => [
+        k,
+        { sr: r1((v.bat[0] / Math.max(1, v.bat[1])) * 100), avg: r1(v.bat[0] / Math.max(1, v.bat[2])), econ: r1((v.bowl[1] / Math.max(1, v.bowl[0])) * 6), bavg: r1(v.bowl[1] / Math.max(1, v.bowl[2])), balls: v.bat[1] },
+      ])
+    ),
     par: {
       all: Math.round(mean(par[fmt].all)),
       ground: Object.fromEntries(Object.entries(par[fmt].ground).sort().map(([g, xs]) => [g, { avg: Math.round(mean(xs)), n: xs.length }])),
