@@ -23,6 +23,27 @@ const PRIOR: Record<MatchFormat, { avg: number; sr: number; batK: number; bavg: 
 
 const shrink = (value: number, n: number, prior: number, k: number) => (value * n + prior * k) / (n + k);
 
+/**
+ * Career economy by bowling type (era-adjusted, weighted by overs; frontline bowlers and
+ * all-rounders of Full Member nations with 15+ innings). In white-ball cricket spinners go for
+ * fewer because captains keep them away from the powerplay and the death overs, not because they
+ * are better bowlers: a T20 spinner's 7.3 is worth a pacer's 8.2. Tests have no such phases, so
+ * there a spinner's lower economy is his own. Re-check with tests/player-data.test.ts.
+ */
+export const TYPE_ECONOMY: Record<MatchFormat, { PACE: number; SPIN: number; ALL: number }> = {
+  T20: { PACE: 8.163, SPIN: 7.31, ALL: 7.852 },
+  ODI: { PACE: 5.159, SPIN: 4.737, ALL: 5.023 },
+  TEST: { PACE: 3.059, SPIN: 3.059, ALL: 3.059 },
+};
+
+/** Economy judged against bowlers of the same type, on the common scale (part-timers unchanged). */
+export function typeAdjustedEconomy(econ: number, category: string, format: MatchFormat): number {
+  const t = TYPE_ECONOMY[format];
+  if (category === "PACE") return (econ * t.ALL) / t.PACE;
+  if (category === "SPIN") return (econ * t.ALL) / t.SPIN;
+  return econ;
+}
+
 /** Raw values depend only on a player's stats and era, so they are cached by the stats object. */
 const rawCache = new WeakMap<PlayerWithStats["stats"], Map<string, number>>();
 function memo(p: PlayerWithStats, key: string, fn: () => number): number {
@@ -63,7 +84,7 @@ function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
   const inn = Math.max(0, Math.min(s.bowl_innings || 0, s.matches));
   if (inn === 0 || s.bowl_overs <= 0) return 0;
   const bavg = shrink(s.bowl_wickets > 0 ? Math.max(15, s.bowl_average) : pr.bavg * 1.5, inn, pr.bavg, pr.bowlK);
-  const econ = shrink(Math.max(3, s.bowl_economy || pr.econ), inn, pr.econ, pr.bowlK);
+  const econ = shrink(Math.max(3, s.bowl_economy ? typeAdjustedEconomy(s.bowl_economy, p.bowling_category, format) : pr.econ), inn, pr.econ, pr.bowlK);
   const wpi = shrink(s.bowl_wickets / inn, inn, pr.wpi, pr.bowlK);
   // Overs per innings: a bowler who bowls his full quota matters more than a part-timer
   const load = Math.min(1, s.bowl_overs / inn / (format === "T20" ? 3.5 : format === "ODI" ? 8.5 : 22));
@@ -81,8 +102,8 @@ function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
  * the formulas change.
  */
 export const CALIBRATION: Record<MatchFormat, { bat: [number, number]; bowl: [number, number] }> = {
-  T20: { bat: [20.786, 53.069], bowl: [0.766, 1.425] },
-  ODI: { bat: [19.602, 43.209], bowl: [0.691, 1.368] },
+  T20: { bat: [20.807, 53.069], bowl: [0.776, 1.363] },
+  ODI: { bat: [19.552, 43.209], bowl: [0.701, 1.354] },
   TEST: { bat: [26.231, 50.163], bowl: [0.946, 2.803] },
 };
 

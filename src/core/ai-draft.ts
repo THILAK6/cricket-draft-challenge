@@ -205,6 +205,16 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
     }
     pitch *= persona.pitch;
 
+    // White-ball cricket needs pace for the new ball and the death overs, whatever the pitch: two
+    // proper pacers at least, and a third spinner only where the pitch turns or grips
+    let mix = 0;
+    if (format !== "TEST") {
+      const spinPitch = pitchType === "DUSTBOWL" || pitchType === "SLOW_LOW";
+      if (isPace(p) && pace < 2) mix += 6 + 10 * stage;
+      if (isSpin(p) && spin >= (spinPitch ? 3 : 2)) mix -= 10;
+    }
+    mix *= persona.balance;
+
     // Fill what the rules still need: little early, a lot late
     let need = 0;
     let needKey: string | undefined;
@@ -256,7 +266,7 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
     const fame = persona.fame ? Math.min(15, (p.stats.matches / 10) * persona.fame) : 0;
     const home = persona.home && p.country === fav ? persona.home : 0;
     const noise = persona.noise ? (hash(input.noiseSeed, input.round, p.id) - 0.5) * 2 * persona.noise : 0;
-    const total = quality + pitch + need + balance + denial + fame + home + noise;
+    const total = quality + pitch + mix + need + balance + denial + fame + home + noise;
     return { p, total, quality, pitch, need, needKey, balance, denial, denialKey, fame, home };
   });
 

@@ -278,6 +278,10 @@ table.sc td .how { display: block; font-size: 11px; color: var(--faint); }
 .h2h .side { min-width: 0; font-size: 13px; }
 .h2h .side.r { text-align: right; }
 .h2h .who { overflow-wrap: anywhere; }
+.h2h .cols { grid-column: 1 / -1; text-align: center; font-size: 11px; color: var(--faint); margin-top: -2px; }
+.h2h .pl { line-height: 1.35; }
+.h2h .pl .st { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.h2h .st.note { font-style: italic; }
 .h2h .st { color: var(--faint); font-size: 12px; }
 .h2h .row.u .side.l .who, .h2h .row.u .side.l .st { color: var(--you); }
 .h2h .row.a .side.r .who, .h2h .row.a .side.r .st { color: var(--ai); }

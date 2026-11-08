@@ -198,18 +198,37 @@ function HeadToHeadCard({ h2h }: { h2h: HeadToHead }) {
               <span class="arrow r" aria-hidden="true">{r.edge === "AI" ? "▶" : ""}</span>
               <span class="sr-only">{r.edge === "USER" ? ": yours" : r.edge === "AI" ? ": the AI's" : ": level"}</span>
             </div>
-            <div class="side l">
-              <div class="who">{names(r.user.names)}</div>
-              <div class="st">{r.user.stat}</div>
-            </div>
-            <div class="side r">
-              <div class="who">{names(r.ai.names)}</div>
-              <div class="st">{r.ai.stat}</div>
-            </div>
+            {r.cols && <div class="cols">{r.cols}</div>}
+            <UnitSide line={r.user} side="l" />
+            <UnitSide line={r.ai} side="r" />
           </div>
         ))}
       </div>
-      <p class="faint" style="font-size:12px">Career numbers in this format. The arrow points to the stronger unit.</p>
+      <p class="faint" style="font-size:12px">
+        Career numbers in this format. The arrow points to the stronger unit; a short career counts for less than the same numbers over a long one.
+      </p>
+    </div>
+  );
+}
+
+/** One side of a match-up: each player with his own numbers, or the unit as a whole. */
+function UnitSide({ line, side }: { line: HeadToHead["rows"][number]["user"]; side: "l" | "r" }) {
+  if (line.players?.length) {
+    return (
+      <div class={`side ${side}`}>
+        {line.players.map((p) => (
+          <div class="pl">
+            <span class="who">{surname(p.name)}</span> <span class="st">{p.stat}</span>
+          </div>
+        ))}
+        {line.stat && <div class="st note">{line.stat}</div>}
+      </div>
+    );
+  }
+  return (
+    <div class={`side ${side}`}>
+      <div class="who">{names(line.names)}</div>
+      <div class="st">{line.stat}</div>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { typeAdjustedEconomy } from "./player-quality";
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
 import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim } from "./match-facts";
@@ -1444,7 +1445,9 @@ function ballProfile(raw: PlayerWithStats, format: MatchFormat): BallProfile {
   const wkts = Math.max(0, s.bowl_wickets || 0);
   const priorW = 10;
   const bowlSr = (balls + base.bowlSr * 1.35 * priorW) / (wkts + priorW);
-  const econRaw = s.bowl_economy > 0 ? s.bowl_economy : base.econ * 1.15;
+  // Judged against bowlers of the same type: a spinner's career economy was earned in the easier
+  // middle overs, and the phase base rates already make those overs cheaper
+  const econRaw = s.bowl_economy > 0 ? typeAdjustedEconomy(s.bowl_economy, raw.bowling_category, format) : base.econ * 1.15;
   const overs = balls / 6;
   const econ = (econRaw * overs + base.econ * 1.15 * 40) / (overs + 40);
   const prof = { bpd, sr: srShrunk, bowlSr, econ };

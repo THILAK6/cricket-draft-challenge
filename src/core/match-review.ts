@@ -20,13 +20,17 @@ type Squad = (PlayerWithStats | null)[];
 export interface UnitLine {
   /** Players in the unit, in batting order. */
   names: string[];
-  /** Their career numbers, e.g. "avg 41 · SR 138". Empty when the unit has nobody. */
+  /** The unit as a whole, e.g. "#7-#11 avg 15" or "3 spinners"; "none" when it has nobody. */
   stat: string;
+  /** Each player's own career numbers in the row's columns, e.g. "35 · 164 · 40". */
+  players?: { name: string; stat: string }[];
 }
 
 export interface Matchup {
   key: "openers" | "middle" | "keeper" | "allrounders" | "pace" | "spin" | "depth" | "pitch";
   label: string;
+  /** What the per-player numbers are, e.g. "avg · SR · inns". */
+  cols?: string;
   user: UnitLine;
   ai: UnitLine;
   edge: Side | "EVEN";
@@ -77,17 +81,36 @@ function batStat(ps: PlayerWithStats[], f: MatchFormat): string {
 /** Balls per wicket, from career overs (overs are stored as a decimal count). */
 const bowlSr = (p: PlayerWithStats) => (p.stats.bowl_wickets > 0 ? (p.stats.bowl_overs * 6) / p.stats.bowl_wickets : 0);
 
-/** T20: economy and strike rate. ODI: average and economy. Test: average and strike rate. */
-function bowlStat(ps: PlayerWithStats[], f: MatchFormat): string {
-  const w = ps.filter((p) => p.stats.bowl_wickets > 0);
-  if (!w.length) return ps.length ? "few wickets" : "";
-  const avg = Math.round(mean(w.map((p) => p.stats.bowl_average)));
-  const econ = mean(w.map((p) => p.stats.bowl_economy)).toFixed(1);
-  const sr = Math.round(mean(w.map(bowlSr)));
-  if (f === "T20") return `econ ${econ} · SR ${sr}`;
-  if (f === "ODI") return `avg ${avg} · econ ${econ}`;
-  return `avg ${avg} · SR ${sr}`;
+
+const int = (x: number) => `${Math.round(x)}`;
+
+/** One batter's line, in COLS.bat order. */
+function batLine(p: PlayerWithStats, f: MatchFormat): string {
+  const s = p.stats;
+  return f === "TEST" ? `${int(s.bat_average)} · ${s.bat_innings}` : `${int(s.bat_average)} · ${int(s.bat_strike_rate)} · ${s.bat_innings}`;
 }
+
+/** One bowler's line, in COLS.bowl order. */
+function bowlLine(p: PlayerWithStats, f: MatchFormat): string {
+  const s = p.stats;
+  if (s.bowl_wickets <= 0) return `— · ${s.bowl_wickets}`;
+  if (f === "T20") return `${s.bowl_economy.toFixed(1)} · ${int(bowlSr(p))} · ${s.bowl_wickets}`;
+  if (f === "ODI") return `${int(s.bowl_average)} · ${s.bowl_economy.toFixed(1)} · ${s.bowl_wickets}`;
+  return `${int(s.bowl_average)} · ${int(bowlSr(p))} · ${s.bowl_wickets}`;
+}
+
+/** An all-rounder: batting average, then the bowling number that matters most in the format. */
+function arLine(p: PlayerWithStats, f: MatchFormat): string {
+  const s = p.stats;
+  const bowl = s.bowl_wickets <= 0 ? "—" : f === "T20" ? s.bowl_economy.toFixed(1) : int(s.bowl_average);
+  return `${int(s.bat_average)} · ${bowl} · ${s.bowl_wickets}`;
+}
+
+const COLS: Record<MatchFormat, { bat: string; bowl: string; ar: string }> = {
+  T20: { bat: "avg · SR · inns", bowl: "econ · SR · wkts", ar: "bat avg · econ · wkts" },
+  ODI: { bat: "avg · SR · inns", bowl: "avg · econ · wkts", ar: "bat avg · bowl avg · wkts" },
+  TEST: { bat: "avg · inns", bowl: "avg · SR · wkts", ar: "bat avg · bowl avg · wkts" },
+};
 
 /** EVEN unless one side is clearly ahead (relative gap, so it works for any scale). */
 function edgeOf(u: number, a: number, rel = 0.06): Side | "EVEN" {
@@ -144,24 +167,25 @@ function units(squad: Squad, challenge: Challenge): Record<Matchup["key"], Unit>
   const fitStat = plural(fit.length, need.what) + (pitch === "SLOW_LOW" || pitch === "HIGH_SCORING_FLAT" ? ` · ${tight} tight bowler${tight === 1 ? "" : "s"}` : "");
 
   const names = (ps: PlayerWithStats[]) => ps.map((p) => p.name);
+  const each = (ps: PlayerWithStats[], line: (p: PlayerWithStats, f: MatchFormat) => string) => ps.map((p) => ({ name: p.name, stat: line(p, f) }));
   return {
     openers: {
-      line: { names: names(openers), stat: batStat(openers, f) + (makeshift ? ` · ${makeshift === 2 ? "both" : "one"} makeshift` : "") },
+      line: { names: names(openers), stat: makeshift ? `${makeshift === 2 ? "both" : "one"} makeshift` : "", players: each(openers, batLine) },
       value: openerValue,
     },
-    middle: { line: { names: names(middle), stat: batStat(middle, f) }, value: mean(middle.map(bat)) },
+    middle: { line: { names: names(middle), stat: "", players: each(middle, batLine) }, value: mean(middle.map(bat)) },
     keeper: {
-      line: { names: keeper ? [keeper.name] : [], stat: keeper ? batStat([keeper], f) : "no keeper" },
+      line: { names: keeper ? [keeper.name] : [], stat: keeper ? "" : "no keeper", players: keeper ? each([keeper], batLine) : [] },
       value: keeper ? bat(keeper) : 0,
     },
     allrounders: {
-      line: { names: names(ars), stat: ars.length ? `${batStat(ars, f).replace(/ · SR \d+/, "")} · bowl ${bowlStat(ars, f)}` : "none" },
+      line: { names: names(ars), stat: ars.length ? "" : "none", players: each(ars, arLine) },
       // Both skills count: a genuine all-rounder lets the XI carry an extra batter or bowler
       value: sum(ars.map((p) => (battingRating(p, f) + bowlingRating(p, f)) / 2)),
     },
     // The attack is judged on the bowlers who will bowl most of the overs
-    pace: { line: { names: names(pace), stat: pace.length ? bowlStat(pace.slice(0, 4), f) : "none" }, value: sum(pace.slice(0, 4).map(bowl)) },
-    spin: { line: { names: names(spin), stat: spin.length ? bowlStat(spin.slice(0, 3), f) : "none" }, value: sum(spin.slice(0, 3).map(bowl)) },
+    pace: { line: { names: names(pace), stat: pace.length ? "" : "none", players: each(pace, bowlLine) }, value: sum(pace.slice(0, 4).map(bowl)) },
+    spin: { line: { names: names(spin), stat: spin.length ? "" : "none", players: each(spin, bowlLine) }, value: sum(spin.slice(0, 3).map(bowl)) },
     depth: { line: { names: names(tail), stat: tail.length ? `#7-#11 ${batStat(tail, f).replace(/ · SR \d+/, "")}` : "" }, value: mean(tail.map(bat)) },
     pitch: {
       line: { names: names(fit), stat: fitStat },
@@ -187,9 +211,14 @@ export function buildHeadToHead(userSquad: Squad, aiSquad: Squad, challenge: Cha
   const a = units(aiSquad, challenge);
   const label = (k: Matchup["key"]) =>
     k === "pitch" ? PITCH_NEED[challenge.venue.pitch_type]?.label ?? LABELS.pitch : LABELS[k];
+  const f = (challenge.format || "T20") as MatchFormat;
+  const cols: Partial<Record<Matchup["key"], string>> = {
+    openers: COLS[f].bat, middle: COLS[f].bat, keeper: COLS[f].bat, allrounders: COLS[f].ar, pace: COLS[f].bowl, spin: COLS[f].bowl,
+  };
   const rows: Matchup[] = (Object.keys(LABELS) as Matchup["key"][]).map((k) => ({
     key: k,
     label: label(k),
+    ...(cols[k] ? { cols: cols[k] } : {}),
     user: u[k].line,
     ai: a[k].line,
     // Pitch fit is a points score: a couple of points either way is level

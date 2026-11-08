@@ -105,7 +105,7 @@ describe("in the draft room", () => {
 
   it("shows the AI's line with its picks, and its choice comes from the shortlist", async () => {
     let calls = 0;
-    const r = await room({ run: async () => (calls++, { response: "PICK: 2\nLINE: You wanted him? Too slow." }) });
+    const r = await room({ run: async () => (calls++, { response: "PICK: 1\nLINE: You wanted him? Too slow." }) });
     const out = await pick(r);
     expect(out.aiPicks).toHaveLength(2);
     expect(calls).toBe(2);

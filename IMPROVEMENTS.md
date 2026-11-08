@@ -141,10 +141,21 @@ Switched from Claude Haiku to Workers AI to stay on the Cloudflare Free plan wit
   can't finish in the death overs. A balanced XI (Captain AI) now beats a "top-rated" XI 61% in T20
   (was 55%), 64.5% in ODIs (was 61.5%) and 53% in Tests (was 47%).
 
+- [x] **Spinners judged against spinners (from play-testing).** In white-ball cricket a spinner's career
+  economy is lower mainly because captains keep him away from the powerplay and the death (T20: 7.3
+  against 8.2 for pacers). The T20 rating leaned on economy, so spinners rated about 20 points higher
+  and the AI picked four or five on a flat track. Economy is now compared with bowlers of the same type
+  (in the ratings and in the match engine), and the AI wants at least two pacers for the new ball and
+  the death in T20 and ODIs. On flat T20 pitches the AI now takes about 3.8 pacers and 1.9 spinners
+  (was 1.8 and 4.2). The "balanced v top-rated" edge fell to about 50% in T20 and 59% in ODIs: part of
+  the old 61%/64.5% came from the top-rated drafter loading up on overrated spinners.
+
 ## Phase 6 — Result screen
 
 - [x] **6.1 Head-to-head first.** Compare openers, middle order, keeper, all-rounders, pace attack, spin
   attack, batting depth and fit for the pitch, with a winner arrow for each. This is the school argument.
+  Each player shows his own numbers with innings or wickets (so a short career is visible), not a
+  pair's average.
 - [x] **6.2 Series or win chance.** "Your XI wins X% of 200 replays" next to the featured match, with a
   plain reading ("Unlucky: yours is the better XI...").
 - [x] **6.3 Draft awards.** Steal of the draft (a late pick who performed), biggest regret, best pick.
