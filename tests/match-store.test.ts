@@ -52,6 +52,7 @@ describe("saved matches", () => {
 
     const saved = (await getMatch(d1, a.matchId!))!;
     expect(saved.simulation.summary).toBe(a.simulation!.summary);
+    expect(saved.seed).toBe(a.matchSeed);
     expect(saved.results.review).toEqual(JSON.parse(JSON.stringify(a.results.review)));
     expect(saved.userXI.map((p) => p.name)).toEqual(a.userPicks.map((p) => (p as PlayerWithStats).name));
     // No pool, no career numbers, one copy of the simulation

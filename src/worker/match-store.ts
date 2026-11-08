@@ -44,6 +44,7 @@ export function buildSnapshot(ds: DraftState, id: string, playedAt = Date.now())
     userXI: ds.userPicks.flatMap(pick),
     aiXI: ds.aiPicks.flatMap(pick),
     pickLog: ds.pickLog,
+    seed: ds.matchSeed,
     simulation: sim,
     results,
   };

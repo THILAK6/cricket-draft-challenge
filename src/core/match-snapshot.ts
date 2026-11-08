@@ -32,6 +32,8 @@ export interface MatchSnapshot {
   userXI: StoredPick[];
   aiXI: StoredPick[];
   pickLog?: PickLogEntry[];
+  /** The match seed: with both XIs and the engine of the day, replays this exact match (for checking a result). */
+  seed?: number;
   simulation: MatchSimulationResult;
   results: Record<string, unknown>;
 }
