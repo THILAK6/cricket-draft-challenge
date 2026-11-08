@@ -76,6 +76,20 @@ describe("head to head", () => {
   });
 });
 
+describe("death bowling and openers", () => {
+  it("names proven death bowlers, not a spinner with a few death overs, and knows a keeper who opens", async () => {
+    const all = await getPlayerPool(d1, "T20", 5000, 1);
+    const by = (n: string) => all.find((p) => p.name === n)!;
+    const xi = ["Phil Salt", "Ishan Kishan", "Suryakumar Yadav", "Tilak Varma", "Imad Wasim", "Kevin O'Brien", "Ravichandran Ashwin", "Imran Tahir", "Mohammad Amir", "Dale Steyn", "Jasprit Bumrah"].map(by);
+    const { challenge } = await buildRandomDraft(d1, "T20", lcg(3));
+    const h = buildHeadToHead(xi, xi, challenge);
+    // Tahir has bowled 17 overs at the death in T20Is; Bumrah and Steyn have bowled 120 and 55
+    expect(h.rows.find((r) => r.key === "death")!.user.names).toEqual(["Jasprit Bumrah", "Dale Steyn"]);
+    // Kishan opened in about half his T20I innings
+    expect(h.rows.find((r) => r.key === "openers")!.user.stat).toBe("");
+  });
+});
+
 describe("draft awards", () => {
   it("names three different players: a late steal, your best pick, and one you could have had", async () => {
     let regrets = 0;

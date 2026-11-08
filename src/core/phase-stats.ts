@@ -117,6 +117,12 @@ export function phaseShape(p: PlayerWithStats, format: MatchFormat, phase: Phase
 }
 
 /** "7.2 in 724 balls": a player's own numbers in one phase, for the head-to-head. */
+/** Balls bowled in a phase before a captain trusts him there: 40 overs (T20) or 50 (ODI). */
+export const PROVEN_BALLS: Record<MatchFormat, number> = { T20: 240, ODI: 300, TEST: Infinity };
+
+/** How far to trust a bowler's record in a phase, 0-1: a handful of death overs is not a death bowler. */
+export const phaseTrust = (p: PlayerWithStats, f: MatchFormat, phase: PhaseKey) => Math.min(1, phaseLine(p, phase).bowlBalls / PROVEN_BALLS[f]);
+
 export function phaseLine(p: PlayerWithStats, phase: PhaseKey): { econ?: number; sr?: number; bowlBalls: number; batBalls: number } {
   const l = p.stats.phases?.[phase];
   if (!l) return { bowlBalls: 0, batBalls: 0 };

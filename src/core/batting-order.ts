@@ -13,6 +13,13 @@ const share = (p: PlayerWithStats, n: number) => n / Math.max(1, p.stats.bat_inn
 /** Opens the batting in this format: a top-order specialist batter or keeper (or a top-order all-rounder). */
 export function isNaturalOpener(p: PlayerWithStats): boolean {
   if (p.primary_role === "BOWL") return false;
+  // His real record says he opens: 20 overs or more at the top, and at least 40% of all his batting there
+  const pos = p.stats.splits?.pos;
+  if (pos) {
+    const open = pos.open?.[1] ?? 0;
+    const all = Object.values(pos).reduce((n, l) => n + (l?.[1] ?? 0), 0);
+    if (open >= 120 && open >= 0.4 * all) return true;
+  }
   const s = p.stats;
   const top = share(p, s.top_order_innings);
   if (p.primary_role === "AR") return s.top_order_innings >= 10 && top >= 0.6;

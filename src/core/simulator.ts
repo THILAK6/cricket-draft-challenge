@@ -1,5 +1,5 @@
 import { typeAdjustedEconomy } from "./player-quality";
-import { hasBattingPhases, hasBowlingPhases, phaseShape, PHASE_OF_SIM } from "./phase-stats";
+import { hasBattingPhases, hasBowlingPhases, phaseShape, phaseTrust, PHASE_OF_SIM } from "./phase-stats";
 import { chaseShape, positionShape, regionShape, venueParFactor } from "./splits";
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
@@ -1329,7 +1329,8 @@ function selectBowlerForOver(
     // T20 with phase stats: give the ball to whoever is actually good in this phase
     if (!isTest && hasBowlingPhases(b, format) && !isPartTimer) {
       const sh = phaseShape(b, format, PHASE_OF_SIM[phase]);
-      const edge = (1 - sh.econ) * 400 + (sh.wkt - 1) * 150;
+      // ...counted in full only once he has bowled enough there to be trusted with it
+      const edge = ((1 - sh.econ) * 400 + (sh.wkt - 1) * 150) * phaseTrust(b, format, PHASE_OF_SIM[phase]);
       if (phase === "DEATH") add(edge, edge >= 30 ? `${b.name} bowls at the death, where he is at his best` : undefined, "death");
       else if (phase === "PP" && over > 2) add(edge * 0.6);
     }

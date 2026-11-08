@@ -7,7 +7,7 @@ import { isBowlingOption } from "./validator";
 import { calculateDeterministicScore } from "./scoring";
 import { ballsToOvers } from "./overs";
 import { eraAdjusted } from "./era";
-import { hasBattingPhases, hasBowlingPhases, phaseLine, phaseShape } from "./phase-stats";
+import { hasBattingPhases, hasBowlingPhases, phaseLine, phaseShape, phaseTrust } from "./phase-stats";
 
 /**
  * The argument after the game, the way it went at school: your openers against theirs, your
@@ -141,7 +141,12 @@ const PITCH_NEED: Record<string, { what: "seamers" | "spinners" | "hitters"; lab
 function deathUnits(all: PlayerWithStats[], squad: Squad, f: MatchFormat): { death: Unit; finish: Unit } {
   const deathEcon = (p: PlayerWithStats) => eraAdjusted(p, f).stats.bowl_economy * phaseShape(p, f, "death").econ;
   const deathSr = (p: PlayerWithStats) => eraAdjusted(p, f).stats.bat_strike_rate * phaseShape(p, f, "death").sr;
-  const bowlers = all.filter((p) => isBowlingOption(p) && hasBowlingPhases(p, f) && p.stats.bowl_economy > 0).sort((a, b) => deathEcon(a) - deathEcon(b)).slice(0, 2);
+  // The two best proven death bowlers (as the captain picks them in the match engine); if fewer than
+  // two are proven, whoever has bowled most at the death makes up the pair
+  const options = all.filter((p) => isBowlingOption(p) && hasBowlingPhases(p, f) && p.stats.bowl_economy > 0);
+  const proven = options.filter((p) => phaseTrust(p, f, "death") >= 1).sort((a, b) => deathEcon(a) - deathEcon(b));
+  const rest = options.filter((p) => !proven.includes(p)).sort((a, b) => phaseLine(b, "death").bowlBalls - phaseLine(a, "death").bowlBalls);
+  const bowlers = [...proven, ...rest].slice(0, 2);
   // Finishers: whoever bats #4-#8, the batters actually in at the death (openers rarely are)
   const hitters = squad
     .slice(3, 8)
