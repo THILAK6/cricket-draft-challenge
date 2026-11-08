@@ -28,6 +28,8 @@ export function parseT20(match: any, names?: Map<string, string>): ParsedMatch |
   all.slice(0, 2).forEach((inn: any, idx: number) => {
     if (inn.target?.overs && inn.target.overs < 20) return;
     const order: string[] = [];
+    const bt = String(inn.team ?? teams[idx] ?? "?");
+    const wt = teams.find((t) => t !== bt) ?? "?";
     let down = 0;
     const rows: Row[] = [];
     for (const o of inn.overs ?? []) {
@@ -40,6 +42,8 @@ export function parseT20(match: any, names?: Map<string, string>): ParsedMatch |
           rows.push({
             bat: batter,
             bowl: bowler,
+            bt,
+            wt,
             ctx: phaseOf(o.over) * 2 + (idx === 0 ? 0 : 1),
             pos: posBucket(order.indexOf(d.batter) + 1),
             over: o.over,

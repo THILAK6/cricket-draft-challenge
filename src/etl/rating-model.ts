@@ -28,6 +28,9 @@ export interface Row {
   /** 0-based over, and wickets already down */
   over: number;
   wb: number;
+  /** Batting and bowling team (country) */
+  bt: string;
+  wt: string;
   /** Runs charged to the delivery (off the bat, wides and no-balls) */
   runs: number;
   /** 1 when the bowler took the striker's wicket */
@@ -49,6 +52,8 @@ export interface Dataset {
   n: number;
   bat: Int32Array;
   bowl: Int32Array;
+  bteam: Int32Array;
+  wteam: Int32Array;
   ctx: Int32Array;
   ground: Int32Array;
   era: Int32Array;
@@ -64,11 +69,12 @@ export interface Dataset {
   /** Matches in date order: 0 .. matches-1 */
   match: Int32Array;
   matches: number;
-  sizes: { bat: number; bowl: number; ctx: number; ground: number; era: number; pos: number };
+  sizes: { bat: number; bowl: number; team: number; ctx: number; ground: number; era: number; pos: number };
   batIds: string[];
   bowlIds: string[];
   groundNames: string[];
   eraBuckets: number[];
+  teamNames: string[];
 }
 
 /** Three-year era buckets, as core/era.ts. */
@@ -81,12 +87,13 @@ export function buildDataset(parsed: ParsedMatch[]): Dataset {
     if (v === undefined) m.set(k, (v = m.size));
     return v;
   };
+  const teams = new Map<string, number>();
   const bats = new Map<string, number>(), bowls = new Map<string, number>(), grounds = new Map<string, number>(), eras = new Map<number, number>();
   let n = 0;
   for (const m of ms) for (const inn of m.innings) n += inn.length;
   const ds = {
     n,
-    bat: new Int32Array(n), bowl: new Int32Array(n), ctx: new Int32Array(n), ground: new Int32Array(n), era: new Int32Array(n), pos: new Int32Array(n),
+    bat: new Int32Array(n), bowl: new Int32Array(n), bteam: new Int32Array(n), wteam: new Int32Array(n), ctx: new Int32Array(n), ground: new Int32Array(n), era: new Int32Array(n), pos: new Int32Array(n),
     runs: new Float64Array(n), wkt: new Float64Array(n), legal: new Uint8Array(n), fm: new Uint8Array(n),
     over: new Int32Array(n), wb: new Int32Array(n), inn: new Int32Array(n), match: new Int32Array(n),
   };
@@ -98,6 +105,8 @@ export function buildDataset(parsed: ParsedMatch[]): Dataset {
       for (const r of inn) {
         ds.bat[i] = intern(bats, r.bat);
         ds.bowl[i] = intern(bowls, r.bowl);
+        ds.bteam[i] = intern(teams, r.bt);
+        ds.wteam[i] = intern(teams, r.wt);
         ds.ctx[i] = r.ctx;
         ds.ground[i] = g;
         ds.era[i] = e;
@@ -118,11 +127,12 @@ export function buildDataset(parsed: ParsedMatch[]): Dataset {
   return {
     ...ds,
     matches: ms.length,
-    sizes: { bat: bats.size, bowl: bowls.size, ctx: 6, ground: grounds.size, era: eras.size, pos: 5 },
+    sizes: { bat: bats.size, bowl: bowls.size, team: teams.size, ctx: 6, ground: grounds.size, era: eras.size, pos: 5 },
     batIds: [...bats.keys()],
     bowlIds: [...bowls.keys()],
     groundNames: [...grounds.keys()],
     eraBuckets: [...eras.keys()],
+    teamNames: [...teams.keys()],
   };
 }
 
@@ -208,7 +218,7 @@ export interface Lambdas {
   bowl: number;
 }
 /** Situation penalties: mild, since every situation group has thousands of balls. */
-const SITUATION_LAMBDA = { ctx: 20, ground: 400, era: 1500, pos: 100 };
+const SITUATION_LAMBDA = { ctx: 20, ground: 1000, era: 1500, pos: 100, team: 300 };
 
 export function situationFactors(ds: Dataset): Factor[] {
   return [
@@ -216,6 +226,18 @@ export function situationFactors(ds: Dataset): Factor[] {
     { name: "ground", idx: ds.ground, size: ds.sizes.ground, lambda: SITUATION_LAMBDA.ground },
     { name: "era", idx: ds.era, size: ds.sizes.era, lambda: SITUATION_LAMBDA.era },
     { name: "batting position", idx: ds.pos, size: ds.sizes.pos, lambda: SITUATION_LAMBDA.pos },
+  ];
+}
+/**
+ * Team levels: how much a side's batters score, and its bowlers concede, beyond the situation.
+ * Players then carry only their difference from their team, so a player of a weak side starts from
+ * a weak side's level (and a new cap does not start from "average"). Without this, sides that
+ * mostly play each other, such as Associates, cannot be placed against the Full Members.
+ */
+export function teamFactors(ds: Dataset): Factor[] {
+  return [
+    { name: "batting team", idx: ds.bteam, size: ds.sizes.team, lambda: SITUATION_LAMBDA.team },
+    { name: "bowling team", idx: ds.wteam, size: ds.sizes.team, lambda: SITUATION_LAMBDA.team },
   ];
 }
 export function playerFactors(ds: Dataset, lam: Lambdas): Factor[] {
@@ -227,7 +249,10 @@ export function playerFactors(ds: Dataset, lam: Lambdas): Factor[] {
 
 export const fitSituation = (ds: Dataset, y: Float64Array, rows: Int32Array) => fitAdditive(y, rows, situationFactors(ds));
 export const fitFull = (ds: Dataset, y: Float64Array, rows: Int32Array, lam: Lambdas) =>
-  fitAdditive(y, rows, [...situationFactors(ds), ...playerFactors(ds, lam)]);
+  fitAdditive(y, rows, [...situationFactors(ds), ...teamFactors(ds), ...playerFactors(ds, lam)]);
+
+/** A fit's effects for one factor, by name. */
+export const effOf = (fit: Fit, name: string) => fit.effs[fit.factors.findIndex((f) => f.name === name)];
 
 /**
  * What a typical career record would say, with no adjustment: a player's raw mean outcome against
@@ -334,20 +359,32 @@ export interface PlayerRating {
 }
 
 /**
- * Centres skills so an average player in Full Member v Full Member cricket is zero: the fit's own
- * zero is the average of everyone, Associates included.
+ * Each player's whole level: his own effect plus his team's (ball-weighted over the sides he
+ * played for), centred so that an average player in Full Member v Full Member cricket is zero.
+ * The fit's own zero is the average of everyone, Associates included.
  */
-export function centre(ds: Dataset, fit: Fit) {
-  const bi = fit.factors.findIndex((f) => f.name === "batter");
-  const wi = fit.factors.findIndex((f) => f.name === "bowler");
+export function totalSkills(ds: Dataset, fit: Fit): { bat: Float64Array; bowl: Float64Array } {
+  const eb = effOf(fit, "batter"), ew = effOf(fit, "bowler"), tb = effOf(fit, "batting team"), tw = effOf(fit, "bowling team");
+  const bat = new Float64Array(ds.sizes.bat), bowl = new Float64Array(ds.sizes.bowl);
+  const nb = new Float64Array(ds.sizes.bat), nw = new Float64Array(ds.sizes.bowl);
   let mb = 0, mw = 0, n = 0;
   for (let i = 0; i < ds.n; i++) {
+    bat[ds.bat[i]] += tb[ds.bteam[i]];
+    nb[ds.bat[i]]++;
+    bowl[ds.bowl[i]] += tw[ds.wteam[i]];
+    nw[ds.bowl[i]]++;
+  }
+  for (let k = 0; k < bat.length; k++) bat[k] = eb[k] + (nb[k] ? bat[k] / nb[k] : 0);
+  for (let k = 0; k < bowl.length; k++) bowl[k] = ew[k] + (nw[k] ? bowl[k] / nw[k] : 0);
+  for (let i = 0; i < ds.n; i++) {
     if (!ds.fm[i]) continue;
-    mb += fit.effs[bi][ds.bat[i]];
-    mw += fit.effs[wi][ds.bowl[i]];
+    mb += bat[ds.bat[i]];
+    mw += bowl[ds.bowl[i]];
     n++;
   }
-  return { bat: n ? mb / n : 0, bowl: n ? mw / n : 0 };
+  mb = n ? mb / n : 0;
+  mw = n ? mw / n : 0;
+  return { bat: bat.map((v) => v - mb), bowl: bowl.map((v) => v - mw) };
 }
 
 export function ballCounts(ds: Dataset) {

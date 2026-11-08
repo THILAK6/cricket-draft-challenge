@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { lcg } from "./support/db";
 import {
-  buildDataset, fitFull, fitSituation, predictRows, predictNaive, rawSkills, rowsOfMatches, score, skillScore, wicketValue, centre,
+  buildDataset, effOf, fitFull, fitSituation, predictRows, predictNaive, rawSkills, rowsOfMatches, score, skillScore, totalSkills, wicketValue,
   type ParsedMatch, type Row,
 } from "../src/etl/rating-model";
 import { parseT20 } from "../src/etl/cricsheet-parse";
@@ -57,7 +57,7 @@ function league(seed: number, matches: number) {
         const wp = 0.05 - (batSkill.get(striker)! + 0) * 0.1 - (bowlSkill.get(bowler)! - (WEAK.has(bw) ? 0.35 : 0)) * 0.1;
         const wkt = r() < wp ? 1 : 0;
         const pos = arrived.indexOf(striker) + 1;
-        rows.push({ bat: striker, bowl: bowler, ctx: (over < 6 ? 0 : over < 15 ? 1 : 2) * 2 + inn, pos: pos <= 2 ? 0 : pos === 3 ? 1 : pos <= 5 ? 2 : pos <= 7 ? 3 : 4, over, wb: down, runs: wkt ? 0 : draw(mean), wkt, legal: true });
+        rows.push({ bat: striker, bowl: bowler, bt: `T${bt}`, wt: `T${bw}`, ctx: (over < 6 ? 0 : over < 15 ? 1 : 2) * 2 + inn, pos: pos <= 2 ? 0 : pos === 3 ? 1 : pos <= 5 ? 2 : pos <= 7 ? 3 : 4, over, wb: down, runs: wkt ? 0 : draw(mean), wkt, legal: true });
         if (wkt) {
           down++;
           if (next < PER) {
@@ -88,11 +88,11 @@ describe("ball-by-ball rating model", () => {
 
   it("finds who is good, and ranks batters by what they did against who they faced", () => {
     const fit = fitFull(ds, ds.runs, all, { bat: 400, bowl: 400 });
-    const bi = 4, wi = 5;
+    const tot = totalSkills(ds, fit);
     const ids = ds.batIds, trueB = ids.map((p) => L.batSkill.get(p)!);
-    expect(corr(ids.map((_, k) => fit.effs[bi][k]), trueB)).toBeGreaterThan(0.8);
+    expect(corr(ids.map((_, k) => tot.bat[k]), trueB)).toBeGreaterThan(0.8);
     const bids = ds.bowlIds;
-    expect(corr(bids.map((_, k) => fit.effs[wi][k]), bids.map((p) => L.bowlSkill.get(p)!))).toBeGreaterThan(0.8);
+    expect(corr(bids.map((_, k) => tot.bowl[k]), bids.map((p) => L.bowlSkill.get(p)!))).toBeGreaterThan(0.8);
   });
 
   it("does not credit a batter for runs against weak bowlers (raw career numbers do)", () => {
@@ -102,7 +102,8 @@ describe("ball-by-ball rating model", () => {
     const avg = (arr: readonly (readonly [string, number])[], f: (k: number) => number) => arr.reduce((s, [, k]) => s + f(k), 0) / arr.length;
     // Team 0 batters faced the weak attacks, team 1's the strong ones, and all are equally good
     const rawGap = avg(team(0), (k) => raw.bat.skill[k]) - avg(team(1), (k) => raw.bat.skill[k]);
-    const fitGap = avg(team(0), (k) => fit.effs[4][k]) - avg(team(1), (k) => fit.effs[4][k]);
+    const tot = totalSkills(ds, fit);
+    const fitGap = avg(team(0), (k) => tot.bat[k]) - avg(team(1), (k) => tot.bat[k]);
     const trueGap = avg(team(0), (k) => L.batSkill.get(ds.batIds[k])!) - avg(team(1), (k) => L.batSkill.get(ds.batIds[k])!);
     expect(rawGap).toBeGreaterThan(0.15); // raw numbers think team 0 is far better
     expect(Math.abs(fitGap - trueGap)).toBeLessThan(0.05); // the model is not fooled
@@ -123,7 +124,7 @@ describe("ball-by-ball rating model", () => {
   it("pulls players with little data towards average, more than players with a lot", () => {
     const light = fitFull(ds, ds.runs, all, { bat: 50, bowl: 50 });
     const heavy = fitFull(ds, ds.runs, all, { bat: 5000, bowl: 5000 });
-    const spread = (f: typeof light) => Math.sqrt(f.effs[4].reduce((s, v) => s + v * v, 0) / f.effs[4].length);
+    const spread = (f: typeof light) => { const e = effOf(f, "batter"); return Math.sqrt(e.reduce((s, v) => s + v * v, 0) / e.length); };
     expect(spread(heavy)).toBeLessThan(spread(light));
   });
 
@@ -139,7 +140,7 @@ describe("ball-by-ball rating model", () => {
       for (let ball = 0; ball < 120 && down < 10; ball++) {
         const wkt = r() < 0.05 ? 1 : 0;
         const mean = 1.6 - 0.12 * down;
-        rows.push({ bat: `b${down}`, bowl: "x", ctx: 0, pos: 0, over: Math.floor(ball / 6), wb: down, runs: wkt ? 0 : r() < mean / 4 ? 4 : 0, wkt, legal: true });
+        rows.push({ bat: `b${down}`, bowl: "x", bt: "A", wt: "B", ctx: 0, pos: 0, over: Math.floor(ball / 6), wb: down, runs: wkt ? 0 : r() < mean / 4 ? 4 : 0, wkt, legal: true });
         down += wkt;
       }
       costly.push({ date: `2020-01-01T${String(m).padStart(4, "0")}`, ground: "G", year: 2020, fm: true, innings: [rows] });
@@ -151,8 +152,10 @@ describe("ball-by-ball rating model", () => {
 
   it("centres skills on average Full Member play", () => {
     const fit = fitFull(ds, ds.runs, all, { bat: 400, bowl: 400 });
-    const c = centre(ds, fit);
-    expect(Number.isFinite(c.bat) && Number.isFinite(c.bowl)).toBe(true);
+    const t = totalSkills(ds, fit);
+    let m = 0;
+    for (let i = 0; i < ds.n; i++) m += t.bat[ds.bat[i]];
+    expect(Math.abs(m / ds.n)).toBeLessThan(1e-9); // every synthetic match is Full Member v Full Member
   });
 });
 
