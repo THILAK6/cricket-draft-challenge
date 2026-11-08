@@ -1426,17 +1426,19 @@ function resolveBall(
   // --- Wicket -----------------------------------------------------------------------------
   let wktChance = base.wkt * Math.pow(base.bpd / bat.bpd, M.BAT_WKT) * Math.pow(base.bowlSr / bowl.bowlSr, M.BOWL_WKT);
 
-  // Pitch condition impact
+  // Pitch condition impact. In Tests the effect is softer per ball: it compounds over 90 overs a day
+  // (full-size boosts made green-seamer Tests finish in two days)
+  const pitchEffect = (m: number) => (isTest ? 1 + (m - 1) * 0.6 : m);
   if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "PACE") {
-    wktChance *= phase === "PP" ? 1.45 : 1.25;
+    wktChance *= pitchEffect(phase === "PP" ? 1.45 : 1.25);
   } else if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "SPIN") {
-    wktChance *= 0.8; // spin gets no help from a seaming surface
+    wktChance *= pitchEffect(0.8); // spin gets no help from a seaming surface
   } else if (pitch === "DUSTBOWL" && bowler.bowling_category === "PACE") {
-    wktChance *= 0.88;
+    wktChance *= pitchEffect(0.88);
   } else if (pitch === "DUSTBOWL" && bowler.bowling_category === "SPIN") {
-    wktChance *= isDeterioratedPitch ? 1.6 : 1.35;
+    wktChance *= pitchEffect(isDeterioratedPitch ? 1.6 : 1.35);
   } else if (country === "RSA" && bowler.bowling_category === "PACE") {
-    wktChance *= 1.3;
+    wktChance *= pitchEffect(1.3);
   }
 
   // Batter v bowler matchup (hand v style), applied identically to both sides
