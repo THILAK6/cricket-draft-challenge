@@ -228,7 +228,8 @@ normal for small samples (`src/core/splits.ts`).
 
 - [x] 11.1 Era baselines from Full Member v Full Member matches only (ETL, `DATA_NORMS[fmt].era`). The old table counted every T20I, and since 2019 most are Associate matches, so the 2020s looked low-scoring: 2010s batters were marked down (Kohli's T20I average 48 to 39, rated 90) and 2010s bowlers up (Imran Tahir 104, Al-Amin Hossain 92). Now Kohli 110, Tahir 90, Al-Amin 81, and the Shark no longer opens a draft with a 30-match seamer.
 - [x] 11.2 Ratings recalibrated; T20 base scoring re-tuned (rpb 1.42: average innings 161, the real Full Member par).
-- [ ] 11.3 Later: discount runs and wickets against Associate sides (career stats still count them in full).
+- [x] 11.3 Tested a ball-by-ball model (`src/etl/rating-model.ts`, `ratings.ts`, workflow "T20 ball-by-ball ratings"): runs and wicket chance per ball = situation (phase x innings, ground, era, position) + team + batter - bowler, ridge-fitted with penalties chosen on held-out matches. Judged on 2025-26 T20Is it had not seen (`data/rating-model-report.md`). On Full Member matches, the cut in runs-per-ball error: today's raw career numbers +0.98%, the model +1.02% (fitted on all matches) / +1.06% (Full Member matches only), and **raw career numbers with Associate matches left out +1.26%** (innings-total error 27.0 v 28.7 today and 29.3 for the model). The model only wins when Associate matches are in the test, and Associates (who barely meet Full Members) cannot be placed on the scale reliably. Not adopted. Wicket skill is too noisy to separate any of them.
+- [ ] 11.4 Next: build each player's career numbers from Full Member v Full Member matches only (T20 first; ODI and Test the same way), and test a partial weight for Associate matches on held-out data.
 
 ## Phase 7 — School rules: names, not numbers (proposed)
 
