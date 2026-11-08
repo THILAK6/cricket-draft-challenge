@@ -2,6 +2,7 @@ import type { MatchFormat } from "../../../src/core/types";
 import type { Difficulty } from "../api";
 import { POOL_THEMES, themeByKey, type ThemeKey } from "../../../src/core/themes";
 import { PERSONA_INFO } from "../../../src/core/personas";
+import { MyMatches } from "./MyMatches";
 
 const FORMATS: { key: MatchFormat; title: string; text: string }[] = [
   { key: "T20", title: "T20", text: "20 overs a side. Hitters, finishers and death bowling." },
@@ -24,6 +25,7 @@ export function Setup(props: {
   onDifficulty: (d: Difficulty) => void;
   onTheme: (t: ThemeKey) => void;
   onNext: () => void;
+  onOpenMatch: (id: string) => void;
 }) {
   return (
     <div class="wizard">
@@ -73,6 +75,7 @@ export function Setup(props: {
           {props.busy ? "Setting up…" : "Next: the ground and the toss"}
         </button>
       </div>
+      <MyMatches onOpen={props.onOpenMatch} />
     </div>
   );
 }

@@ -40,7 +40,8 @@ The game is built to stay inside the Free plan (limits as published by Cloudflar
 | 100,000 Worker / Durable Object requests per day | About 15-20 of each per game, so roughly 5,000 games a day. Page loads and UI files are static assets: free and unlimited. |
 | Durable Object duration: 13,000 GB-s per day | Rooms use plain HTTP, so they are only billed while handling a request (about 1 s per game, plus up to 2.5 s per AI pick while Workers AI answers). |
 | Workers AI: 10,000 Neurons per day | Nothing by default. With `AI_VOICE=on`, the AI opponent's voice: one call per AI pick (about 330 tokens in, 30 out on `llama-3.1-8b-instruct-fp8-fast`), about 2.4 Neurons a pick, 27 a game, so roughly 350 games a day. Past the allowance calls fail (no charge on the Free plan) and the rule-based AI picks silently until midnight UTC. `AI_VOICE_MODEL` tries another model. Each room's state records its calls and tokens (`voiceUsage`). |
-| 100,000 rows written per day (D1 and Durable Objects) | About 15 per game (one saved room state per request) plus one D1 row for the scenario. |
+| 100,000 rows written per day (D1 and Durable Objects) | About 15 per game (one saved room state per request) plus one D1 row for the scenario and one for the saved match. |
+| 5 GB D1 storage | Each finished match is kept (`matches` table, about 30 KB): roughly 150,000 matches before the limit. |
 | 5 million rows read per day | About 1,500-2,100 D1 rows per pool load (plus up to 2,000 phase-stat and split rows), cached per isolate for 10 minutes. |
 | 5 GB Durable Object storage | About 70-90 KB per room; rooms delete themselves after 7 days (an alarm). |
 

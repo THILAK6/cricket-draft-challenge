@@ -1,8 +1,31 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
 import { buildDraftAwards, buildHeadToHead, type DraftAward, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
-import { parLine, PITCH_LABEL, shortName } from "../format";
+import { FORMAT_LABEL, parLine, PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
+import { matchLink } from "../api";
+
+/** The result screen needs the room's state, or a saved match dressed as one (see savedAsState). */
+export type ResultProps = Pick<RoomProps, "state" | "toast" | "onNewGame"> & {
+  /** Opened from a saved match or a share link, not straight after playing it. */
+  savedAt?: number;
+};
+
+/** Shares the match link: the phone's share sheet, or the clipboard. */
+async function share(id: string, title: string, toast: RoomProps["toast"]) {
+  const url = matchLink(id);
+  try {
+    if (navigator.share) return await navigator.share({ title, text: title, url });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied. Anyone with it can see this match.");
+  } catch {
+    toast(url);
+  }
+}
 
 const score = (i?: InningsScorecard) => (i ? `${i.totalRuns}/${i.totalWickets}${i.declared ? "d" : ""}` : "");
 // An innings that never started (an innings win) is left out of the score line
@@ -10,7 +33,7 @@ const scoreLine = (a?: InningsScorecard, b?: InningsScorecard) =>
   [a, b].filter((i): i is InningsScorecard => !!i && i.totalBalls > 0).map((i) => (i.totalWickets >= 10 ? `${i.totalRuns}` : score(i))).join(" & ");
 
 /** The match result: score line, how often this XI wins, head to head, turning points, draft awards, then the details. */
-export function Result(props: RoomProps) {
+export function Result(props: ResultProps) {
   const sim = props.state.simulation as MatchSimulationResult | undefined;
   const results = props.state.results;
   const [shown, setShown] = useState("u1");
@@ -32,8 +55,16 @@ export function Result(props: RoomProps) {
   ];
   const current = innings.find((x) => x.key === shown) ?? innings[0];
 
+  const matchId = props.state.matchId;
+  const shareTitle = `${headline === "You won" ? "I won" : headline === "The AI won" ? "I lost" : headline}: ${scoreLine(sim.userInnings, sim.userSecondInnings)} v ${scoreLine(sim.aiInnings, sim.aiSecondInnings)}`;
+
   return (
     <div class="result">
+      {props.savedAt && (
+        <p class="saved-head muted">
+          {FORMAT_LABEL[sim.format]} at {props.state.challenge.venue.name} · played {new Date(props.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+        </p>
+      )}
       <div class="scorehead">
         <div class="side">
           <span class="you">Your XI</span>
@@ -153,9 +184,14 @@ export function Result(props: RoomProps) {
         </div>
       </details>
 
-      <div style="padding:16px">
+      <div class="stack" style="padding:16px;gap:10px">
+        {matchId && (
+          <button type="button" class="btn btn-block" style="min-height:48px" onClick={() => share(matchId, shareTitle, props.toast)}>
+            Share this match
+          </button>
+        )}
         <button type="button" class="btn btn-primary btn-block" style="min-height:52px;font-size:17px" onClick={props.onNewGame}>
-          New game
+          {props.savedAt ? "Back" : "New game"}
         </button>
       </div>
     </div>

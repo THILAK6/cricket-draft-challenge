@@ -82,3 +82,19 @@ CREATE INDEX IF NOT EXISTS idx_players_batting_hand ON players(batting_hand);
 CREATE INDEX IF NOT EXISTS idx_players_bowling_category ON players(bowling_category);
 CREATE INDEX IF NOT EXISTS idx_stats_format_matches ON player_format_stats(format, matches);
 
+
+-- Finished matches, as shown (src/worker/match-store.ts creates this on first use too)
+CREATE TABLE IF NOT EXISTS matches (
+    id TEXT PRIMARY KEY,                       -- share id: /?match=<id>
+    device_id TEXT,                            -- anonymous id of the phone that played it
+    played_at INTEGER NOT NULL,
+    format TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    pitch TEXT NOT NULL,
+    winner TEXT NOT NULL,
+    user_score TEXT NOT NULL,
+    ai_score TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    data TEXT NOT NULL                         -- JSON MatchSnapshot (src/core/match-snapshot.ts)
+);
+CREATE INDEX IF NOT EXISTS idx_matches_device ON matches(device_id, played_at);

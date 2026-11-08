@@ -175,6 +175,10 @@ export interface DraftState {
   voiceUsage?: { calls: number; failures: number; inputTokens: number; outputTokens: number };
   /** AI opponent strength. easy: noisy reads of the board; normal: default, with counter-sniping; hard: pure best-value drafting. */
   difficulty?: "easy" | "normal" | "hard";
+  /** The phone that started the room (anonymous, random), so the finished match shows in its list. */
+  deviceId?: string;
+  /** The saved match (worker/match-store.ts), once played: its share link is /?match=<id>. */
+  matchId?: string;
 }
 
 /** Snake draft: the first picker takes pick 1, then each side picks twice in turn, and the other side takes pick 22. */

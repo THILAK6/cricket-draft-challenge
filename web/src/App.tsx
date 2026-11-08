@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import type { DraftState, MatchFormat } from "../../src/core/types";
+import type { MatchSnapshot } from "../../src/core/match-snapshot";
 import { api, savedRoom, type Difficulty } from "./api";
 import { Setup } from "./components/Setup";
 import { Briefing } from "./components/Briefing";
@@ -9,7 +10,29 @@ import { Result } from "./components/Result";
 import { Toast, useToast } from "./components/Toast";
 import { themeByKey, type ThemeKey } from "../../src/core/themes";
 
-type Screen = "loading" | "setup" | "briefing" | "room";
+type Screen = "loading" | "setup" | "briefing" | "room" | "match";
+
+/** A saved match dressed as a finished room, so the result screen shows it unchanged. */
+function savedAsState(m: MatchSnapshot): DraftState {
+  return {
+    roomId: "",
+    challenge: m.challenge,
+    pool: [],
+    userPicks: [],
+    aiPicks: [],
+    currentTurn: "USER",
+    round: 11,
+    maxRounds: 11,
+    status: "COMPLETED",
+    lastActionTimestamp: m.playedAt,
+    pickLog: m.pickLog,
+    simulation: m.simulation,
+    results: m.results,
+    matchId: m.id,
+  };
+}
+
+const matchInUrl = () => new URLSearchParams(location.search).get("match");
 
 export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
@@ -19,10 +42,53 @@ export function App() {
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [theme, setTheme] = useState<ThemeKey>("mixed");
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<MatchSnapshot | null>(null);
   const toast = useToast();
 
-  // Resume a draft after a reload
+  /** Opens a saved match (from the list or a share link); the address bar gets its link. */
+  const openMatch = async (id: string, push = true) => {
+    try {
+      const { match } = await api.match(id);
+      setSaved(match);
+      setScreen("match");
+      if (push) history.pushState({ match: id }, "", `/?match=${id}`);
+      window.scrollTo(0, 0);
+      return true;
+    } catch (e) {
+      toast.show((e as Error).message, "error");
+      return false;
+    }
+  };
+
+  /** Leaves a saved match: back to the draft in progress, or the start. */
+  const closeMatch = (push = true) => {
+    if (push) history.pushState(null, "", "/");
+    setSaved(null);
+    setScreen(state && roomId ? "room" : "setup");
+  };
+
   useEffect(() => {
+    const onPop = () => {
+      const id = matchInUrl();
+      if (id) openMatch(id, false);
+      else closeMatch(false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  });
+
+  // Open a shared match, or resume a draft after a reload
+  useEffect(() => {
+    const shared = matchInUrl();
+    if (shared) {
+      openMatch(shared, false).then((ok) => {
+        if (!ok) {
+          history.replaceState(null, "", "/");
+          setScreen("setup");
+        }
+      });
+      return;
+    }
     const id = savedRoom.get();
     if (!id) return setScreen("setup");
     api
@@ -67,8 +133,10 @@ export function App() {
   if (screen === "loading") body = <div class="loading">Loading…</div>;
   else if (screen === "setup")
     body = (
-      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={setFormat} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} />
+      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={setFormat} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} onOpenMatch={(id) => openMatch(id)} />
     );
+  else if (screen === "match" && saved)
+    body = <Result state={savedAsState(saved)} toast={toast.show} onNewGame={() => closeMatch()} savedAt={saved.playedAt} />;
   else if (screen === "briefing" && state)
     body = <Briefing state={state} busy={busy} onBack={() => setScreen("setup")} onReroll={newRoom} onStart={() => setScreen("room")} />;
   else if (state && roomId) {

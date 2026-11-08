@@ -217,6 +217,13 @@ normal for small samples (`src/core/splits.ts`).
 - Production: apply `data/phase-stats.sql` and `data/player-splits.sql` (until then the game runs
   without them).
 
+## Phase 10 — Saved matches (done)
+
+- [x] 10.1 Every finished match is saved to D1 (`matches`, created on first use) as it was shown: scorecards, review, awards, both XIs and the pick log. Stored, not replayed, so engine changes never rewrite an old scorecard. About 30 KB and one write per match.
+- [x] 10.2 "My matches" on the start screen: this phone's matches, newest first, by an anonymous id kept in the browser (no account). Tap one to reopen the full result.
+- [x] 10.3 Share link per match (`/?match=<id>`, 10-character unguessable id): the phone's share sheet, or the link copied.
+- [ ] 10.4 Later: a record page (wins by format, most-drafted players, record against each AI style) from the same rows.
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

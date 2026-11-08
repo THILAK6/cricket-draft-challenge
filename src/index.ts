@@ -4,6 +4,7 @@ import { DraftRoom } from "./durable-objects/DraftRoom";
 import { generateValidatedChallenge } from "./worker/challenge-generator";
 import type { PlayerWithStats } from "./core/types";
 import type { Challenge, MatchFormat } from "./core/types";
+import { getMatch, isDeviceId, isMatchId, listMatches } from "./worker/match-store";
 
 export { DraftRoom };
 
@@ -114,7 +115,7 @@ app.post("/api/challenges/generate", async (c) => {
 // under the Workers Free plan's 10 ms CPU limit even in a cold isolate.
 app.post("/api/draft/start", async (c) => {
   try {
-    const body = await c.req.json<{ format?: MatchFormat; difficulty?: string; theme?: string }>().catch(() => ({}) as any);
+    const body = await c.req.json<{ format?: MatchFormat; difficulty?: string; theme?: string; deviceId?: string }>().catch(() => ({}) as any);
     const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
     const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -123,7 +124,7 @@ app.post("/api/draft/start", async (c) => {
       new Request("http://internal/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId, format, difficulty, theme: body.theme }),
+        body: JSON.stringify({ roomId, format, difficulty, theme: body.theme, deviceId: isDeviceId(body.deviceId) ? body.deviceId : undefined }),
       })
     );
     const data = (await res.json()) as any;
@@ -133,6 +134,30 @@ app.post("/api/draft/start", async (c) => {
   } catch (err: any) {
     console.error("[API] Failed to start draft room:", err);
     return c.json({ error: err.message || "Failed to start draft room" }, 500);
+  }
+});
+
+// Saved matches: this phone's list, and one match by its share id
+app.get("/api/matches", async (c) => {
+  const device = c.req.query("device");
+  if (!isDeviceId(device)) return c.json({ matches: [] });
+  try {
+    return c.json({ matches: await listMatches(c.env.DB, device) });
+  } catch (err: any) {
+    console.error("[API] Failed to list matches:", err);
+    return c.json({ error: "Could not load your matches" }, 500);
+  }
+});
+
+app.get("/api/match/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!isMatchId(id)) return c.json({ error: "Match not found" }, 404);
+  try {
+    const match = await getMatch(c.env.DB, id);
+    return match ? c.json({ match }) : c.json({ error: "Match not found" }, 404);
+  } catch (err: any) {
+    console.error("[API] Failed to load match:", err);
+    return c.json({ error: "Could not load this match" }, 500);
   }
 });
 

@@ -13,10 +13,18 @@ db.exec(readFileSync("data/phase-stats.sql", "utf8"));
 db.exec(readFileSync("data/player-splits.sql", "utf8"));
 
 /** In-memory D1 stand-in over the seed data, for scripts and tests. */
+function statement(sql: string, args: unknown[] = []) {
+  return {
+    bind: (...a: unknown[]) => statement(sql, a),
+    all: async () => ({ results: db.prepare(sql).all(...(args as any[])) }),
+    run: async () => (db.prepare(sql).run(...(args as any[])), { success: true }),
+    exec: () => db.prepare(sql).run(...(args as any[])),
+  };
+}
+
 export const d1 = {
-  prepare(sql: string) {
-    return { bind: (...args: unknown[]) => ({ all: async () => ({ results: db.prepare(sql).all(...(args as any[])) }) }) };
-  },
+  prepare: (sql: string) => statement(sql),
+  batch: async (stmts: ReturnType<typeof statement>[]) => stmts.map((s) => (s.exec(), { success: true })),
 } as unknown as D1Database;
 
 export function lcg(seed: number) {

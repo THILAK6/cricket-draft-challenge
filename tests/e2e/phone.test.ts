@@ -39,7 +39,11 @@ function fakeRoomNamespace(roomEnv: () => unknown) {
   };
 }
 
-const DB = { prepare: (sql: string) => ({ bind: (...a: unknown[]) => ({ ...(d1.prepare(sql) as any).bind(...a), run: async () => ({}), first: async () => null }) }) };
+// The in-memory database, saves included (so the e2e can reopen a saved match)
+const DB = {
+  prepare: (sql: string) => ({ ...(d1.prepare(sql) as any), bind: (...a: unknown[]) => ({ ...(d1.prepare(sql) as any).bind(...a), first: async () => null }) }),
+  batch: (d1 as any).batch,
+};
 // Rooms get the database too: they build their own drafts
 const env = { DB, DRAFT_ROOM: fakeRoomNamespace(() => ({ DB })) };
 
@@ -139,6 +143,34 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.click("summary:has-text('Scorecards')");
         expect(await overflow()).toBe(0);
         if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `result-${format}.png`), fullPage: true });
+        // The match is saved: it can be shared, and reopened from My matches on the start screen
+        expect(await page.locator("text=Share this match").count()).toBe(1);
+        const headline = await page.locator(".verdict h2").textContent();
+        await page.click("text=New game");
+        await page.waitForSelector(".mymatches li");
+        expect(await page.locator(".mymatches li").count()).toBe(1);
+        expect(await overflow()).toBe(0);
+        if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `mymatches-${format}.png`) });
+        await page.click(".mymatches button");
+        await page.waitForSelector(".saved-head");
+        expect(page.url()).toMatch(/\?match=[a-z2-9]{10}$/);
+        expect(await page.locator(".verdict h2").textContent()).toBe(headline);
+        expect(await page.locator(".h2h .row").count()).toBe(format === "T20" ? 10 : 8);
+        expect(await overflow()).toBe(0);
+        // The link works on its own, as a friend would open it
+        const link = page.url();
+        const friend = await browser.newContext({ ...playwright.devices["iPhone 13"] });
+        const fp = await friend.newPage();
+        await fp.goto(link);
+        await fp.waitForSelector(".saved-head");
+        expect(await fp.locator(".verdict h2").textContent()).toBe(headline);
+        await fp.click("text=Back");
+        await fp.waitForSelector("text=Next: the ground and the toss");
+        expect(await fp.locator(".mymatches li").count()).toBe(0);
+        await friend.close();
+        // Back returns to the start screen
+        await page.click("text=Back");
+        await page.waitForSelector("text=Next: the ground and the toss");
         expect(errors).toEqual([]);
       } finally {
         await browser.close();

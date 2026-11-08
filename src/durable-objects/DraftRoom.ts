@@ -8,6 +8,7 @@ import { chooseAiPick } from "../core/ai-draft";
 import { askVoice, type VoiceUsage } from "../core/ai-voice";
 import { arrangeSquad } from "../core/batting-order";
 import { buildRandomDraft, saveChallenge } from "../worker/challenge-generator";
+import { buildSnapshot, isDeviceId, newMatchId, saveMatch } from "../worker/match-store";
 
 /** Rooms delete themselves this long after they were created, so storage never fills up (5 GB on the Free plan). */
 export const ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -75,7 +76,7 @@ export class DraftRoom implements DurableObject {
     // Internal: build a fresh draft (pool + scenario) here, where the CPU budget is 30 s, then start it
     if (url.pathname.endsWith("/create") && request.method === "POST") {
       if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
-      const body = await readJson<{ roomId?: string; format?: MatchFormat; difficulty?: DraftState["difficulty"]; theme?: string }>(request);
+      const body = await readJson<{ roomId?: string; format?: MatchFormat; difficulty?: DraftState["difficulty"]; theme?: string; deviceId?: string }>(request);
       if (!body?.roomId || !this.env?.DB) return Response.json({ error: "Invalid create payload" }, { status: 400 });
       const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
       const { challenge, pool, theme } = await buildRandomDraft(this.env.DB, format, Math.random, body.theme);
@@ -94,6 +95,7 @@ export class DraftRoom implements DurableObject {
         lastActionTimestamp: Date.now(),
         difficulty: body.difficulty ?? "normal",
         theme,
+        deviceId: isDeviceId(body.deviceId) ? body.deviceId : undefined,
       });
     }
 
@@ -444,6 +446,17 @@ export class DraftRoom implements DurableObject {
       simulation,
     };
     ds.results = completedResults;
+
+    // 4. Keep the match for good (the room itself is deleted after a week). Never fail the match over it.
+    if (this.env?.DB && !ds.matchId) {
+      const id = newMatchId();
+      try {
+        await saveMatch(this.env.DB, buildSnapshot(ds, id), ds.deviceId);
+        ds.matchId = id;
+      } catch (err) {
+        console.error("[DraftRoom] Failed to save match:", err);
+      }
+    }
 
     await this.state.storage.put("draftState", ds);
     this.broadcast({ type: "COMPLETED", results: completedResults });
