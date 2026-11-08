@@ -11,6 +11,10 @@ export interface Env {
   DB: D1Database;
   DRAFT_ROOM: DurableObjectNamespace;
   AI?: any;
+  /** "off" silences the AI opponent's Workers AI voice (the rules still pick). */
+  AI_VOICE?: string;
+  /** Workers AI model for the voice (default in core/ai-voice.ts). */
+  AI_VOICE_MODEL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
 }
@@ -90,7 +94,8 @@ app.get("/api/challenges/:id", async (c) => {
 app.post("/api/challenges/generate", async (c) => {
   try {
     const body = (await c.req.json().catch(() => ({}))) as { format?: MatchFormat; requestedVenue?: string };
-    const result = await generateValidatedChallenge(c.env, body);
+    // No Workers AI here: the free daily allowance is kept for the opponent's voice in the draft
+    const result = await generateValidatedChallenge({ ...c.env, AI: undefined }, body);
 
     return c.json({
       success: true,

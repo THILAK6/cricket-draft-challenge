@@ -157,14 +157,24 @@ export function Draft(props: RoomProps) {
         <NeedChips needs={needs} mine={mine} />
       </div>
 
-      {aiPicks.length > 0 && !bannerHidden && (
+      {busy && (
+        <div class="ai-banner thinking" role="status">
+          <div class="who">{PERSONA_INFO[state.difficulty ?? "normal"].name} is thinking…</div>
+        </div>
+      )}
+
+      {!busy && aiPicks.length > 0 && !bannerHidden && (
         <div class="ai-banner" role="status">
           <div class="grow">
             <div class="who">
               {PERSONA_INFO[state.difficulty ?? "normal"].name} picked {aiPicks.length === 2 ? "twice" : ""}
             </div>
             <div class="picks">{aiPicks.map((a) => `${shortName(a.player)} (${ROLE_SHORT[roleKey(a.player)]})`).join(" and ")}</div>
-            <div class="why">{plainReason(aiPicks[aiPicks.length - 1].reason)}</div>
+            {aiPicks.some((a) => a.line) ? (
+              aiPicks.filter((a) => a.line).map((a) => <q class="line">{a.line}</q>)
+            ) : (
+              <div class="why">{plainReason(aiPicks[aiPicks.length - 1].reason)}</div>
+            )}
           </div>
           <button type="button" class="x" onClick={() => setBannerHidden(true)} aria-label="Hide">
             ✕

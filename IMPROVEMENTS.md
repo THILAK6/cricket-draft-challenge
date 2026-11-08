@@ -94,18 +94,22 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
   download (cricsheet.org is blocked), so re-run `npm run etl:download` and `npm run etl:process`
   somewhere with access.
 
-## Phase 4 — AI opponent voice (Claude Haiku, optional)
+## Phase 4 — AI opponent voice (Cloudflare Workers AI, free plan)
 
-- [ ] **4.1 Haiku picks from a shortlist.** The rule-based AI proposes the 3–5 best legal players, and
-  Claude Haiku 5.5 (`claude-haiku-5-5`, low effort) chooses one in character and returns
-  `{ playerId, line }` as structured output.
-- [ ] **4.2 Banter line** shown with each AI pick ("Murali on a Chepauk turner? Mine.").
-- [ ] **4.3 Never stall.** Timeout, error, invalid ID or no API key → use the rule-based pick. The game
-  works fully without a key.
-- [ ] **4.4 Key as a secret.** `ANTHROPIC_API_KEY` is stored as a Worker secret
-  (`wrangler secret put ANTHROPIC_API_KEY`) and never committed.
-- [ ] **4.5 Optional:** Haiku writes the post-match commentary in place of Gemini.
-- Estimated cost: about $0.006 per draft (under 1 cent per game). Check the real numbers from `usage` after launch.
+Switched from Claude Haiku to Workers AI to stay on the Cloudflare Free plan with no API key.
+
+- [x] **4.1 Workers AI picks from a shortlist.** The rule-based AI proposes its 2–4 near-equal best legal
+  players (within 6 rating points), and `@cf/meta/llama-3.1-8b-instruct-fp8-fast` chooses one in
+  character, replying `PICK: n / LINE: ...` (checked; anything else is ignored).
+- [x] **4.2 Banter line** shown with each AI pick in the banner (and on the toss screen when the AI picks first).
+- [x] **4.3 Never stall.** 2.5 s timeout, errors, an unreadable reply, no binding, or the daily free
+  allowance used up → the rule-based pick. The game works fully without it.
+- [x] **4.4 No key needed.** It uses the Worker's `AI` binding. `AI_VOICE=off` switches it off.
+- [ ] **4.5 Optional:** Workers AI writes the post-match commentary in place of Gemini (about 1 call a game).
+- Estimated use: about 2.4 Neurons a pick, 27 a game, so about 350 games a day inside the free 10,000
+  Neurons. Check real numbers in the Cloudflare dashboard (Workers AI) or a room's `voiceUsage`.
+- The unused `/api/challenges/generate` endpoint no longer calls Workers AI, so the allowance only goes
+  to the voice.
 
 ## Phase 5 — Match engine (reward good drafting)
 
@@ -151,6 +155,14 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
   otherwise bat on to a draw. Test draws went from 4% to 13%, and the better-drafted XI now wins 65% of
   Tests (was 56%).
 
+## Phase 7 — School rules: names, not numbers (proposed)
+
+- [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type
+  (left-arm pace, leg-spin...) and batting spot (opener, middle order, finisher), but no averages, strike
+  rates or wickets, so you pick from what you know about players, like at school.
+- [ ] **7.2 "Show career numbers" switch** on the setup screen for anyone who wants them.
+- [ ] **7.3 Numbers after the match.** The head-to-head on the result screen reveals the career numbers.
+
 ## Later
 
 - [ ] **Play with a friend.** Second human seat via a share link, or pass-and-play on one phone. The
@@ -181,4 +193,4 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 - Work happens directly on `main`.
 - Each phase ends with `npm test` and `npm run build` passing. Tests that encode the old rules are
   updated to the new rules, never skipped.
-- Phases 1–3 need no API key. Phase 4 needs `ANTHROPIC_API_KEY`.
+- No phase needs an API key: the AI's voice uses the Worker's Workers AI binding.

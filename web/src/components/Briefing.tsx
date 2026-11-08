@@ -53,6 +53,7 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
               It opened with <b class="ai">{shortName(aiOpener)}</b>. You now get two picks in a row.
             </p>
           )}
+          {aiOpener && lastAiPicks?.[0]?.line && <q class="ai-line">{lastAiPicks[0].line}</q>}
           {!aiFirst && <p class="muted" style="margin-top:2px">Then the AI picks twice, and so on.</p>}
         </div>
       </div>

@@ -67,7 +67,16 @@ export interface AiPickResult {
   ownGain: number;
   /** Rating points the pick earned for keeping a scarce player from the human. */
   denial: number;
+  /**
+   * The pick and the others nearly as good (best first, at most SHORTLIST_SIZE), each with its own
+   * reason: a voice model may choose between them in character without ever making a bad pick.
+   */
+  shortlist: { player: PlayerWithStats; reason: string }[];
 }
+
+/** How close (in rating points) an option must be to the best pick to make the shortlist. */
+export const SHORTLIST_MARGIN = 6;
+export const SHORTLIST_SIZE = 4;
 
 /** Hard slot eligibility (kept for the simulation harness): what a player may never be asked to do. */
 export function slotEligible(p: PlayerWithStats, slot: number, strict = true): boolean {
@@ -151,7 +160,8 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
   if (legal.length === 0) {
     // No legal pick at all (the draft room allows any player then): take the best one left
     const best = [...pool].sort((a, b) => playerQuality(b, format) - playerQuality(a, format))[0];
-    return { player: best, slotIndex, reason: `${best.name} was the best player left.`, fallback: true, ownGain: 0, denial: 0 };
+    const reason = `${best.name} was the best player left.`;
+    return { player: best, slotIndex, reason, fallback: true, ownGain: 0, denial: 0, shortlist: [{ player: best, reason }] };
   }
 
   // What my XI still needs, and how urgent it is
@@ -252,13 +262,25 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
 
   scored.sort((a, b) => b.total - a.total || b.quality - a.quality || a.p.id.localeCompare(b.p.id));
   const best = scored[0];
+  // A shortlisted alternative wasn't the AI's own first choice, so its reason only says what he does for the side
+  const why = (x: Scored) => explain(x, scored, { format, pitch: pitchType, mine, persona, difficulty, seed: input.noiseSeed + input.round, fav }, x !== best);
+  const reason = why(best);
+  const shortlist = [
+    { player: best.p, reason },
+    ...scored
+      .slice(1)
+      .filter((x) => x.total >= best.total - SHORTLIST_MARGIN)
+      .slice(0, SHORTLIST_SIZE - 1)
+      .map((x) => ({ player: x.p, reason: why(x) })),
+  ];
   return {
     player: best.p,
     slotIndex,
-    reason: explain(best, scored, { format, pitch: pitchType, mine, persona, difficulty, seed: input.noiseSeed + input.round, fav }),
+    reason,
     fallback: false,
     ownGain: best.total - best.denial,
     denial: best.denial,
+    shortlist,
   };
 }
 
@@ -283,10 +305,12 @@ const COUNTRY_WORD: Record<string, string> = {
 function explain(
   s: Scored,
   all: Scored[],
-  c: { format: MatchFormat; pitch: string; mine: PlayerWithStats[]; persona: Persona; difficulty: Difficulty; seed: number; fav: string }
+  c: { format: MatchFormat; pitch: string; mine: PlayerWithStats[]; persona: Persona; difficulty: Difficulty; seed: number; fav: string },
+  roleOnly = false
 ): string {
   const name = s.p.name;
   const vary = <T,>(xs: T[]) => xs[Math.floor(hash(c.seed, name) * xs.length)];
+  if (roleOnly) return forTheSide(s.p, c.mine, vary);
   const runner = all.find((x) => x !== s);
   const margin = runner ? s.total - runner.total : Infinity;
   // A factor decided the pick when it gave this player more than the runner-up by at least the winning margin
@@ -314,10 +338,15 @@ function explain(
   if (s.quality >= top - 3 || early) {
     return vary([`${name} is the best player left. Too good to pass up.`, `Couldn't let ${name} go past me.`, `${name}, the pick of what's left.`]);
   }
-  // Otherwise: what he does for the side
-  const pace = c.mine.filter(isPace).length;
-  if (s.p.primary_role === "BOWL") return isPace(s.p) && pace <= 1 ? `${name} to lead my attack.` : vary([`${name} strengthens my bowling.`, `${name} gives my attack another weapon.`]);
-  if (s.p.primary_role === "AR") return vary([`${name} gives me runs and overs.`, `${name} balances my side: bat and ball.`]);
-  if (s.p.primary_role === "WK") return `${name} with the gloves and the bat.`;
-  return isNaturalOpener(s.p) ? `${name} to open the batting.` : vary([`${name} strengthens my top order.`, `${name} adds runs to my middle order.`]);
+  return forTheSide(s.p, c.mine, vary);
+}
+
+/** What a player does for the side, when no single factor decided the pick. */
+function forTheSide(p: PlayerWithStats, mine: PlayerWithStats[], vary: <T>(xs: T[]) => T): string {
+  const name = p.name;
+  const pace = mine.filter(isPace).length;
+  if (p.primary_role === "BOWL") return isPace(p) && pace <= 1 ? `${name} to lead my attack.` : vary([`${name} strengthens my bowling.`, `${name} gives my attack another weapon.`]);
+  if (p.primary_role === "AR") return vary([`${name} gives me runs and overs.`, `${name} balances my side: bat and ball.`]);
+  if (p.primary_role === "WK") return `${name} with the gloves and the bat.`;
+  return isNaturalOpener(p) ? `${name} to open the batting.` : vary([`${name} strengthens my top order.`, `${name} adds runs to my middle order.`]);
 }

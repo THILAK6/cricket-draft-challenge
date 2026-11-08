@@ -5,6 +5,7 @@ import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
 import { buildMatchReview } from "../core/match-review";
 import { chooseAiPick } from "../core/ai-draft";
+import { askVoice, type VoiceUsage } from "../core/ai-voice";
 import { arrangeSquad } from "../core/batting-order";
 import { buildRandomDraft, saveChallenge } from "../worker/challenge-generator";
 
@@ -114,7 +115,7 @@ export class DraftRoom implements DurableObject {
     if (url.pathname.endsWith("/pick") && request.method === "POST") {
       const body = await readJson<{ playerId?: unknown }>(request);
       if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-      const result = this.applyUserPick(body.playerId);
+      const result = await this.applyUserPick(body.playerId);
       if (!result.success) return Response.json({ error: result.error }, { status: result.status });
       await this.persistAndBroadcast();
       return Response.json({ success: true, state: this.draftState, aiPicks: this.draftState!.lastAiPicks });
@@ -157,7 +158,7 @@ export class DraftRoom implements DurableObject {
     this.draftState = body;
     this.normalize(body);
     body.currentTurn = body.pickOrder[0];
-    this.runAiTurns();
+    await this.runAiTurns();
     await this.persistAndBroadcast("INIT");
     // One alarm per room (a single row written): clean up a week later
     await this.state.storage.setAlarm?.(Date.now() + ROOM_TTL_MS);
@@ -175,7 +176,7 @@ export class DraftRoom implements DurableObject {
   }
 
   /** Validates and applies a user pick, then lets the AI make its pick(s). Shared by HTTP and WebSocket. */
-  private applyUserPick(playerId: unknown): Result {
+  private async applyUserPick(playerId: unknown): Promise<Result> {
     const ds = this.draftState;
     if (!ds || ds.status !== "DRAFTING") return { success: false, error: "The draft is over", status: 400 };
     if (ds.currentTurn !== "USER") return { success: false, error: "Not your pick yet", status: 403 };
@@ -194,7 +195,7 @@ export class DraftRoom implements DurableObject {
 
     ds.lastAiPicks = [];
     this.place("USER", player);
-    this.runAiTurns();
+    await this.runAiTurns();
     return { success: true };
   }
 
@@ -230,8 +231,12 @@ export class DraftRoom implements DurableObject {
     ds.currentTurn = next;
   }
 
-  /** The AI makes every pick it is due (two in a row in a snake draft) until it is the user's turn. */
-  private runAiTurns() {
+  /**
+   * The AI makes every pick it is due (two in a row in a snake draft) until it is the user's turn.
+   * With Workers AI available, its voice chooses between the rules' near-equal options and says a
+   * line; otherwise (or on any failure) the rules' own pick stands.
+   */
+  private async runAiTurns() {
     const ds = this.draftState!;
     let guard = 0;
     while (ds.status === "DRAFTING" && ds.currentTurn === "AI" && guard++ < TOTAL_PICKS) {
@@ -249,16 +254,43 @@ export class DraftRoom implements DurableObject {
         ds.currentTurn = "USER";
         break;
       }
-      this.place("AI", result.player, result.slotIndex);
+      let player = result.player;
+      let reason = result.reason;
+      let line: string | undefined;
+      if (this.voiceOn() && !result.fallback) {
+        const usage: VoiceUsage = (ds.voiceUsage ??= { calls: 0, failures: 0, inputTokens: 0, outputTokens: 0 });
+        const reply = await askVoice(this.env?.AI, {
+          difficulty: ds.difficulty ?? "normal",
+          challenge: ds.challenge,
+          mine: ds.aiPicks,
+          theirs: ds.userPicks,
+          options: result.shortlist,
+          pickNumber: (ds.pickIndex ?? 0) + 1,
+        }, usage, this.env?.AI_VOICE_MODEL || undefined);
+        const chosen = reply ? result.shortlist[reply.index] : undefined;
+        // The shortlist came from the pool a moment ago, but check again: the pick must still be there
+        if (chosen && ds.pool.some((p) => p.id === chosen.player.id)) {
+          player = chosen.player;
+          reason = chosen.reason;
+          line = reply!.line || undefined;
+        }
+      }
+      this.place("AI", player, player === result.player ? result.slotIndex : undefined);
       const info: AiSnipeInfo = {
-        player: result.player,
-        slotIndex: ds.aiPicks.findIndex((p) => p?.id === result.player.id),
-        reason: result.reason,
+        player,
+        slotIndex: ds.aiPicks.findIndex((p) => p?.id === player.id),
+        reason,
         pickNumber: ds.pickIndex,
+        ...(line ? { line } : {}),
       };
       ds.lastAiPicks = [...(ds.lastAiPicks ?? []), info];
       ds.lastAiSnipe = info;
     }
+  }
+
+  /** The opponent's voice is on when the Workers AI binding exists, unless AI_VOICE is "off". */
+  private voiceOn(): boolean {
+    return !!this.env?.AI && this.env?.AI_VOICE !== "off";
   }
 
   private noLegalPick(squad: (PlayerWithStats | null)[], ctx: PickContext): boolean {
@@ -345,7 +377,7 @@ export class DraftRoom implements DurableObject {
         return; // ignore malformed socket payload
       }
       if (data?.type === "PICK") {
-        const result = this.applyUserPick(data.playerId);
+        const result = await this.applyUserPick(data.playerId);
         if (!result.success) {
           ws.send(JSON.stringify({ type: "ERROR", error: result.error }));
           return;

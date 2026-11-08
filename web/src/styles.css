@@ -162,6 +162,11 @@ h1, h2, h3, p { margin: 0; }
 .ai-banner .who { color: var(--ai); font-weight: 800; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
 .ai-banner .picks { font-weight: 700; }
 .ai-banner .why { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.ai-banner .line { display: block; font-size: 14px; font-style: italic; margin-top: 4px; }
+.ai-banner.thinking .who { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .ai-banner.thinking .who { animation: none; } }
+.ai-line { display: block; font-style: italic; margin-top: 6px; color: var(--text); }
 .ai-banner .x { background: none; border: 0; color: var(--muted); width: 32px; height: 32px; font-size: 18px; flex: none; }
 
 /* ---------- XI list ---------- */

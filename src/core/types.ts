@@ -110,6 +110,8 @@ export interface AiSnipeInfo {
   reason: string;
   /** Pick number in the draft (1-22). */
   pickNumber?: number;
+  /** What the AI said about the pick (Workers AI voice), when it spoke. */
+  line?: string;
 }
 
 export interface PickLogEntry {
@@ -155,6 +157,8 @@ export interface DraftState {
   userStuck?: boolean;
   /** Pool theme the players were drawn from (see core/themes.ts). */
   theme?: string;
+  /** Workers AI use in this room (calls, failures, tokens), to check the free allowance. */
+  voiceUsage?: { calls: number; failures: number; inputTokens: number; outputTokens: number };
   /** AI opponent strength. easy: noisy reads of the board; normal: default, with counter-sniping; hard: pure best-value drafting. */
   difficulty?: "easy" | "normal" | "hard";
 }
