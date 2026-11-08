@@ -81,6 +81,8 @@ export function PlayerSheet(props: {
           </div>
         )}
 
+        <Records player={p} format={format} />
+
         {props.reason && <div class="reason">{props.reason}</div>}
 
         {props.onDraft && (
@@ -88,6 +90,46 @@ export function PlayerSheet(props: {
             {props.canDraft ? `Draft ${p.name.split(" ").slice(-1)[0]}` : "Can't draft right now"}
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+const REGION_NAME: Record<string, string> = { asia: "In Asia", sena: "In Eng, Aus, NZ, SA", other: "Elsewhere" };
+
+/** Records by region and (limited overs) batting first v chasing, from ball-by-ball data. */
+function Records({ player: p, format }: { player: Player; format: MatchFormat }) {
+  const sp = p.stats.splits;
+  if (!sp) return null;
+  const bats = p.primary_role !== "BOWL";
+  const bowls = p.stats.bowl_wickets > 0;
+  const batText = (r: number, b: number, o: number) => (b < 60 ? null : `avg ${o ? (r / o).toFixed(1) : "–"}${format !== "TEST" ? ` · SR ${Math.round((r / b) * 100)}` : ""}`);
+  const bowlText = (b: number, r: number, w: number) => (b < 60 ? null : `${w} wkts · econ ${((r / b) * 6).toFixed(1)}`);
+  const rows: [string, string][] = [];
+  for (const k of ["asia", "sena", "other"] as const) {
+    const l = sp.region?.[k];
+    if (!l) continue;
+    const text = [bats ? batText(l[0], l[1], l[2]) : null, bowls ? bowlText(l[3], l[4], l[5]) : null].filter(Boolean).join(" · ");
+    if (text) rows.push([REGION_NAME[k], text]);
+  }
+  if (bats && format !== "TEST") {
+    for (const [k, label] of [["first", "Batting first"], ["second", "Chasing"]] as const) {
+      const l = sp.chase?.[k];
+      const text = l ? batText(l[0], l[1], l[2]) : null;
+      if (text) rows.push([label, text]);
+    }
+  }
+  if (!rows.length) return null;
+  return (
+    <div style="margin-top:12px">
+      <div class="label">Records</div>
+      <div class="recs">
+        {rows.map(([k, v]) => (
+          <>
+            <span class="muted">{k}</span>
+            <span>{v}</span>
+          </>
+        ))}
       </div>
     </div>
   );

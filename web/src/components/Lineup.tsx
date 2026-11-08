@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api";
-import { keyStats, PITCH_LABEL, ROLE_SHORT, roleKey, shortName, type Player } from "../format";
+import { keyStats, PITCH_LABEL, positionLine, ROLE_SHORT, roleKey, shortName, type Player } from "../format";
 import { XIList, type RoomProps } from "./Draft";
 import { PlayerSheet } from "./PlayerSheet";
 
@@ -111,7 +111,7 @@ export function Lineup(props: RoomProps) {
 
       {view === "you" ? (
         <div class={`xi lineup-list ${drag ? "dragging" : ""}`} style="margin-top:6px">
-          <p class="faint" style="font-size:12px;padding:0 16px 4px">Drag ⠿ to change the order. Your captain picks who bowls when, from their records.</p>
+          <p class="faint" style="font-size:12px;padding:0 16px 4px">Drag ⠿ to change the order. Under each batter: his record in that spot.</p>
           {squad.map((p, i) =>
             p ? (
               <div class={`xrow ${drag?.from === i ? "lifted" : ""}`} style={rowStyle(i)} key={p.id}>
@@ -121,6 +121,7 @@ export function Lineup(props: RoomProps) {
                   <span class="sub">
                     <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {keyStats(p, format)}
                   </span>
+                  {positionLine(p, landing(i) + 1, format) && <span class="posrec">{positionLine(p, landing(i) + 1, format)}</span>}
                 </button>
                 <button
                   type="button"

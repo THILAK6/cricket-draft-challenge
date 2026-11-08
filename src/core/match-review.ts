@@ -134,7 +134,7 @@ const PITCH_NEED: Record<string, { what: "seamers" | "spinners" | "hitters"; lab
 };
 
 /**
- * T20: the two best death bowlers and the two best finishers (from #4-#8), judged on what they did in overs
+ * T20 and ODI: the two best death bowlers and the two best finishers (from #4-#8), judged on what they did in overs
  * 16-20 (their level, adjusted for when they played, times how much better or worse they are at the
  * death, pulled towards normal for small samples). Shown with their raw death numbers and balls.
  */
@@ -216,7 +216,7 @@ function units(squad: Squad, challenge: Challenge): Record<Matchup["key"], Unit>
     // The attack is judged on the bowlers who will bowl most of the overs
     pace: { line: { names: names(pace), stat: pace.length ? "" : "none", players: each(pace, bowlLine) }, value: sum(pace.slice(0, 4).map(bowl)) },
     spin: { line: { names: names(spin), stat: spin.length ? "" : "none", players: each(spin, bowlLine) }, value: sum(spin.slice(0, 3).map(bowl)) },
-    ...(f === "T20" ? deathUnits(all, squad, f) : { death: EMPTY_UNIT, finish: EMPTY_UNIT }),
+    ...(f !== "TEST" ? deathUnits(all, squad, f) : { death: EMPTY_UNIT, finish: EMPTY_UNIT }),
     depth: { line: { names: names(tail), stat: tail.length ? `#7-#11 ${batStat(tail, f).replace(/ · SR \d+/, "")}` : "" }, value: mean(tail.map(bat)) },
     pitch: {
       line: { names: names(fit), stat: fitStat },
@@ -249,10 +249,10 @@ export function buildHeadToHead(userSquad: Squad, aiSquad: Squad, challenge: Cha
   const f = (challenge.format || "T20") as MatchFormat;
   const cols: Partial<Record<Matchup["key"], string>> = {
     openers: COLS[f].bat, middle: COLS[f].bat, keeper: COLS[f].bat, allrounders: COLS[f].ar, pace: COLS[f].bowl, spin: COLS[f].bowl,
-    death: "econ in overs 16-20 · balls", finish: "SR in overs 16-20 · balls",
+    death: `econ in overs ${f === "ODI" ? "41-50" : "16-20"} · balls`, finish: `SR in overs ${f === "ODI" ? "41-50" : "16-20"} · balls`,
   };
-  // Death bowling and finishers come from T20 phase stats only
-  const keys = (Object.keys(LABELS) as Matchup["key"][]).filter((k) => f === "T20" || (k !== "death" && k !== "finish"));
+  // Death bowling and finishers come from phase stats (T20 and ODI)
+  const keys = (Object.keys(LABELS) as Matchup["key"][]).filter((k) => f !== "TEST" || (k !== "death" && k !== "finish"));
   const rows: Matchup[] = keys.map((k) => ({
     key: k,
     label: label(k),

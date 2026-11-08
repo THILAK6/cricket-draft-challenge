@@ -1,5 +1,6 @@
 import { typeAdjustedEconomy } from "./player-quality";
 import { hasBattingPhases, hasBowlingPhases, phaseShape, PHASE_OF_SIM } from "./phase-stats";
+import { chaseShape, positionShape, regionShape, venueParFactor } from "./splits";
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
 import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim } from "./match-facts";
@@ -855,8 +856,12 @@ function simulateInnings(
         isDeterioratedPitch,
         rng,
         {
-          makeshiftOpener: phase === "PP" && openerIds.has(strikerData.id) && !isNaturalOpener(strikerData),
+          // A makeshift opener: not a natural opener and no real record of opening
+          makeshiftOpener: phase === "PP" && openerIds.has(strikerData.id) && !isNaturalOpener(strikerData) && (strikerData.stats.splits?.pos?.open?.[1] ?? 0) < 120,
           oneDimensional,
+          position: strikerIdx + 1,
+          chasing: !!target && !isTest,
+          venue: challenge.venue.name,
         }
       );
 
@@ -1316,13 +1321,13 @@ function selectBowlerForOver(
       const strike = base.bowlSr / prof.bowlSr - 1; // +0.2 = takes wickets 20% more often than typical
       const tight = 1 - prof.econ / base.econ; // +0.1 = 10% cheaper than typical
       add(strike * 120 + tight * 160);
-      const phaseKnown = format === "T20" && hasBowlingPhases(b, format);
+      const phaseKnown = hasBowlingPhases(b, format);
       if (!phaseKnown && phase === "PP") add(strike * (over <= 2 ? 260 : 120), strike >= 0.2 && over <= 2 ? `${b.name}, the main strike bowler, takes the new ball` : undefined, "open");
       if (!phaseKnown && phase === "DEATH" && !isTest) add(tight * 400, tight >= 0.1 ? `${b.name}, the tightest bowler, closes the innings` : undefined, "death");
     }
 
     // T20 with phase stats: give the ball to whoever is actually good in this phase
-    if (format === "T20" && hasBowlingPhases(b, format) && !isPartTimer) {
+    if (!isTest && hasBowlingPhases(b, format) && !isPartTimer) {
       const sh = phaseShape(b, format, PHASE_OF_SIM[phase]);
       const edge = (1 - sh.econ) * 400 + (sh.wkt - 1) * 150;
       if (phase === "DEATH") add(edge, edge >= 30 ? `${b.name} bowls at the death, where he is at his best` : undefined, "death");
@@ -1492,7 +1497,7 @@ function resolveBall(
   batterBallsSoFar: number,
   isDeterioratedPitch: boolean,
   rng: () => number,
-  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean } = {}
+  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean; position?: number; chasing?: boolean; venue?: string } = {}
 ): { runs: number; isOut: boolean } {
   const isTest = format === "TEST";
   const isOdi = format === "ODI";
@@ -1500,14 +1505,28 @@ function resolveBall(
   const bat = ballProfile(batter, format);
   const bowl = ballProfile(bowler, format);
   const M = BALL_MODEL[format];
-  // T20: how each of them does in this phase compared with his own level (1 = no different)
-  const batShape = phaseShape(batter, format, PHASE_OF_SIM[phase]);
-  const bowlShape = phaseShape(bowler, format, PHASE_OF_SIM[phase]);
+  // How each of them does in this situation compared with his own level (1 = no different), from
+  // ball-by-ball records: the phase of the innings, his batting position, the region of the ground,
+  // and batting first or chasing
+  const ph = PHASE_OF_SIM[phase];
+  const bp = phaseShape(batter, format, ph);
+  const bpos = fit.position ? positionShape(batter, format, fit.position) : undefined;
+  const breg = regionShape(batter, format, country);
+  const bch = fit.chasing !== undefined && !isTest ? chaseShape(batter, format, fit.chasing) : undefined;
+  const batShape = {
+    sr: bp.sr * (bpos?.sr ?? 1) * breg.sr * (bch?.sr ?? 1),
+    out: bp.out * (bpos?.out ?? 1) * breg.out * (bch?.out ?? 1),
+  };
+  const wp = phaseShape(bowler, format, ph);
+  const wreg = regionShape(bowler, format, country);
+  const bowlShape = { econ: wp.econ * wreg.econ, wkt: wp.wkt * wreg.wkt };
   const batterHasPhases = hasBattingPhases(batter, format);
+  // The ground: its real par score against the format's (more runs, slightly fewer wickets)
+  const venue = fit.venue ? venueParFactor(format, fit.venue) : 1;
 
   // --- Wicket -----------------------------------------------------------------------------
   let wktChance = base.wkt * Math.pow(base.bpd / bat.bpd, M.BAT_WKT) * Math.pow(base.bowlSr / bowl.bowlSr, M.BOWL_WKT);
-  wktChance *= batShape.out * bowlShape.wkt;
+  wktChance *= batShape.out * bowlShape.wkt * Math.pow(venue, -0.3);
 
   // Pitch condition impact. In Tests the effect is softer per ball: it compounds over 90 overs a day
   // (full-size boosts made green-seamer Tests finish in two days)
@@ -1541,6 +1560,7 @@ function resolveBall(
 
   // --- Runs -------------------------------------------------------------------------------
   let rpb = base.rpb * Math.pow((bat.sr * batShape.sr) / base.sr, M.BAT_RUNS) * Math.pow((bowl.econ * bowlShape.econ) / base.econ, M.BOWL_RUNS);
+  rpb *= Math.pow(venue, 0.7);
   rpb *= mu.runs;
   const wicketsInHand = 10 - totalWicketsDown;
 
@@ -1552,7 +1572,7 @@ function resolveBall(
     else if (phase === "MID") rpb *= wicketsInHand >= 7 ? 1.05 : 0.95;
     else {
       rpb *= wicketsInHand >= 6 ? 1.32 : wicketsInHand >= 4 ? 1.16 : 0.92;
-      if (bat.sr >= 95 || batter.stats.finisher_innings >= 4) rpb *= 1.1;
+      if (!batterHasPhases && (bat.sr >= 95 || batter.stats.finisher_innings >= 4)) rpb *= 1.1;
       if (batterRunsSoFar >= 25) rpb *= 1.08;
     }
   } else {

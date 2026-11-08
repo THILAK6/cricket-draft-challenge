@@ -108,8 +108,8 @@ function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
  * the formulas change.
  */
 export const CALIBRATION: Record<MatchFormat, { bat: [number, number]; bowl: [number, number] }> = {
-  T20: { bat: [19.98, 49.926], bowl: [0.77, 1.397] },
-  ODI: { bat: [19.552, 43.209], bowl: [0.701, 1.354] },
+  T20: { bat: [19.95, 50.244], bowl: [0.77, 1.392] },
+  ODI: { bat: [18.406, 39.994], bowl: [0.71, 1.4] },
   TEST: { bat: [26.231, 50.163], bowl: [0.946, 2.803] },
 };
 

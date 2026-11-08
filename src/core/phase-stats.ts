@@ -1,8 +1,9 @@
 import type { MatchFormat, PlayerWithStats } from "./types";
+import { formatNorms } from "./splits";
 
 /**
- * T20 phase stats: what a player did in the powerplay (overs 1-6), the middle (7-15) and at the
- * death (16-20), from Cricsheet ball-by-ball data (data/phase-stats.sql).
+ * Phase stats: what a player did in the powerplay, the middle overs and at the death (T20: 1-6,
+ * 7-15, 16-20; ODI: 1-10, 11-40, 41-50), from Cricsheet ball-by-ball data (data/phase-stats.sql).
  *
  * Two uses:
  *  - Level: career numbers depend on WHEN a player batted or bowled. A finisher's strike rate is
@@ -19,17 +20,16 @@ export type PhaseLines = Record<PhaseKey, PhaseLine>; // same shape as PhaseStat
 export const PHASE_KEYS: PhaseKey[] = ["pp", "mid", "death"];
 export const PHASE_OF_SIM = { PP: "pp", MID: "mid", DEATH: "death" } as const;
 
+type Norm = { sr: number; bpo: number; econ: number; bpw: number };
 /**
- * What a typical international does in each phase: Full Member players in T20Is, from
- * data/phase-stats.sql (re-check with tests/phase-stats.test.ts if the data is rebuilt).
+ * What a typical international does in each phase: Full Member v Full Member matches, from
+ * src/core/data-norms.generated.ts (rebuilt with the data).
  * sr = batting strike rate, bpo = balls per dismissal, econ = runs per over, bpw = balls per wicket.
  */
-export const T20_PHASE_NORM: Record<PhaseKey | "all", { sr: number; bpo: number; econ: number; bpw: number }> = {
-  pp: { sr: 124.5, bpo: 21.9, econ: 7.6, bpw: 21.9 },
-  mid: { sr: 124.6, bpo: 21.2, econ: 7.55, bpw: 21.3 },
-  death: { sr: 150.3, bpo: 11.5, econ: 9.07, bpw: 12.4 },
-  all: { sr: 129.9, bpo: 18.1, econ: 7.89, bpw: 18.5 },
-};
+export function phaseNorm(format: MatchFormat): Record<PhaseKey | "all", Norm> {
+  const n = formatNorms(format);
+  return { pp: n.phase.pp, mid: n.phase.mid, death: n.phase.death, all: n.all } as Record<PhaseKey | "all", Norm>;
+}
 
 /** Balls in a phase before its own numbers count for half (smaller samples lean on the player's level). */
 const K = { sr: 120, out: 240, econ: 120, wkt: 240 };
@@ -44,16 +44,16 @@ export interface PhaseShape {
 }
 const NEUTRAL: PhaseShape = { sr: 1, out: 1, econ: 1, wkt: 1 };
 
-const has = (p: PlayerWithStats, format: MatchFormat) => format === "T20" && !!p.stats.phases;
+const has = (p: PlayerWithStats, format: MatchFormat) => (format === "T20" || format === "ODI") && !!p.stats.phases;
 const sumOf = (l: PhaseLines, i: number) => l.pp[i] + l.mid[i] + l.death[i];
 
 export const hasBattingPhases = (p: PlayerWithStats, format: MatchFormat) => has(p, format) && sumOf(p.stats.phases!, 1) >= MIN_BALLS;
 export const hasBowlingPhases = (p: PlayerWithStats, format: MatchFormat) => has(p, format) && sumOf(p.stats.phases!, 3) >= MIN_BALLS;
 
 /** The phase norm a player's own mix of balls would expect (weighted by balls in each phase). */
-function expected(l: PhaseLines, ballsAt: number, key: "sr" | "bpo" | "econ" | "bpw"): number {
+function expected(l: PhaseLines, ballsAt: number, key: keyof Norm, norm: Record<PhaseKey | "all", Norm>): number {
   const balls = sumOf(l, ballsAt);
-  return PHASE_KEYS.reduce((s, k) => s + l[k][ballsAt] * T20_PHASE_NORM[k][key], 0) / balls;
+  return PHASE_KEYS.reduce((s, k) => s + l[k][ballsAt] * norm[k][key], 0) / balls;
 }
 
 /**
@@ -64,14 +64,15 @@ export function phaseMixFactors(p: PlayerWithStats, format: MatchFormat): { sr: 
   const out = { sr: 1, bpo: 1, econ: 1, bpw: 1 };
   if (!has(p, format)) return out;
   const l = p.stats.phases!;
-  const all = T20_PHASE_NORM.all;
+  const norm = phaseNorm(format);
+  const all = norm.all;
   if (hasBattingPhases(p, format)) {
-    out.sr = all.sr / expected(l, 1, "sr");
-    out.bpo = all.bpo / expected(l, 1, "bpo");
+    out.sr = all.sr / expected(l, 1, "sr", norm);
+    out.bpo = all.bpo / expected(l, 1, "bpo", norm);
   }
   if (hasBowlingPhases(p, format)) {
-    out.econ = all.econ / expected(l, 3, "econ");
-    out.bpw = all.bpw / expected(l, 3, "bpw");
+    out.econ = all.econ / expected(l, 3, "econ", norm);
+    out.bpw = all.bpw / expected(l, 3, "bpw", norm);
   }
   return out;
 }
@@ -93,13 +94,14 @@ export function phaseShape(p: PlayerWithStats, format: MatchFormat, phase: Phase
     const batBalls = sumOf(l, 1);
     const bowlBalls = sumOf(l, 3);
     // His overall rate against what his mix of phases would expect
-    const relSr = batBalls ? (sumOf(l, 0) / batBalls) * 100 / expected(l, 1, "sr") : 1;
-    const relOut = batBalls ? (sumOf(l, 2) / batBalls) * expected(l, 1, "bpo") : 1;
-    const relEcon = bowlBalls ? ((sumOf(l, 4) / bowlBalls) * 6) / expected(l, 3, "econ") : 1;
-    const relWkt = bowlBalls ? (sumOf(l, 5) / bowlBalls) * expected(l, 3, "bpw") : 1;
+    const norm = phaseNorm(format);
+    const relSr = batBalls ? (sumOf(l, 0) / batBalls) * 100 / expected(l, 1, "sr", norm) : 1;
+    const relOut = batBalls ? (sumOf(l, 2) / batBalls) * expected(l, 1, "bpo", norm) : 1;
+    const relEcon = bowlBalls ? ((sumOf(l, 4) / bowlBalls) * 6) / expected(l, 3, "econ", norm) : 1;
+    const relWkt = bowlBalls ? (sumOf(l, 5) / bowlBalls) * expected(l, 3, "bpw", norm) : 1;
     for (const k of PHASE_KEYS) {
       const [runs, balls, outs, bBalls, bRuns, wkts] = l[k];
-      const n = T20_PHASE_NORM[k];
+      const n = norm[k];
       if (batBalls >= MIN_BALLS && balls > 0) {
         cached[k].sr = shrink(((runs / balls) * 100) / n.sr / relSr, balls, K.sr);
         cached[k].out = shrink(((outs / balls) * n.bpo) / Math.max(0.2, relOut), balls, K.out);

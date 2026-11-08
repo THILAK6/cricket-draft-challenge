@@ -92,3 +92,26 @@ export function plainReason(reason: string): string {
     .replace(/^AI opened with (.+?), the pick that builds the strongest XI for (.+?) conditions\.$/, "$1 suits these $2 conditions.")
     .replace(/^AI picked (.+?) into Slot #\d+\.$/, "$1 was the best player left that fits its XI.");
 }
+
+
+import { positionRecord, posOf, venuePar } from "../../src/core/splits";
+
+const POS_WORD: Record<string, string> = { open: "opening", three: "at #3", four5: "at #4-5", six7: "at #6-7", tail: "at #8+" };
+
+/** "at #3: avg 52.1 · SR 135 · 40 inns", or "hasn't batted at #3" when his record is known and he hasn't. */
+export function positionLine(p: Player, position: number, format: string): string | null {
+  if (!p.stats.splits?.pos) return null;
+  const r = positionRecord(p, position);
+  const where = POS_WORD[posOf(position)];
+  if (!r.innings) return where === "opening" ? "hasn't opened" : `hasn't batted ${where}`;
+  const avg = r.avg !== undefined ? `avg ${r.avg.toFixed(1)}` : "not out every time";
+  const sr = format !== "TEST" && r.sr !== undefined ? ` · SR ${Math.round(r.sr)}` : "";
+  return `${where}: ${avg}${sr} · ${r.innings} inn${r.innings === 1 ? "" : "s"}`;
+}
+
+const FORMAT_NAME: Record<string, string> = { T20: "T20Is", ODI: "ODIs", TEST: "Tests" };
+/** "Par here: 301 in the first innings (15 ODIs)" from real results at the ground. */
+export function parLine(format: "T20" | "ODI" | "TEST", venue: string): string | null {
+  const par = venuePar(format, venue);
+  return par ? `Par here: ${par.avg} in the first innings (${par.matches} ${FORMAT_NAME[format]})` : null;
+}

@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
 import { buildDraftAwards, buildHeadToHead, type DraftAward, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
-import { PITCH_LABEL, shortName } from "../format";
+import { parLine, PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 
 const score = (i?: InningsScorecard) => (i ? `${i.totalRuns}/${i.totalWickets}${i.declared ? "d" : ""}` : "");
@@ -147,6 +147,7 @@ export function Result(props: RoomProps) {
           <p>
             {props.state.challenge.venue.name} · <span class="pitch">{PITCH_LABEL[props.state.challenge.venue.pitch_type]}</span>
           </p>
+          {parLine(sim.format, props.state.challenge.venue.name) && <p class="muted">{parLine(sim.format, props.state.challenge.venue.name)}.</p>}
           {sim.groundConditionsAnalysis && <p class="muted">{sim.groundConditionsAnalysis}</p>}
           {results?.refereeReport && <p class="muted">{results.refereeReport}</p>}
         </div>

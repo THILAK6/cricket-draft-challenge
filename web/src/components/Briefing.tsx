@@ -1,5 +1,5 @@
 import type { DraftState } from "../../../src/core/types";
-import { BASE_RULES, FORMAT_LABEL, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
+import { BASE_RULES, FORMAT_LABEL, parLine, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
 import { themeByKey } from "../../../src/core/themes";
 
 export function Briefing(props: { state: DraftState; busy: boolean; onBack: () => void; onReroll: () => void; onStart: () => void }) {
@@ -27,6 +27,7 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
         </div>
         <p>{challenge.narrative_intro}</p>
         <p class="muted" style="font-size:14px">{PITCH_TIP[challenge.venue.pitch_type]}</p>
+        {parLine(challenge.format, challenge.venue.name) && <p class="muted" style="font-size:14px">{parLine(challenge.format, challenge.venue.name)}.</p>}
       </div>
 
       <div class="card">

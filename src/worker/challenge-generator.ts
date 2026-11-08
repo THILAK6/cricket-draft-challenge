@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Challenge, MatchFormat, PhaseStatLines, PitchType, PlayerWithStats } from "../core/types";
+import type { Challenge, MatchFormat, PhaseStatLines, PitchType, PlayerSplitData, PlayerWithStats } from "../core/types";
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
@@ -240,12 +240,22 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
   },
 ];
 
-/** T20 phase stats from player_phase_stats (a JSON column); ignored if malformed. */
+/** T20 and ODI phase stats from player_phase_stats (a JSON column); ignored if malformed. */
 function parsePhases(raw: string): { phases?: PhaseStatLines } {
   try {
     const v = JSON.parse(raw);
     const ok = (l: unknown) => Array.isArray(l) && l.length === 6 && l.every((x) => typeof x === "number");
     return ok(v?.pp) && ok(v?.mid) && ok(v?.death) ? { phases: v } : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Batting position, region and chasing records from player_splits (a JSON column); ignored if malformed. */
+function parseSplits(raw: string): { splits?: PlayerSplitData } {
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? { splits: v } : {};
   } catch {
     return {};
   }
@@ -261,7 +271,7 @@ export async function fetchPlayerPool(
   minMatches = 5
 ): Promise<PlayerWithStats[]> {
   // Per-format roles override the player's general role (a keeper in ODIs who batted in Tests)
-  const query = (withRoles: boolean, withPhases = false) => `
+  const query = (withRoles: boolean, withPhases = false, withSplits = false) => `
     SELECT
       p.id, p.cricinfo_id, p.name, p.short_name, p.country,
       p.batting_hand, p.bowling_style,
@@ -270,26 +280,27 @@ export async function fetchPlayerPool(
       s.matches, s.bat_innings, s.bat_runs, s.bat_balls, s.bat_average,
       s.bat_strike_rate, s.top_order_innings, s.middle_order_innings,
       s.finisher_innings, s.bowl_innings, s.bowl_overs, s.bowl_wickets,
-      s.bowl_average, s.bowl_economy${withPhases ? ", ph.phases" : ""}
+      s.bowl_average, s.bowl_economy${withPhases ? ", ph.phases" : ""}${withSplits ? ", sp.data AS splits" : ""}
     FROM players p
     JOIN player_format_stats s ON p.id = s.player_id
     ${withRoles ? "LEFT JOIN player_format_roles r ON r.player_id = p.id AND r.format = s.format" : ""}
     ${withPhases ? "LEFT JOIN player_phase_stats ph ON ph.player_id = p.id AND ph.format = s.format" : ""}
+    ${withSplits ? "LEFT JOIN player_splits sp ON sp.player_id = p.id AND sp.format = s.format" : ""}
     WHERE s.format = ? AND s.matches >= ?
     ORDER BY s.matches DESC, s.bat_runs DESC
     LIMIT ?;
   `;
 
+  // Newest tables first; a database that hasn't had a data file applied yet still works
+  const phases = format === "T20" || format === "ODI";
+  const attempts = [query(true, phases, true), query(true, phases), query(true), query(false)];
   let results: any[] | undefined;
-  try {
-    ({ results } = await db.prepare(query(true, format === "T20")).bind(format, minMatches, limit).all());
-  } catch {
+  for (let i = 0; i < attempts.length; i++) {
     try {
-      // Database without player_phase_stats yet (data/phase-stats.sql not applied)
-      ({ results } = await db.prepare(query(true)).bind(format, minMatches, limit).all());
-    } catch {
-      // ...or without player_format_roles (data/data-fixes.sql not applied): general roles only
-      ({ results } = await db.prepare(query(false)).bind(format, minMatches, limit).all());
+      ({ results } = await db.prepare(attempts[i]).bind(format, minMatches, limit).all());
+      break;
+    } catch (e) {
+      if (i === attempts.length - 1) throw e;
     }
   }
 
@@ -320,6 +331,7 @@ export async function fetchPlayerPool(
       bowl_average: row.bowl_average,
       bowl_economy: row.bowl_economy,
       ...(row.phases ? parsePhases(row.phases) : {}),
+      ...(row.splits ? parseSplits(row.splits) : {}),
     },
   }));
   // Roles the stats clearly contradict are corrected for this format

@@ -188,9 +188,34 @@ Switched from Claude Haiku to Workers AI to stay on the Cloudflare Free plan wit
   rate in overs 16-20, from #4-#8), each with the balls behind the number.
 - Result: balanced v top-rated in T20 back up to 59% (from 50%), the better-drafted XI wins 66%, and
   real-player T20 totals average about 155.
-- [ ] **8.5 ODI phases** (1-10, 11-40, 41-50): the same script and engine, once T20 has been played a while.
+- [x] **8.5 ODI phases** (1-10, 11-40, 41-50): the same data, level and shape as T20, plus "Death
+  bowling" and "Finishers" (overs 41-50) in the ODI head-to-head.
 - Production: `npx wrangler d1 execute cricdraft-db --remote --file=data/phase-stats.sql` (until then
   the game runs as before).
+
+## Phase 9 — Situational records (all from Cricsheet ball-by-ball, one Action run)
+
+`src/etl/splits.ts` (run by the "Player splits from Cricsheet" Action) writes `data/phase-stats.sql`,
+`data/player-splits.sql` and `src/core/data-norms.generated.ts` (the typical international's numbers for
+each split and par scores at the game's grounds). Each split is a "shape": how a player does in that
+situation against his own level and against what a typical international does there, shrunk towards
+normal for small samples (`src/core/splits.ts`).
+
+- [x] **9.1 Batting position.** Record by position (opening, #3, #4-5, #6-7, #8+) in every format. The
+  match uses it, and the batting-order screen shows each batter's record in the spot you drag him to
+  ("at #3: avg 52.1 · SR 135 · 40 inns", or "hasn't batted at #3").
+- [x] **9.2 ODI phases** (8.5 above).
+- [x] **9.3 Home and away.** Record in Asia, in England/Australia/NZ/South Africa, and elsewhere, for
+  batting and bowling; the match uses the region of the ground. Shown in the player sheet.
+- [x] **9.4 Chasing.** Limited overs: record batting first v chasing (Kohli is dismissed less often
+  chasing). Shown in the player sheet.
+- [x] **9.5 Par scores.** Real first-innings averages at all 32 grounds (Wankhede ODI 301, Mirpur 230,
+  Abu Dhabi T20 137, Adelaide Test 408). The ground sets the scoring level, on top of the day's pitch;
+  shown on the toss screen and the result.
+- Result (30 pools): the better-drafted XI wins 63% of T20s, 78% of ODIs, 62% of Tests; balanced v
+  top-rated 53% / 59% / 58%. Totals: T20 163, ODI 256, Test innings 262.
+- Production: apply `data/phase-stats.sql` and `data/player-splits.sql` (until then the game runs
+  without them).
 
 ## Phase 7 — School rules: names, not numbers (proposed)
 

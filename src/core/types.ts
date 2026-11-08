@@ -23,8 +23,15 @@ export interface Player {
   active_span_end?: number;
 }
 
-/** T20 phase stats per phase: [bat_runs, bat_balls, bat_outs, bowl_balls, bowl_runs, bowl_wkts] (see core/phase-stats.ts). */
+/** T20 and ODI phase stats per phase: [bat_runs, bat_balls, bat_outs, bowl_balls, bowl_runs, bowl_wkts] (see core/phase-stats.ts). */
 export type PhaseStatLines = Record<"pp" | "mid" | "death", [number, number, number, number, number, number]>;
+
+/** Record by batting position, region of the ground and batting first v chasing (see core/splits.ts). */
+export interface PlayerSplitData {
+  pos?: Partial<Record<"open" | "three" | "four5" | "six7" | "tail", [number, number, number, number]>>;
+  region?: Partial<Record<"asia" | "sena" | "other", [number, number, number, number, number, number]>>;
+  chase?: Partial<Record<"first" | "second", [number, number, number]>>;
+}
 
 export interface PlayerStats {
   player_id: string;
@@ -42,8 +49,10 @@ export interface PlayerStats {
   bowl_wickets: number;
   bowl_average: number;
   bowl_economy: number;
-  /** T20 only, from Cricsheet ball-by-ball data: powerplay, middle and death numbers. */
+  /** T20 and ODI, from Cricsheet ball-by-ball data: powerplay, middle and death numbers. */
   phases?: PhaseStatLines;
+  /** From Cricsheet ball-by-ball data: batting position, region and chasing records. */
+  splits?: PlayerSplitData;
 }
 
 export interface PlayerWithStats extends Player {

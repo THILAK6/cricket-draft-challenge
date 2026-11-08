@@ -41,11 +41,14 @@ function strongAndWeak(pool: PlayerWithStats[], challenge: Challenge, f: MatchFo
 }
 
 describe("head to head", () => {
-  it("compares eight units, and identical XIs are level everywhere", async () => {
+  it("compares every unit (death bowling and finishers in white-ball cricket), and identical XIs are level everywhere", async () => {
     const { challenge, pool } = await buildRandomDraft(d1, "ODI", lcg(3));
     const { user } = draft(pool, challenge, "ODI");
     const h = buildHeadToHead(user, user, challenge);
-    expect(h.rows.map((r) => r.key)).toEqual(["openers", "middle", "keeper", "allrounders", "pace", "spin", "depth", "pitch"]);
+    expect(h.rows.map((r) => r.key)).toEqual(["openers", "middle", "keeper", "allrounders", "pace", "spin", "death", "finish", "depth", "pitch"]);
+    expect(h.rows.find((r) => r.key === "death")!.cols).toMatch(/41-50/);
+    const test = await buildRandomDraft(d1, "TEST", lcg(3));
+    expect(buildHeadToHead(test.pool.slice(0, 11), test.pool.slice(11, 22), test.challenge).rows.map((r) => r.key)).not.toContain("death");
     expect(h.rows.every((r) => r.edge === "EVEN")).toBe(true);
     expect(h.won).toEqual({ USER: 0, AI: 0 });
   });
