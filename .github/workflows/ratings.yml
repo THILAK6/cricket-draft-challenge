@@ -1,0 +1,40 @@
+name: T20 ball-by-ball ratings
+
+# Fits the ball-by-ball rating model (src/etl/rating-model.ts) to every men's T20I in Cricsheet,
+# tests it against raw career numbers on matches it has not seen, and commits:
+#   data/rating-model-report.md   the test, the tuning, and who moves most
+#   data/player-ratings-t20.json  each player's skills per ball
+# Run it from the Actions tab ("Run workflow").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download ball-by-ball data
+        run: |
+          mkdir -p data/raw/t20s_json
+          curl -sSfL https://cricsheet.org/downloads/t20s_json.zip -o data/raw/t20s_json.zip
+          unzip -q data/raw/t20s_json.zip -d data/raw/t20s_json
+      - run: npx tsx src/etl/ratings.ts data/raw
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/rating-model-report.md data/player-ratings-t20.json
+          git diff --cached --quiet && echo "No change" && exit 0
+          git commit -m "data: T20 ball-by-ball ratings and report"
+          # Someone may have pushed while this ran: replay the data commit on top
+          git pull --rebase origin main
+          git push
