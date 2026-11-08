@@ -221,7 +221,8 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
     const over = counts[b] + 1 - shape[b];
     let balance = over > 0 ? -12 * over : 0;
     if (b === "WK" && counts.WK === 0 && left <= 4) balance += 10; // the gloves, before it's too late
-    balance *= persona.balance * (0.3 + 0.7 * stage);
+    // Test sides win with their best players (twenty wickets): shape matters less there
+    balance *= persona.balance * (0.3 + 0.7 * stage) * (format === "TEST" ? 0.4 : 1);
 
     // Keep a scarce player from the human
     let denial = 0;

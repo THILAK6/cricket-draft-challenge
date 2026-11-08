@@ -29,7 +29,7 @@ function createMockPlayer(
       middle_order_innings: 10,
       finisher_innings: 0,
       bowl_innings: role === "BOWL" || role === "AR" ? 25 : 0,
-      bowl_overs: role === "BOWL" || role === "AR" ? 4.0 : 0,
+      bowl_overs: role === "BOWL" || role === "AR" ? 140 : 0, // 35 innings of 4 overs (career total)
       bowl_wickets: role === "BOWL" || role === "AR" ? 30 : 0,
       bowl_average: 24.0,
       bowl_economy: 7.8,

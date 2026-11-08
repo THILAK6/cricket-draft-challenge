@@ -5,18 +5,26 @@ import { buildRandomDraft } from "../src/worker/challenge-generator";
 import { canPickPlayer } from "../src/core/validator";
 import { playerQuality } from "../src/core/player-quality";
 import { arrangeSquad } from "../src/core/batting-order";
-import { simulateCricketMatch } from "../src/core/simulator";
+import { simulateCricketMatch, BALL_MODEL } from "../src/core/simulator";
+import { chooseAiPick } from "../src/core/ai-draft";
 import type { Challenge, MatchFormat, PlayerWithStats } from "../src/core/types";
 
 /**
  * How much does drafting decide the result? Run with:
  *   SKILL=<output file> [SKILL_POOLS=30] npx vitest run tests/skill-signal.test.ts
- * - strong v weak: the best legal XI from a pool against an XI picked from what is left
- * - even: two XIs drafted alternately (snake) from the same pool, which should be close to 50/50
+ * - strong v weak: a balanced XI drafted by the Captain AI from the full pool, against one it drafts
+ *   from what is left (taking the top-rated player every time gives a lopsided, bowler-heavy side)
+ * - even: two XIs drafted alternately (snake) by the Captain, which should be close to 50/50
  * Each pairing is played from both sides (home/away), with several seeds per pool.
  */
 const out = process.env.SKILL;
 const POOLS = Number(process.env.SKILL_POOLS ?? 30);
+// Try other ball-model settings without editing the code: SKILL_MODEL='{"T20":{"BAT_RUNS":1.6}}'
+if (process.env.SKILL_MODEL) {
+  const m = JSON.parse(process.env.SKILL_MODEL);
+  for (const f of Object.keys(m) as MatchFormat[]) Object.assign(BALL_MODEL[f], m[f]);
+}
+const FORMATS = (process.env.SKILL_FORMATS ?? "T20,ODI,TEST").split(",") as MatchFormat[];
 
 type Squad = (PlayerWithStats | null)[];
 const best = (pool: PlayerWithStats[], mine: Squad, ch: Challenge, f: MatchFormat) =>
@@ -26,7 +34,8 @@ function draftAlone(pool: PlayerWithStats[], ch: Challenge, f: MatchFormat): { x
   let rest = [...pool];
   const xi: Squad = Array(11).fill(null);
   for (let i = 0; i < 11; i++) {
-    const p = best(rest, xi, ch, f);
+    const r = chooseAiPick({ pool: rest, squad: xi, opponentSquad: Array(11).fill(null), challenge: ch, difficulty: "normal", noiseSeed: 1, round: i });
+    const p = r ? r.player : best(rest, xi, ch, f);
     xi[xi.indexOf(null)] = p;
     rest = rest.filter((q) => q.id !== p.id);
   }
@@ -37,11 +46,13 @@ function draftSnake(pool: PlayerWithStats[], ch: Challenge, f: MatchFormat): [Sq
   let rest = [...pool];
   const a: Squad = Array(11).fill(null), b: Squad = Array(11).fill(null);
   const order = Array.from({ length: 22 }, (_, i) => ((Math.floor(i / 2) % 2 === 0) === (i % 2 === 0) ? a : b));
-  for (const side of order) {
-    const p = best(rest, side, ch, f);
+  order.forEach((side, i) => {
+    const other = side === a ? b : a;
+    const r = chooseAiPick({ pool: rest, squad: side, opponentSquad: other, challenge: ch, difficulty: "normal", noiseSeed: 1, round: i });
+    const p = r ? r.player : best(rest, side, ch, f);
     side[side.indexOf(null)] = p;
     rest = rest.filter((q) => q.id !== p.id);
-  }
+  });
   return [arrangeSquad(a, f), arrangeSquad(b, f)];
 }
 
@@ -49,7 +60,8 @@ const avgQ = (xi: Squad, f: MatchFormat) => xi.reduce((s, p) => s + playerQualit
 
 it.skipIf(!out)("skill signal table", async () => {
   const lines: string[] = ["format | strong v weak: strong wins | rating gap | even drafts: side A wins | avg innings | sims"];
-  for (const f of ["T20", "ODI", "TEST"] as MatchFormat[]) {
+  lines.unshift(`model ${JSON.stringify(BALL_MODEL)}`);
+  for (const f of FORMATS) {
     const seeds = f === "TEST" ? 4 : 10;
     let sw = 0, sn = 0, ew = 0, en = 0, gap = 0, runs = 0, inns = 0;
     for (let d = 0; d < POOLS; d++) {

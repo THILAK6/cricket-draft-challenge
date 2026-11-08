@@ -17,10 +17,12 @@ function squad(prefix: string, format: MatchFormat, r: () => number): PlayerWith
   const sr = format === "T20" ? [118, 150] : format === "ODI" ? [78, 100] : [42, 62];
   const avg = format === "TEST" ? [28, 52] : [24, 46];
   const econ = format === "T20" ? [7.0, 8.8] : format === "ODI" ? [4.5, 5.7] : [2.5, 3.5];
-  const bavg = format === "TEST" ? [24, 34] : [24, 36];
+  // Bowling strike rate (balls per wicket) by format; bowling average follows from it and economy
+  const bsr = format === "T20" ? [16, 24] : format === "ODI" ? [30, 45] : [50, 70];
+  const overs = format === "T20" ? 300 : format === "ODI" ? 700 : 2000;
   const mk = (i: number, role: PlayerWithStats["primary_role"], cat: "NONE" | "PACE" | "SPIN"): PlayerWithStats => {
     const bowls = cat !== "NONE";
-    return {
+    const p = {
       id: `${prefix}${i}`, name: `${prefix}${i}`, country: "IND", batting_hand: r() < 0.25 ? "LHB" : "RHB", bowling_category: cat, primary_role: role,
       bowling_style: cat === "SPIN" ? "Off break" : cat === "PACE" ? "Right-arm fast" : "",
       stats: {
@@ -28,10 +30,15 @@ function squad(prefix: string, format: MatchFormat, r: () => number): PlayerWith
         bat_average: role === "BOWL" ? range(8, 18) : role === "AR" ? range(avg[0] - 4, avg[1] - 8) : range(avg[0], avg[1]),
         bat_strike_rate: range(sr[0], sr[1]) * (role === "BOWL" ? 0.8 : 1),
         top_order_innings: i < 4 ? 40 : 0, middle_order_innings: 15, finisher_innings: i === 5 ? 10 : 2,
-        bowl_innings: bowls ? 50 : 0, bowl_overs: bowls ? 300 : 0, bowl_wickets: bowls ? Math.round(range(60, 180)) : 0,
-        bowl_average: range(bavg[0], bavg[1]), bowl_economy: range(econ[0], econ[1]),
+        bowl_innings: bowls ? 50 : 0, bowl_overs: bowls ? overs : 0, bowl_wickets: 0, bowl_average: 0, bowl_economy: range(econ[0], econ[1]),
       },
     } as PlayerWithStats;
+    if (bowls) {
+      const sr = range(bsr[0], bsr[1]);
+      p.stats.bowl_wickets = Math.round((overs * 6) / sr);
+      p.stats.bowl_average = (sr * p.stats.bowl_economy) / 6;
+    }
+    return p;
   };
   return [mk(1, "BAT", "NONE"), mk(2, "BAT", "NONE"), mk(3, "BAT", "NONE"), mk(4, "BAT", "NONE"), mk(5, "WK", "NONE"), mk(6, "AR", "PACE"),
     mk(7, "AR", "SPIN"), mk(8, "BOWL", "PACE"), mk(9, "BOWL", "PACE"), mk(10, "BOWL", "SPIN"), mk(11, "BOWL", "SPIN")];

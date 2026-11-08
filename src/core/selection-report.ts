@@ -258,7 +258,10 @@ export function buildSelectionReport(input: SelectionInput): SelectionReport {
     { key: "quality", label: "Player quality", user: scores.USER.player_quality_score, ai: scores.AI.player_quality_score, max: 35 },
     { key: "depth", label: "Batting depth", user: scores.USER.batting_depth_score, ai: scores.AI.batting_depth_score, max: 15 },
   ];
-  const totals = { USER: scores.USER.deterministic_total, AI: scores.AI.deterministic_total };
+  // The total is the sum of the four categories shown, so the numbers on screen always add up
+  // (the scoring total rounds the whole, while role balance can be a half point)
+  const sum = (k: "user" | "ai") => Math.round(categories.reduce((t, c) => t + c[k], 0) * 10) / 10;
+  const totals = { USER: sum("user"), AI: sum("ai") };
   const margin = totals.USER - totals.AI;
   const paperEdge: Side | "EVEN" = margin >= 3 ? "USER" : margin <= -3 ? "AI" : "EVEN";
 

@@ -3,6 +3,7 @@ import { ballsToOvers } from "./overs";
 import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim } from "./match-facts";
 import { phasesReached, collapsedEarly, comparablePhases, phaseRunRate, PHASE_BOUNDS } from "./phases";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
+import { eraAdjusted } from "./era";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
 import { buildSelectionReport, type SelectionReport } from "./selection-report";
 
@@ -57,6 +58,8 @@ export interface InningsScorecard {
   droppedCatches?: number;
   /** Who put down which batter, for the catches counted in droppedCatches. */
   drops?: { fielder: string; fielderId?: string; batter: string; bowler: string; runsAtDrop?: number; reprieveRuns?: number }[];
+  /** True when the batting side declared (Tests). */
+  declared?: boolean;
   /** Score and ball count as each wicket fell, for collapse detection. */
   fallOfWickets?: { wicket: number; runs: number; balls: number }[];
   phaseRuns: {
@@ -231,9 +234,11 @@ export function simulateCricketMatch(
     tgt: number | undefined,
     r: () => number,
     inn = 1,
-    det = false
+    det = false,
+    declareAt?: number
   ) =>
     simulateInnings(bat, bowl, ch, overs, name, tgt, r, inn, det, {
+      declareAt,
       plan: name === "AI XI" ? options.userPlan : undefined,
       tactics,
       claims,
@@ -249,94 +254,94 @@ export function simulateCricketMatch(
   // TEST MATCH SIMULATION (4 INNINGS CONTEST)
   // =========================================================================
   if (format === "TEST") {
-    const maxOversPerInn = 85;
+    // Five days of about 90 overs. Innings run until all out or a declaration; a side 200 behind on
+    // first innings follows on; the side batting third declares to leave time to win; a draw only
+    // when the overs run out. (Fixed innings caps used to leave a third of Tests drawn.)
+    // Weather: about a quarter of Tests lose time to rain or bad light (30-150 overs), which is
+    // where most real draws come from
+    const lost = rng() < 0.25 ? Math.round(30 + rng() * 120) : 0;
+    const TOTAL_OVERS = 450 - lost;
+    let used = 0;
+    const oversOf = (i: InningsScorecard) => i.totalBalls / 6;
+    const left = () => Math.max(0, TOTAL_OVERS - used);
+    const A = userBatsFirst ? { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const } : { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const };
+    const B = userBatsFirst ? { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const } : { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const };
+    const bat = (t: typeof A, overs: number, inn: number, det: boolean, tgt?: number, declareAt?: number) => {
+      const i = inningsOf(t.squad, t.opp, challenge, Math.max(1, Math.floor(overs)), t.name, tgt, rng, inn, det, declareAt);
+      used += oversOf(i);
+      return i;
+    };
+    const day = () => Math.min(5, Math.max(1, Math.ceil(used / 90)));
 
-    let userInn1: InningsScorecard;
-    let aiInn1: InningsScorecard;
+    // First innings: a big total is declared on (with time left to win the match)
+    const a1 = bat(A, Math.min(170, left() - 200), 1, false, undefined, 600);
+    const b1 = bat(B, Math.min(170, left() - 120), 1, false, undefined, a1.totalRuns + 300);
+    const firstLead = a1.totalRuns - b1.totalRuns;
+    const followOn = firstLead >= 200 && left() >= 150;
 
-    if (userBatsFirst) {
-      userInn1 = inningsOf(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
-      aiInn1 = inningsOf(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
+    // Third innings: the follow-on side bats again, or the side batting first sets a target
+    let third: InningsScorecard;
+    let thirdTeam: typeof A;
+    let chaseTeam: typeof A;
+    let target: number;
+    if (followOn) {
+      thirdTeam = B;
+      chaseTeam = A;
+      third = bat(B, left(), 2, true);
+      target = b1.totalRuns + third.totalRuns - a1.totalRuns + 1;
     } else {
-      aiInn1 = inningsOf(aiSquad, userSquad, challenge, maxOversPerInn, "AI XI", undefined, rng, 1, false);
-      userInn1 = inningsOf(userSquad, aiSquad, challenge, maxOversPerInn, "Your XI", undefined, rng, 1, false);
+      thirdTeam = A;
+      chaseTeam = B;
+      // Declare once the lead is big enough, leaving about 90 overs to bowl the other side out
+      const declLead = firstLead >= 0 ? 380 : 330;
+      third = bat(A, Math.max(10, left() - 90), 2, true, undefined, Math.max(1, declLead - firstLead));
+      target = a1.totalRuns + third.totalRuns - b1.totalRuns + 1;
     }
 
+    let fourth: InningsScorecard | undefined;
+    let winner: "USER" | "AI" | "DRAW" | "TIE" = "DRAW";
+    let summary = "";
+    const thirdAllOut = third.totalWickets >= 10;
+    if (target <= 0 && thirdAllOut) {
+      // Bowled out twice and still behind: an innings defeat
+      winner = chaseTeam.side;
+      summary = `${chaseTeam.name} won by an innings and ${1 - target} runs!`;
+    } else if (target <= 0) {
+      // Declared behind is never sensible; treat the target as a token one-run chase
+      target = 1;
+    }
+    if (!summary) {
+      fourth = bat(chaseTeam, left(), 2, true, target);
+      if (fourth.totalRuns >= target) {
+        winner = chaseTeam.side;
+        const wl = 10 - fourth.totalWickets;
+        summary = `${chaseTeam.name} won by ${wl} wicket${wl === 1 ? "" : "s"} on Day ${day()}!`;
+      } else if (fourth.totalWickets >= 10) {
+        const margin = target - 1 - fourth.totalRuns;
+        if (margin === 0) {
+          winner = "TIE";
+          summary = `Match Tied! ${chaseTeam.name} were all out for exactly the score needed to level the Test (${fourth.totalRuns}).`;
+        } else {
+          winner = thirdTeam.side;
+          summary = `${thirdTeam.name} won by ${margin} run${margin === 1 ? "" : "s"}${followOn ? " after following on" : ""}!`;
+        }
+      } else {
+        winner = "DRAW";
+        summary = `Match Drawn! ${chaseTeam.name} batted out Day 5 (${fourth.totalRuns}/${fourth.totalWickets} in ${fourth.oversString} ov)${lost ? `, with ${lost} overs lost to the weather` : ""}.`;
+      }
+    }
+
+    const empty = (name: string) => createEmptyInnings(name, 2);
+    const secondOf = (t: typeof A) => (t === thirdTeam ? third : fourth ?? empty(t.name));
+    const userInn1 = A.side === "USER" ? a1 : b1;
+    const aiInn1 = A.side === "AI" ? a1 : b1;
+    const userInn2 = secondOf(A.side === "USER" ? A : B);
+    const aiInn2 = secondOf(A.side === "AI" ? A : B);
+    const testTarget = target;
     const leadFirstInnings = {
       team: (userInn1.totalRuns >= aiInn1.totalRuns ? "USER" : "AI") as "USER" | "AI",
       runs: Math.abs(userInn1.totalRuns - aiInn1.totalRuns),
     };
-
-    let userInn2: InningsScorecard;
-    let aiInn2: InningsScorecard;
-    let winner: "USER" | "AI" | "DRAW" | "TIE" = "DRAW";
-    let summary = "";
-    let testTarget = 0;
-
-    if (userBatsFirst) {
-      const userLead = userInn1.totalRuns - aiInn1.totalRuns;
-      userInn2 = inningsOf(userSquad, aiSquad, challenge, 60, "Your XI", undefined, rng, 2, true);
-      const targetForAi = userLead + userInn2.totalRuns + 1;
-      testTarget = targetForAi;
-
-      if (targetForAi <= 0) {
-        winner = "AI";
-        summary = `AI XI won by an innings and ${Math.abs(targetForAi - 1)} runs!`;
-        aiInn2 = createEmptyInnings("AI XI", 2);
-      } else {
-        aiInn2 = inningsOf(aiSquad, userSquad, challenge, 65, "AI XI", targetForAi, rng, 2, true);
-
-        if (aiInn2.totalRuns >= targetForAi) {
-          winner = "AI";
-          const wktsLeft = 10 - aiInn2.totalWickets;
-          summary = `AI XI won by ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} on Day 5!`;
-        } else if (aiInn2.totalWickets >= 10) {
-          const margin = targetForAi - 1 - aiInn2.totalRuns;
-          if (margin === 0) {
-            winner = "TIE";
-            summary = `Match Tied! AI XI were all out for exactly the score needed to level the Test (${aiInn2.totalRuns}).`;
-          } else {
-            winner = "USER";
-            summary = `Your XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
-          }
-        } else {
-          winner = "DRAW";
-          summary = `Match Drawn! AI XI batted out Day 5 (${aiInn2.totalRuns}/${aiInn2.totalWickets} in ${aiInn2.oversString} ov).`;
-        }
-      }
-    } else {
-      const aiLead = aiInn1.totalRuns - userInn1.totalRuns;
-      aiInn2 = inningsOf(aiSquad, userSquad, challenge, 60, "AI XI", undefined, rng, 2, true);
-      const targetForUser = aiLead + aiInn2.totalRuns + 1;
-      testTarget = targetForUser;
-
-      if (targetForUser <= 0) {
-        winner = "USER";
-        summary = `Your XI won by an innings and ${Math.abs(targetForUser - 1)} runs!`;
-        userInn2 = createEmptyInnings("Your XI", 2);
-      } else {
-        userInn2 = inningsOf(userSquad, aiSquad, challenge, 65, "Your XI", targetForUser, rng, 2, true);
-
-        if (userInn2.totalRuns >= targetForUser) {
-          winner = "USER";
-          const wktsLeft = 10 - userInn2.totalWickets;
-          summary = `Your XI won by ${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} on Day 5!`;
-        } else if (userInn2.totalWickets >= 10) {
-          const margin = targetForUser - 1 - userInn2.totalRuns;
-          if (margin === 0) {
-            winner = "TIE";
-            summary = `Match Tied! Your XI were all out for exactly the score needed to level the Test (${userInn2.totalRuns}).`;
-          } else {
-            winner = "AI";
-            summary = `AI XI won by ${margin} run${margin === 1 ? "" : "s"} in a dramatic Test finish!`;
-          }
-        } else {
-          winner = "DRAW";
-          summary = `Match Drawn! Your XI batted out Day 5 (${userInn2.totalRuns}/${userInn2.totalWickets} in ${userInn2.oversString} ov).`;
-        }
-      }
-    }
-
     const firstBatTeam = userBatsFirst ? "Your XI" : "AI XI";
     const secondBatTeam = userBatsFirst ? "AI XI" : "Your XI";
     const firstInn1 = userBatsFirst ? userInn1 : aiInn1;
@@ -612,7 +617,7 @@ function simulateInnings(
   rng: () => number,
   inningsNumber = 1,
   isDeterioratedPitch = false,
-  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; claims?: TacticClaim[]; bowlingSide?: string } = {}
+  opts: { wicketLimit?: number; phase?: "PP" | "MID" | "DEATH"; plan?: BowlingPlan; tactics?: string[]; claims?: TacticClaim[]; bowlingSide?: string; declareAt?: number } = {}
 ): InningsScorecard {
   const wicketLimit = opts.wicketLimit ?? 10;
   const { pitch_type, country } = challenge.venue;
@@ -735,9 +740,15 @@ function simulateInnings(
   const dropCards: BatterScorecard[] = [];
   const fallOfWickets: { wicket: number; runs: number; balls: number }[] = [];
 
+  let declared = false;
   for (let over = 1; over <= maxOvers; over++) {
     if (totalWickets >= wicketLimit) break;
     if (target && totalRuns >= target) break;
+    // Tests: the captain declares at the end of the over in which the side reaches its declaration total
+    if (opts.declareAt !== undefined && totalRuns >= opts.declareAt) {
+      declared = true;
+      break;
+    }
 
     const phase: "PP" | "MID" | "DEATH" =
       opts.phase ?? (over <= ppEnd ? "PP" : over >= deathStart ? "DEATH" : "MID");
@@ -917,6 +928,7 @@ function simulateInnings(
     fielders: [...fielderMap.values()].filter((f) => f.catches + f.runOuts + f.stumpings > 0),
     droppedCatches,
     drops: drops.map((d, i) => ({ ...d, reprieveRuns: Math.max(0, dropCards[i].runs - (d.runsAtDrop ?? 0)) })),
+    ...(declared ? { declared: true } : {}),
     fallOfWickets,
     phaseRuns: {
       powerplay: powerplayRuns,
@@ -1307,7 +1319,89 @@ function selectBowlerForOver(
 }
 
 /**
- * Ball resolution accounting for match situation (wickets in hand & batter eye).
+ * Ball model tuning. Each ball pits one batter against one bowler:
+ * - wicket chance = format base x (typical balls-per-dismissal / batter's) ^ BAT_WKT
+ *                                 x (typical bowling strike rate / bowler's) ^ BOWL_WKT
+ * - runs per scoring chance = format base x (batter SR / typical) ^ BAT_RUNS x (bowler economy / typical) ^ BOWL_RUNS
+ * The exponents set how much skill decides a match; the bases set how many runs and wickets a
+ * typical international side gets. Both are calibrated with tests/skill-signal.test.ts and
+ * tests/calibration.test.ts.
+ */
+export const BALL_MODEL: Record<MatchFormat, { BAT_WKT: number; BOWL_WKT: number; BAT_RUNS: number; BOWL_RUNS: number }> = {
+  // T20: scoring rate and economy decide matches; ODI in between; Tests: survival and wicket-taking
+  T20: { BAT_WKT: 0.9, BOWL_WKT: 0.8, BAT_RUNS: 1.4, BOWL_RUNS: 1.4 },
+  ODI: { BAT_WKT: 1.2, BOWL_WKT: 1.1, BAT_RUNS: 1.2, BOWL_RUNS: 1.1 },
+  TEST: { BAT_WKT: 1.4, BOWL_WKT: 1.4, BAT_RUNS: 0.8, BOWL_RUNS: 0.7 },
+};
+
+interface FormatBase {
+  /** Wicket chance per ball for a typical batter against a typical bowler. */
+  wkt: number;
+  /** Expected runs per non-dismissal ball, typical batter v typical bowler. */
+  rpb: number;
+  /** Share of balls that are dots at the base scoring rate. */
+  dot: number;
+  /** Typical top-seven batter: balls per dismissal and strike rate. */
+  bpd: number;
+  sr: number;
+  /** Typical frontline bowler: balls per wicket and economy. */
+  bowlSr: number;
+  econ: number;
+  /** Share of boundaries that are sixes for a typical batter. */
+  six: number;
+}
+
+export const FORMAT_BASE: Record<MatchFormat, FormatBase> = {
+  // wkt is a typical batter's own dismissal rate (1 / balls per dismissal), trimmed so the pitch and
+  // matchup boosts on top don't push batters far below their career averages
+  T20: { wkt: 0.85 / 21, rpb: 1.3, dot: 0.36, bpd: 21, sr: 125, bowlSr: 20, econ: 7.6, six: 0.38 },
+  ODI: { wkt: 0.8 / 40, rpb: 0.92, dot: 0.48, bpd: 40, sr: 82, bowlSr: 38, econ: 5.1, six: 0.22 },
+  TEST: { wkt: 0.74 / 75, rpb: 0.56, dot: 0.72, bpd: 75, sr: 52, bowlSr: 62, econ: 3.1, six: 0.08 },
+};
+
+interface BallProfile {
+  /** Balls faced per dismissal, shrunk towards a lower-order batter for small samples. */
+  bpd: number;
+  sr: number;
+  /** Balls bowled per wicket and economy, shrunk towards a part-timer. */
+  bowlSr: number;
+  econ: number;
+}
+
+const profileCache = new WeakMap<PlayerWithStats["stats"], Map<MatchFormat, BallProfile>>();
+
+/** A player's per-ball numbers in a format: era-adjusted career stats, with small samples shrunk. */
+function ballProfile(raw: PlayerWithStats, format: MatchFormat): BallProfile {
+  let byFormat = profileCache.get(raw.stats);
+  const hit = byFormat?.get(format);
+  if (hit) return hit;
+  const s = eraAdjusted(raw, format).stats;
+  const base = FORMAT_BASE[format];
+  const inn = Math.max(0, s.bat_innings || 0);
+  const sr = Math.max(25, s.bat_strike_rate || base.sr * 0.8);
+  const avg = Math.max(2, s.bat_average || 8);
+  // Prior: a lower-order batter (60% of a typical batter's survival, 85% of his scoring rate)
+  const k = 15;
+  const bpdRaw = Math.min(avg / (sr / 100), base.bpd * 3);
+  const bpd = (bpdRaw * inn + base.bpd * 0.6 * k) / (inn + k);
+  const srShrunk = (sr * inn + base.sr * 0.85 * k) / (inn + k);
+  // Bowling: balls per wicket and economy, with a part-timer prior worth 10 wickets
+  const balls = Math.max(0, (s.bowl_overs || 0) * 6);
+  const wkts = Math.max(0, s.bowl_wickets || 0);
+  const priorW = 10;
+  const bowlSr = (balls + base.bowlSr * 1.35 * priorW) / (wkts + priorW);
+  const econRaw = s.bowl_economy > 0 ? s.bowl_economy : base.econ * 1.15;
+  const overs = balls / 6;
+  const econ = (econRaw * overs + base.econ * 1.15 * 40) / (overs + 40);
+  const prof = { bpd, sr: srShrunk, bowlSr, econ };
+  if (!byFormat) profileCache.set(raw.stats, (byFormat = new Map()));
+  byFormat.set(format, prof);
+  return prof;
+}
+
+/**
+ * Ball resolution: batter skill against bowler skill, then conditions and match situation
+ * (phase, wickets in hand, a set batter, the pitch, hand-v-style matchups).
  */
 function resolveBall(
   batter: PlayerWithStats,
@@ -1324,31 +1418,15 @@ function resolveBall(
 ): { runs: number; isOut: boolean } {
   const isTest = format === "TEST";
   const isOdi = format === "ODI";
-  const isT20 = format === "T20";
+  const base = FORMAT_BASE[format];
+  const bat = ballProfile(batter, format);
+  const bowl = ballProfile(bowler, format);
+  const M = BALL_MODEL[format];
 
-  // Base Wicket Probability
-  let wktChance = isT20 ? 0.038 : isOdi ? 0.024 : 0.012;
+  // --- Wicket -----------------------------------------------------------------------------
+  let wktChance = base.wkt * Math.pow(base.bpd / bat.bpd, M.BAT_WKT) * Math.pow(base.bowlSr / bowl.bowlSr, M.BOWL_WKT);
 
-  // Tailender penalty
-  if (batter.primary_role === "BOWL") {
-    wktChance *= 2.8;
-  }
-
-  // Bowler quality adjustment
-  if (isTest) {
-    const bowlAvg = bowler.stats.bowl_average || 34.0;
-    if (bowlAvg <= 25.0) wktChance *= 1.35;
-    else if (bowlAvg <= 28.5) wktChance *= 1.18;
-  } else if (isOdi) {
-    const bowlEcon = bowler.stats.bowl_economy || 5.5;
-    if (bowlEcon <= 4.8) wktChance *= 1.25;
-    else if (bowlEcon <= 5.4) wktChance *= 1.12;
-  } else {
-    const bowlerEcon = bowler.stats.bowl_economy || 8.0;
-    if (bowlerEcon <= 7.2) wktChance *= 1.2;
-  }
-
-  // Pitch Condition impact
+  // Pitch condition impact
   if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "PACE") {
     wktChance *= phase === "PP" ? 1.45 : 1.25;
   } else if (pitch === "GREEN_SEAMER" && bowler.bowling_category === "SPIN") {
@@ -1361,107 +1439,72 @@ function resolveBall(
     wktChance *= 1.3;
   }
 
-  // Batter quality defense
-  const batAvg = Math.max(12, batter.stats.bat_average || 25);
-  if (isTest) {
-    wktChance *= 38.0 / batAvg;
-  } else {
-    wktChance *= 28.0 / batAvg;
-  }
-
   // Batter v bowler matchup (hand v style), applied identically to both sides
   const mu = matchup(batter, bowler, phase, format);
   wktChance *= mu.wkt;
 
-  // Well-set batter eye (fewer wickets once settled on 30+ runs)
-  if (batterBallsSoFar >= 25 && batterRunsSoFar >= 25) {
-    wktChance *= 0.72; // Settled batter is tough to dislodge
-  }
+  // A set batter is harder to dislodge
+  if (batterBallsSoFar >= 25 && batterRunsSoFar >= 25) wktChance *= 0.72;
 
-  // Check dismissal
-  if (rng() < wktChance) {
-    return { runs: 0, isOut: true };
-  }
+  if (rng() < Math.min(0.5, wktChance)) return { runs: 0, isOut: true };
 
-  // Scoring Run Calculation
-  const batSr = Math.max(isTest ? 40 : 65, batter.stats.bat_strike_rate || (isTest ? 50 : 110));
-  const bowlerEcon = bowler.stats.bowl_economy || (isTest ? 3.0 : isOdi ? 5.2 : 8.0);
-  let expectedRunsPerBall = (batSr / 100 + (isTest ? bowlerEcon / 3.0 : bowlerEcon / 6.0)) / 2;
-
-  expectedRunsPerBall *= mu.runs;
+  // --- Runs -------------------------------------------------------------------------------
+  let rpb = base.rpb * Math.pow(bat.sr / base.sr, M.BAT_RUNS) * Math.pow(bowl.econ / base.econ, M.BOWL_RUNS);
+  rpb *= mu.runs;
   const wicketsInHand = 10 - totalWicketsDown;
 
-  // Realistic Phase Tempo based on Wickets in Hand and Batter Calibre
+  // Phase tempo, by wickets in hand and the batter's type
   if (isTest) {
-    if (phase === "PP") expectedRunsPerBall *= 0.82; // Leaving the swinging ball
-    else expectedRunsPerBall *= 0.98;
+    rpb *= phase === "PP" ? 0.85 : 1.0; // leaving the new ball
   } else if (isOdi) {
-    if (phase === "PP") {
-      expectedRunsPerBall *= 1.05; // 10 overs field restrictions
-    } else if (phase === "MID") {
-      if (wicketsInHand >= 7) expectedRunsPerBall *= 1.08;
-      else expectedRunsPerBall *= 0.96;
-    } else if (phase === "DEATH") {
-      // Overs 41-50 in ODI: 8.5-10.5 RPO authentic death tempo
-      if (wicketsInHand >= 6) {
-        expectedRunsPerBall *= 1.34;
-      } else if (wicketsInHand >= 4) {
-        expectedRunsPerBall *= 1.18;
-      } else {
-        expectedRunsPerBall *= 0.92;
-      }
-
-      const isAggressive = batSr >= 95 || batter.stats.finisher_innings >= 4;
-      if (isAggressive) {
-        expectedRunsPerBall *= 1.15;
-      }
-
-      if (batterRunsSoFar >= 25) expectedRunsPerBall *= 1.10;
+    if (phase === "PP") rpb *= 1.05;
+    else if (phase === "MID") rpb *= wicketsInHand >= 7 ? 1.05 : 0.95;
+    else {
+      rpb *= wicketsInHand >= 6 ? 1.32 : wicketsInHand >= 4 ? 1.16 : 0.92;
+      if (bat.sr >= 95 || batter.stats.finisher_innings >= 4) rpb *= 1.1;
+      if (batterRunsSoFar >= 25) rpb *= 1.08;
     }
   } else {
-    // T20: Realistic authentic scoring rate (par 165-185, flat track 195-215, low/slow 135-155)
-    if (phase === "PP") {
-      expectedRunsPerBall *= 1.08;
-    } else if (phase === "MID") {
-      expectedRunsPerBall *= wicketsInHand >= 7 ? 1.04 : 0.96;
-    } else if (phase === "DEATH") {
-      if (wicketsInHand >= 6) {
-        expectedRunsPerBall *= 1.28;
-      } else if (wicketsInHand >= 4) {
-        expectedRunsPerBall *= 1.14;
-      } else {
-        expectedRunsPerBall *= 0.95;
-      }
-      const isFinisher = batter.stats.finisher_innings >= 5 || batSr >= 140;
-      if (isFinisher) expectedRunsPerBall *= 1.12;
-      if (batterRunsSoFar >= 20) expectedRunsPerBall *= 1.08;
+    if (phase === "PP") rpb *= 1.06;
+    else if (phase === "MID") rpb *= wicketsInHand >= 7 ? 1.02 : 0.95;
+    else {
+      rpb *= wicketsInHand >= 6 ? 1.25 : wicketsInHand >= 4 ? 1.12 : 0.95;
+      if (batter.stats.finisher_innings >= 5 || bat.sr >= 140) rpb *= 1.08;
+      if (batterRunsSoFar >= 20) rpb *= 1.06;
     }
   }
 
   // Pitch modifier on runs
-  if (pitch === "HIGH_SCORING_FLAT") expectedRunsPerBall *= 1.08;
-  if (pitch === "SLOW_LOW") expectedRunsPerBall *= 0.90;
-  if (pitch === "GREEN_SEAMER") expectedRunsPerBall *= 0.97;
-  if (pitch === "DUSTBOWL") expectedRunsPerBall *= 0.98;
-  if (isDeterioratedPitch) expectedRunsPerBall *= 0.82;
+  if (pitch === "HIGH_SCORING_FLAT") rpb *= 1.1;
+  if (pitch === "SLOW_LOW") rpb *= 0.9;
+  if (pitch === "GREEN_SEAMER") rpb *= 0.96;
+  if (pitch === "DUSTBOWL") rpb *= 0.97;
+  if (isDeterioratedPitch) rpb *= 0.85;
 
-  const benchmark = isTest ? 0.65 : isOdi ? 0.92 : 1.08;
-  // Strictly clamp rFactor so total match boundary percentage matches genuine ICC T20 stats
-  const rFactor = Math.max(0.65, Math.min(1.6, expectedRunsPerBall / benchmark));
+  rpb = Math.max(0.15, Math.min(isTest ? 1.6 : 2.6, rpb));
+  return { runs: rollRuns(rpb, base, bat.sr / base.sr, rng), isOut: false };
+}
 
-  // Authentic dot ball floor: minimum 32% dots in T20, 36% in ODI, 44% in Tests
-  const dotProb = Math.max(isTest ? 0.44 : isOdi ? 0.36 : 0.32, (isTest ? 0.60 : isOdi ? 0.48 : 0.42) / rFactor);
-  const singleProb = dotProb + Math.min(0.40, (isTest ? 0.30 : isOdi ? 0.35 : 0.38) * (rFactor >= 1.15 ? 0.92 : 1.0));
-  const doubleProb = singleProb + (isTest ? 0.06 : isOdi ? 0.07 : 0.08);
-  const fourProb = doubleProb + Math.min(0.15, (isTest ? 0.06 : isOdi ? 0.09 : 0.13) * (rFactor >= 1.0 ? 1.0 : 0.85));
-
-  const roll = rng();
-
-  if (roll < dotProb) return { runs: 0, isOut: false };
-  if (roll < singleProb) return { runs: 1, isOut: false };
-  if (roll < doubleProb) return { runs: 2, isOut: false };
-  if (roll < fourProb) return { runs: 4, isOut: false };
-  return { runs: isTest ? 4 : 6, isOut: false };
+/**
+ * Splits an expected runs-per-ball into dots, ones, twos, threes, fours and sixes. Faster scoring
+ * means fewer dots and more boundaries; hitters (high strike rate) clear the rope more often.
+ * The expected value of the split equals `rpb` unless it hits a hard limit.
+ */
+function rollRuns(rpb: number, base: FormatBase, srRatio: number, rng: () => number): number {
+  const dot = Math.max(0.12, Math.min(0.88, base.dot * Math.pow(base.rpb / rpb, 0.85)));
+  const scoring = 1 - dot;
+  const meanScoring = rpb / scoring;
+  // Ones, twos and threes average about 1.2; a boundary averages 4 + 2 x the six share
+  const six = Math.max(0.02, Math.min(0.7, base.six * Math.pow(srRatio, 1.5)));
+  const boundaryMean = 4 + 2 * six;
+  const running = 1.2;
+  const boundary = Math.max(0, Math.min(0.75, (meanScoring - running) / (boundaryMean - running)));
+  const r = rng();
+  if (r < dot) return 0;
+  const u = (r - dot) / scoring;
+  if (u < boundary) return u < boundary * six ? 6 : 4;
+  const v = (u - boundary) / Math.max(1e-9, 1 - boundary);
+  return v < 0.84 ? 1 : v < 0.98 ? 2 : 3;
 }
 
 function determinePlayerOfTheMatch(facts: MatchFacts): { name: string; team: "USER" | "AI"; performance: string } {

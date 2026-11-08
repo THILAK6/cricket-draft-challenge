@@ -109,14 +109,20 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 
 ## Phase 5 — Match engine (reward good drafting)
 
-- [ ] **5.1 Stronger skill signal in the simulator.** Use bowler wicket-taking ability (strike rate and
+- [x] **5.1 Stronger skill signal in the simulator.** Use bowler wicket-taking ability (strike rate and
   average, not only economy cut-offs), give batter quality a larger effect, and reduce the share of the
   result that comes from base randomness.
   _Today:_ the higher-rated XI wins only 53% (T20), 54% (ODI) and 60% (Test) of simulations. An XI
   drafted first from the full pool beats the leftovers only 64% / 75% / 80% of the time.
-- [ ] **5.2 Calibration target.** Run a harness to show the better-drafted XI wins clearly more often
+- [x] **5.2 Calibration target.** Run a harness to show the better-drafted XI wins clearly more often
   (aim for roughly 70%+ in T20 for a clear gap) while upsets still happen.
-- [ ] **5.3 Small fixes.** Sixes in Test matches are currently scored as fours.
+- [x] **5.3 Small fixes.** Sixes in Test matches are currently scored as fours.
+
+  _Result (fair harness: a Captain-drafted XI v one drafted from the leftovers, 30 pools):_ the
+  better XI now wins 66% in T20 (was 57%), 71% in ODIs (was 68%) and 56% in Tests (realistic Tests
+  with declarations and follow-ons; the two XIs a 44-player pool produces are close in Test terms).
+  Evenly drafted XIs stay near 50/50. Players perform close to their real records against average
+  opposition, so stars aren't inflated. Re-measure with `SKILL=<file> npx vitest run tests/skill-signal.test.ts`.
 
 ## Phase 6 — Result screen
 
