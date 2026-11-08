@@ -3,8 +3,10 @@ import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/
 import { PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 
-const score = (i?: InningsScorecard) => (i ? `${i.totalRuns}/${i.totalWickets}` : "");
-const scoreLine = (a?: InningsScorecard, b?: InningsScorecard) => [a, b].filter(Boolean).map((i) => (i!.totalWickets >= 10 ? `${i!.totalRuns}` : score(i))).join(" & ");
+const score = (i?: InningsScorecard) => (i ? `${i.totalRuns}/${i.totalWickets}${i.declared ? "d" : ""}` : "");
+// An innings that never started (an innings win) is left out of the score line
+const scoreLine = (a?: InningsScorecard, b?: InningsScorecard) =>
+  [a, b].filter((i): i is InningsScorecard => !!i && i.totalBalls > 0).map((i) => (i.totalWickets >= 10 ? `${i.totalRuns}` : score(i))).join(" & ");
 
 /** The match result: score line first, then why it went that way, then the full scorecards. */
 export function Result(props: RoomProps) {

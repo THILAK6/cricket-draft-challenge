@@ -267,7 +267,11 @@ export function simulateCricketMatch(
     const A = userBatsFirst ? { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const } : { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const };
     const B = userBatsFirst ? { squad: aiSquad, opp: userSquad, name: "AI XI", side: "AI" as const } : { squad: userSquad, opp: aiSquad, name: "Your XI", side: "USER" as const };
     const bat = (t: typeof A, overs: number, inn: number, det: boolean, tgt?: number, declareAt?: number) => {
-      const i = inningsOf(t.squad, t.opp, challenge, Math.max(1, Math.floor(overs)), t.name, tgt, rng, inn, det, declareAt);
+      const cap = Math.max(1, Math.floor(overs));
+      const i = inningsOf(t.squad, t.opp, challenge, cap, t.name, tgt, rng, inn, det, declareAt);
+      // Batting on until the time set aside runs out (not all out, not chasing) is a declaration:
+      // the captain closes the innings to leave time to win
+      if (tgt === undefined && i.totalWickets < 10 && i.totalBalls >= cap * 6) i.declared = true;
       used += oversOf(i);
       return i;
     };
