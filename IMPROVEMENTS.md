@@ -224,6 +224,12 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 10.3 Share link per match (`/?match=<id>`, 10-character unguessable id): the phone's share sheet, or the link copied.
 - [ ] 10.4 Later: a record page (wins by format, most-drafted players, record against each AI style) from the same rows.
 
+## Phase 11 — Fairer ratings across eras (done)
+
+- [x] 11.1 Era baselines from Full Member v Full Member matches only (ETL, `DATA_NORMS[fmt].era`). The old table counted every T20I, and since 2019 most are Associate matches, so the 2020s looked low-scoring: 2010s batters were marked down (Kohli's T20I average 48 to 39, rated 90) and 2010s bowlers up (Imran Tahir 104, Al-Amin Hossain 92). Now Kohli 110, Tahir 90, Al-Amin 81, and the Shark no longer opens a draft with a 30-match seamer.
+- [x] 11.2 Ratings recalibrated; T20 base scoring re-tuned (rpb 1.42: average innings 161, the real Full Member par).
+- [ ] 11.3 Later: discount runs and wickets against Associate sides (career stats still count them in full).
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

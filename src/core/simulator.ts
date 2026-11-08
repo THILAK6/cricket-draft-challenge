@@ -1435,7 +1435,7 @@ interface FormatBase {
 export const FORMAT_BASE: Record<MatchFormat, FormatBase> = {
   // wkt is a typical batter's own dismissal rate (1 / balls per dismissal), trimmed so the pitch and
   // matchup boosts on top don't push batters far below their career averages
-  T20: { wkt: 0.85 / 21, rpb: 1.35, dot: 0.36, bpd: 21, sr: 125, bowlSr: 20, econ: 7.6, six: 0.38 },
+  T20: { wkt: 0.85 / 21, rpb: 1.42, dot: 0.36, bpd: 21, sr: 125, bowlSr: 20, econ: 7.6, six: 0.38 },
   ODI: { wkt: 0.8 / 40, rpb: 0.92, dot: 0.48, bpd: 40, sr: 82, bowlSr: 38, econ: 5.1, six: 0.22 },
   TEST: { wkt: 0.74 / 75, rpb: 0.56, dot: 0.72, bpd: 75, sr: 52, bowlSr: 62, econ: 3.1, six: 0.08 },
 };
