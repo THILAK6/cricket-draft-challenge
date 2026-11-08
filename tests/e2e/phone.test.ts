@@ -105,6 +105,26 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.waitForSelector("text=Play the match");
         expect(taps).toBe(11);
         expect(await overflow()).toBe(0);
+        // Drag the opener down two places by his handle
+        const names = () => page.$$eval(".lineup-list .xrow .who b", (els: any[]) => els.map((e) => e.textContent));
+        const before = await names();
+        const grip = page.locator(".lineup-list .grip").first();
+        // The batting-order screen opens at the top
+        expect(await page.evaluate("window.scrollY")).toBe(0);
+        const box = (await grip.boundingBox())!;
+        const rowH = (await page.locator(".lineup-list .xrow").first().boundingBox())!.height;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + (2 * rowH * s) / 8);
+        if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `drag-${format}.png`) });
+        const saved = page.waitForResponse((r: any) => r.url().includes("/reorder"));
+        await page.mouse.up();
+        await saved;
+        await page.waitForTimeout(100);
+        const after = await names();
+        expect(after[2]).toBe(before[0]);
+        expect(after[0]).toBe(before[1]);
+        expect(await overflow()).toBe(0);
         await page.click("summary:has-text('Bowling plan')");
         expect(await overflow()).toBe(0);
         await page.click("text=Play the match");

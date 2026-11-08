@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api";
 import { isBowlingOption } from "../../../src/core/validator";
 import { keyStats, PITCH_LABEL, ROLE_SHORT, roleKey, shortName, type Player } from "../format";
@@ -15,6 +15,11 @@ export function Lineup(props: RoomProps) {
   const [open, setOpen] = useState<Player | null>(null);
   const [view, setView] = useState<"you" | "ai">("you");
   const squad = state.userPicks;
+  // Dragging a row by its handle: where it started, where it would land, and how far it has moved
+  const [drag, setDrag] = useState<{ from: number; to: number; dy: number } | null>(null);
+  const dragRef = useRef<{ from: number; to: number; startY: number; rowH: number } | null>(null);
+  // Open at the top: the draft list may have been scrolled far down
+  useEffect(() => window.scrollTo(0, 0), []);
 
   const move = async (from: number, to: number) => {
     if (to < 0 || to > 10 || busy) return;
@@ -30,6 +35,46 @@ export function Lineup(props: RoomProps) {
       props.onState(state);
       props.toast((e as Error).message, "error");
     }
+  };
+
+  const onGrab = (i: number, e: PointerEvent) => {
+    if (busy || e.button > 0) return;
+    const row = (e.currentTarget as HTMLElement).closest(".xrow") as HTMLElement | null;
+    if (!row) return;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = { from: i, to: i, startY: e.clientY, rowH: row.getBoundingClientRect().height };
+    setDrag({ from: i, to: i, dy: 0 });
+    e.preventDefault();
+  };
+  const onDrag = (e: PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;
+    d.to = Math.max(0, Math.min(10, d.from + Math.round(dy / d.rowH)));
+    setDrag({ from: d.from, to: d.to, dy });
+  };
+  const onDrop = () => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (d && d.to !== d.from) move(d.from, d.to);
+  };
+  /** The batting spot a row will have if the dragged row is dropped where it is now. */
+  const landing = (i: number) => {
+    if (!drag) return i;
+    if (i === drag.from) return drag.to;
+    if (drag.from < drag.to && i > drag.from && i <= drag.to) return i - 1;
+    if (drag.from > drag.to && i < drag.from && i >= drag.to) return i + 1;
+    return i;
+  };
+  /** Rows between the start and the landing spot make room for the dragged one. */
+  const rowStyle = (i: number) => {
+    if (!drag || !dragRef.current) return undefined;
+    const h = dragRef.current.rowH;
+    if (i === drag.from) return { transform: `translateY(${drag.dy}px)` };
+    if (drag.from < drag.to && i > drag.from && i <= drag.to) return { transform: `translateY(${-h}px)` };
+    if (drag.from > drag.to && i < drag.from && i >= drag.to) return { transform: `translateY(${h}px)` };
+    return { transform: "translateY(0)" };
   };
 
   const bowlers = squad.filter((p): p is Player => !!p && p.primary_role !== "WK" && isBowlingOption(p));
@@ -83,25 +128,36 @@ export function Lineup(props: RoomProps) {
       </div>
 
       {view === "you" ? (
-        <div class="xi" style="margin-top:6px">
+        <div class={`xi lineup-list ${drag ? "dragging" : ""}`} style="margin-top:6px">
+          <p class="faint" style="font-size:12px;padding:0 16px 4px">Drag ⠿ to change the order.</p>
           {squad.map((p, i) =>
             p ? (
-              <div class="xrow">
-                <span class="num">{i + 1}</span>
+              <div class={`xrow ${drag?.from === i ? "lifted" : ""}`} style={rowStyle(i)} key={p.id}>
+                <span class="num">{landing(i) + 1}</span>
                 <button type="button" class="who" style="background:none;border:0;padding:0;text-align:left" onClick={() => setOpen(p)}>
                   <b class="ellipsis" style="display:block">{shortName(p, 24)}</b>
                   <span class="sub">
                     <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {keyStats(p, format)}
                   </span>
                 </button>
-                <span class="move">
-                  <button type="button" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label={`Move ${p.name} up`}>
-                    ↑
-                  </button>
-                  <button type="button" onClick={() => move(i, i + 1)} disabled={i === 10} aria-label={`Move ${p.name} down`}>
-                    ↓
-                  </button>
-                </span>
+                <button
+                  type="button"
+                  class="grip"
+                  aria-label={`Move ${p.name}, batting at ${i + 1}: drag, or use the arrow keys`}
+                  onPointerDown={(e) => onGrab(i, e as unknown as PointerEvent)}
+                  onPointerMove={(e) => onDrag(e as unknown as PointerEvent)}
+                  onPointerUp={onDrop}
+                  onPointerCancel={() => {
+                    dragRef.current = null;
+                    setDrag(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp" && i > 0) (e.preventDefault(), move(i, i - 1));
+                    if (e.key === "ArrowDown" && i < 10) (e.preventDefault(), move(i, i + 1));
+                  }}
+                >
+                  ⠿
+                </button>
               </div>
             ) : null
           )}
