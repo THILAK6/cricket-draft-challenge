@@ -36,4 +36,6 @@ jobs:
           git add data/phase-stats.sql data/player-splits.sql src/core/data-norms.generated.ts
           git diff --cached --quiet && echo "No change" && exit 0
           git commit -m "data: player splits from Cricsheet"
+          # Someone may have pushed while this ran: replay the data commit on top
+          git pull --rebase origin main
           git push
