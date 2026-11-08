@@ -1,3 +1,4 @@
+import { phaseMixFactors } from "./phase-stats";
 import type { MatchFormat, PlayerWithStats } from "./types";
 import { ERA_BASELINES, PLAYER_MID_YEAR } from "./era-data";
 
@@ -54,21 +55,26 @@ function computeFactors(format: MatchFormat, year: number): EraFactors {
  */
 const cache = new WeakMap<PlayerWithStats["stats"], Map<MatchFormat, PlayerWithStats["stats"]>>();
 
-/** The player with strike rate, average, economy and bowling average scaled to the common baseline. */
+/** The player with strike rate, average, economy and bowling average scaled to the common baseline (era and, in T20, phase mix). */
 export function eraAdjusted(p: PlayerWithStats, format: MatchFormat): PlayerWithStats {
   let byFormat = cache.get(p.stats);
   let stats = byFormat?.get(format);
   if (!stats) {
     const f = eraFactors(p, format);
+    // T20: also put the numbers on an average mix of powerplay, middle and death overs
+    const m = phaseMixFactors(p, format);
+    const mixed = m.sr !== 1 || m.bpo !== 1 || m.econ !== 1 || m.bpw !== 1;
     stats =
-      f === NEUTRAL
+      f === NEUTRAL && !mixed
         ? p.stats
         : {
             ...p.stats,
-            bat_strike_rate: p.stats.bat_strike_rate * f.sr,
-            bat_average: p.stats.bat_average * f.avg,
-            bowl_economy: p.stats.bowl_economy * f.econ,
-            bowl_average: p.stats.bowl_average * f.bavg,
+            bat_strike_rate: p.stats.bat_strike_rate * f.sr * m.sr,
+            // average = balls per dismissal x strike rate
+            bat_average: p.stats.bat_average * f.avg * m.sr * m.bpo,
+            bowl_economy: p.stats.bowl_economy * f.econ * m.econ,
+            // bowling average = balls per wicket x economy
+            bowl_average: p.stats.bowl_average * f.bavg * m.econ * m.bpw,
           };
     if (!byFormat) cache.set(p.stats, (byFormat = new Map()));
     byFormat.set(format, stats);

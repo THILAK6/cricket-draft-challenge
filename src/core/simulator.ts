@@ -1,4 +1,5 @@
 import { typeAdjustedEconomy } from "./player-quality";
+import { hasBattingPhases, hasBowlingPhases, phaseShape, PHASE_OF_SIM } from "./phase-stats";
 import { computeContributions, topContribution, describeContribution, type Contribution } from "./impact";
 import { ballsToOvers } from "./overs";
 import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim } from "./match-facts";
@@ -1307,9 +1308,17 @@ function selectBowlerForOver(
       if (isPartTimer) weight -= 500;
     }
 
+    // T20 with phase stats: give the ball to whoever is actually good in this phase
+    if (format === "T20" && hasBowlingPhases(b, format) && !isPartTimer) {
+      const sh = phaseShape(b, format, PHASE_OF_SIM[phase]);
+      const edge = (1 - sh.econ) * 400 + (sh.wkt - 1) * 150;
+      if (phase === "DEATH") add(edge, edge >= 30 ? `${b.name} bowls at the death, where he is at his best` : undefined, "death");
+      else if (phase === "PP" && over > 2) add(edge * 0.6);
+    }
+
     if (phase === "DEATH") {
       if (format === "T20") {
-        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 7.8) weight += 50;
+        if (!hasBowlingPhases(b, format) && b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 7.8) weight += 50;
         if (isPacer) weight += 25;
       } else if (format === "ODI") {
         if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 5.5) weight += 45;
@@ -1409,7 +1418,7 @@ interface FormatBase {
 export const FORMAT_BASE: Record<MatchFormat, FormatBase> = {
   // wkt is a typical batter's own dismissal rate (1 / balls per dismissal), trimmed so the pitch and
   // matchup boosts on top don't push batters far below their career averages
-  T20: { wkt: 0.85 / 21, rpb: 1.3, dot: 0.36, bpd: 21, sr: 125, bowlSr: 20, econ: 7.6, six: 0.38 },
+  T20: { wkt: 0.85 / 21, rpb: 1.35, dot: 0.36, bpd: 21, sr: 125, bowlSr: 20, econ: 7.6, six: 0.38 },
   ODI: { wkt: 0.8 / 40, rpb: 0.92, dot: 0.48, bpd: 40, sr: 82, bowlSr: 38, econ: 5.1, six: 0.22 },
   TEST: { wkt: 0.74 / 75, rpb: 0.56, dot: 0.72, bpd: 75, sr: 52, bowlSr: 62, econ: 3.1, six: 0.08 },
 };
@@ -1447,7 +1456,7 @@ function ballProfile(raw: PlayerWithStats, format: MatchFormat): BallProfile {
   const bowlSr = (balls + base.bowlSr * 1.35 * priorW) / (wkts + priorW);
   // Judged against bowlers of the same type: a spinner's career economy was earned in the easier
   // middle overs, and the phase base rates already make those overs cheaper
-  const econRaw = s.bowl_economy > 0 ? typeAdjustedEconomy(s.bowl_economy, raw.bowling_category, format) : base.econ * 1.15;
+  const econRaw = s.bowl_economy > 0 ? typeAdjustedEconomy(s.bowl_economy, raw.bowling_category, format, hasBowlingPhases(raw, format)) : base.econ * 1.15;
   const overs = balls / 6;
   const econ = (econRaw * overs + base.econ * 1.15 * 40) / (overs + 40);
   const prof = { bpd, sr: srShrunk, bowlSr, econ };
@@ -1480,9 +1489,14 @@ function resolveBall(
   const bat = ballProfile(batter, format);
   const bowl = ballProfile(bowler, format);
   const M = BALL_MODEL[format];
+  // T20: how each of them does in this phase compared with his own level (1 = no different)
+  const batShape = phaseShape(batter, format, PHASE_OF_SIM[phase]);
+  const bowlShape = phaseShape(bowler, format, PHASE_OF_SIM[phase]);
+  const batterHasPhases = hasBattingPhases(batter, format);
 
   // --- Wicket -----------------------------------------------------------------------------
   let wktChance = base.wkt * Math.pow(base.bpd / bat.bpd, M.BAT_WKT) * Math.pow(base.bowlSr / bowl.bowlSr, M.BOWL_WKT);
+  wktChance *= batShape.out * bowlShape.wkt;
 
   // Pitch condition impact. In Tests the effect is softer per ball: it compounds over 90 overs a day
   // (full-size boosts made green-seamer Tests finish in two days)
@@ -1515,7 +1529,7 @@ function resolveBall(
   if (rng() < Math.min(0.5, wktChance)) return { runs: 0, isOut: true };
 
   // --- Runs -------------------------------------------------------------------------------
-  let rpb = base.rpb * Math.pow(bat.sr / base.sr, M.BAT_RUNS) * Math.pow(bowl.econ / base.econ, M.BOWL_RUNS);
+  let rpb = base.rpb * Math.pow((bat.sr * batShape.sr) / base.sr, M.BAT_RUNS) * Math.pow((bowl.econ * bowlShape.econ) / base.econ, M.BOWL_RUNS);
   rpb *= mu.runs;
   const wicketsInHand = 10 - totalWicketsDown;
 
@@ -1535,7 +1549,8 @@ function resolveBall(
     else if (phase === "MID") rpb *= wicketsInHand >= 7 ? 1.02 : 0.95;
     else {
       rpb *= wicketsInHand >= 6 ? 1.25 : wicketsInHand >= 4 ? 1.12 : 0.95;
-      if (batter.stats.finisher_innings >= 5 || bat.sr >= 140) rpb *= 1.08;
+      // A known finisher (phase stats say so directly when we have them)
+      if (!batterHasPhases && (batter.stats.finisher_innings >= 5 || bat.sr >= 140)) rpb *= 1.08;
       if (batterRunsSoFar >= 20) rpb *= 1.06;
     }
   }
@@ -1544,7 +1559,7 @@ function resolveBall(
   // little, and a batter who isn't a hitter can't finish in the last overs
   if (fit.makeshiftOpener) rpb *= 0.9;
   if (settledAgainstSameness) rpb *= 1.05;
-  if (!isTest && phase === "DEATH" && batter.primary_role !== "BOWL" && batter.stats.finisher_innings < 3 && bat.sr < base.sr * 1.05) rpb *= 0.9;
+  if (!isTest && !batterHasPhases && phase === "DEATH" && batter.primary_role !== "BOWL" && batter.stats.finisher_innings < 3 && bat.sr < base.sr * 1.05) rpb *= 0.9;
 
   // Pitch modifier on runs
   if (pitch === "HIGH_SCORING_FLAT") rpb *= 1.1;

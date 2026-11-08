@@ -1,5 +1,6 @@
 import type { MatchFormat, PlayerWithStats } from "./types";
 import { eraAdjusted } from "./era";
+import { hasBowlingPhases } from "./phase-stats";
 
 /**
  * How good a player is in a format, from career stats only (no names, no reputation).
@@ -36,8 +37,13 @@ export const TYPE_ECONOMY: Record<MatchFormat, { PACE: number; SPIN: number; ALL
   TEST: { PACE: 3.059, SPIN: 3.059, ALL: 3.059 },
 };
 
-/** Economy judged against bowlers of the same type, on the common scale (part-timers unchanged). */
-export function typeAdjustedEconomy(econ: number, category: string, format: MatchFormat): number {
+/**
+ * Economy judged against bowlers of the same type, on the common scale (part-timers unchanged).
+ * Not needed when the player has T20 phase stats: era.ts has already put his economy on an
+ * average phase mix, which is the cause of the gap.
+ */
+export function typeAdjustedEconomy(econ: number, category: string, format: MatchFormat, phaseNeutral = false): number {
+  if (phaseNeutral) return econ;
   const t = TYPE_ECONOMY[format];
   if (category === "PACE") return (econ * t.ALL) / t.PACE;
   if (category === "SPIN") return (econ * t.ALL) / t.SPIN;
@@ -84,7 +90,7 @@ function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
   const inn = Math.max(0, Math.min(s.bowl_innings || 0, s.matches));
   if (inn === 0 || s.bowl_overs <= 0) return 0;
   const bavg = shrink(s.bowl_wickets > 0 ? Math.max(15, s.bowl_average) : pr.bavg * 1.5, inn, pr.bavg, pr.bowlK);
-  const econ = shrink(Math.max(3, s.bowl_economy ? typeAdjustedEconomy(s.bowl_economy, p.bowling_category, format) : pr.econ), inn, pr.econ, pr.bowlK);
+  const econ = shrink(Math.max(3, s.bowl_economy ? typeAdjustedEconomy(s.bowl_economy, p.bowling_category, format, hasBowlingPhases(raw, format)) : pr.econ), inn, pr.econ, pr.bowlK);
   const wpi = shrink(s.bowl_wickets / inn, inn, pr.wpi, pr.bowlK);
   // Overs per innings: a bowler who bowls his full quota matters more than a part-timer
   const load = Math.min(1, s.bowl_overs / inn / (format === "T20" ? 3.5 : format === "ODI" ? 8.5 : 22));
@@ -102,7 +108,7 @@ function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
  * the formulas change.
  */
 export const CALIBRATION: Record<MatchFormat, { bat: [number, number]; bowl: [number, number] }> = {
-  T20: { bat: [20.807, 53.069], bowl: [0.776, 1.363] },
+  T20: { bat: [19.98, 49.926], bowl: [0.77, 1.397] },
   ODI: { bat: [19.552, 43.209], bowl: [0.701, 1.354] },
   TEST: { bat: [26.231, 50.163], bowl: [0.946, 2.803] },
 };

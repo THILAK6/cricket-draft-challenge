@@ -9,6 +9,7 @@ db.exec(readFileSync("data/seed.sql", "utf8"));
 // Same order as `npm run db:seed:local`, so tests see what the game sees
 db.exec(readFileSync("data/career-overrides.sql", "utf8"));
 db.exec(readFileSync("data/data-fixes.sql", "utf8"));
+db.exec(readFileSync("data/phase-stats.sql", "utf8"));
 
 /** In-memory D1 stand-in over the seed data, for scripts and tests. */
 export const d1 = {

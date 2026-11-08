@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core/types";
+import type { Challenge, MatchFormat, PhaseStatLines, PitchType, PlayerWithStats } from "../core/types";
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
@@ -240,6 +240,17 @@ export const FALLBACK_SCENARIOS: Omit<Challenge, "id">[] = [
   },
 ];
 
+/** T20 phase stats from player_phase_stats (a JSON column); ignored if malformed. */
+function parsePhases(raw: string): { phases?: PhaseStatLines } {
+  try {
+    const v = JSON.parse(raw);
+    const ok = (l: unknown) => Array.isArray(l) && l.length === 6 && l.every((x) => typeof x === "number");
+    return ok(v?.pp) && ok(v?.mid) && ok(v?.death) ? { phases: v } : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Loads active format players from D1 into the domain PlayerWithStats format.
  */
@@ -250,7 +261,7 @@ export async function fetchPlayerPool(
   minMatches = 5
 ): Promise<PlayerWithStats[]> {
   // Per-format roles override the player's general role (a keeper in ODIs who batted in Tests)
-  const query = (withRoles: boolean) => `
+  const query = (withRoles: boolean, withPhases = false) => `
     SELECT
       p.id, p.cricinfo_id, p.name, p.short_name, p.country,
       p.batting_hand, p.bowling_style,
@@ -259,10 +270,11 @@ export async function fetchPlayerPool(
       s.matches, s.bat_innings, s.bat_runs, s.bat_balls, s.bat_average,
       s.bat_strike_rate, s.top_order_innings, s.middle_order_innings,
       s.finisher_innings, s.bowl_innings, s.bowl_overs, s.bowl_wickets,
-      s.bowl_average, s.bowl_economy
+      s.bowl_average, s.bowl_economy${withPhases ? ", ph.phases" : ""}
     FROM players p
     JOIN player_format_stats s ON p.id = s.player_id
     ${withRoles ? "LEFT JOIN player_format_roles r ON r.player_id = p.id AND r.format = s.format" : ""}
+    ${withPhases ? "LEFT JOIN player_phase_stats ph ON ph.player_id = p.id AND ph.format = s.format" : ""}
     WHERE s.format = ? AND s.matches >= ?
     ORDER BY s.matches DESC, s.bat_runs DESC
     LIMIT ?;
@@ -270,10 +282,15 @@ export async function fetchPlayerPool(
 
   let results: any[] | undefined;
   try {
-    ({ results } = await db.prepare(query(true)).bind(format, minMatches, limit).all());
+    ({ results } = await db.prepare(query(true, format === "T20")).bind(format, minMatches, limit).all());
   } catch {
-    // Database without player_format_roles yet (data/data-fixes.sql not applied): general roles only
-    ({ results } = await db.prepare(query(false)).bind(format, minMatches, limit).all());
+    try {
+      // Database without player_phase_stats yet (data/phase-stats.sql not applied)
+      ({ results } = await db.prepare(query(true)).bind(format, minMatches, limit).all());
+    } catch {
+      // ...or without player_format_roles (data/data-fixes.sql not applied): general roles only
+      ({ results } = await db.prepare(query(false)).bind(format, minMatches, limit).all());
+    }
   }
 
   const players: PlayerWithStats[] = (results || []).map((row: any) => ({
@@ -302,6 +319,7 @@ export async function fetchPlayerPool(
       bowl_wickets: row.bowl_wickets,
       bowl_average: row.bowl_average,
       bowl_economy: row.bowl_economy,
+      ...(row.phases ? parsePhases(row.phases) : {}),
     },
   }));
   // Roles the stats clearly contradict are corrected for this format

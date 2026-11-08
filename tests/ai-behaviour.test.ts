@@ -1,3 +1,4 @@
+import { isNaturalOpener } from "../src/core/batting-order";
 import { describe, it, expect } from "vitest";
 import { d1, lcg } from "./support/db";
 import { buildRandomDraft } from "../src/worker/challenge-generator";
@@ -88,9 +89,14 @@ describe("AI drafts like a friend", () => {
     expect(pairs.length).toBeGreaterThan(0);
     const { sp: spinner, bat: batter } = pairs[0];
     // The human has no spinner yet; this is the only spinner left, and the batter is rated higher
-    const left = [spinner, batter, ...pool.filter((p) => p.bowling_category !== "SPIN" && p.id !== batter.id).slice(0, 20)];
-    const human = [...pool.filter((p) => p.primary_role === "BAT" && p.id !== batter.id).slice(0, 4), ...Array(7).fill(null)];
-    const mine = [...pool.filter((p) => p.primary_role === "WK").slice(0, 1), ...pool.filter((p) => p.bowling_category === "SPIN" && p.id !== spinner.id).slice(0, 1), ...Array(9).fill(null)];
+    // The AI already has a keeper, a spinner, two pacers and two openers, so its own needs don't
+    // decide the pick, and no keepers are left to snipe: only the spinner snipe can make him its choice
+    const pacers = pool.filter((p) => p.primary_role === "BOWL" && p.bowling_category === "PACE").slice(0, 2);
+    const openers = pool.filter((p) => p.primary_role === "BAT" && isNaturalOpener(p) && p.id !== batter.id).slice(0, 2);
+    const taken = [...pacers, ...openers];
+    const left = [spinner, batter, ...pool.filter((p) => p.bowling_category !== "SPIN" && p.id !== batter.id && !taken.includes(p) && p.primary_role !== "WK" && q(p) <= q(batter)).slice(0, 20)];
+    const human = [...pool.filter((p) => p.primary_role === "BAT" && p.id !== batter.id && !taken.includes(p)).slice(0, 4), ...Array(7).fill(null)];
+    const mine = [...pool.filter((p) => p.primary_role === "WK").slice(0, 1), ...pool.filter((p) => p.bowling_category === "SPIN" && p.id !== spinner.id).slice(0, 1), ...taken, ...Array(5).fill(null)];
     const pick = (difficulty: Difficulty) => chooseAiPick({ pool: left, squad: mine, opponentSquad: human, challenge, difficulty, noiseSeed: 1, round: 5 })!;
     const shark = pick("hard");
     expect(shark.player.id).toBe(spinner.id);

@@ -14,7 +14,7 @@
     "etl:process": "tsx src/etl/process-cricsheet.ts",
     "db:migrate:local": "wrangler d1 execute cricdraft-db --local --file=src/db/schema.sql",
     "etl:career": "tsx src/etl/career-overrides.ts",
-    "db:seed:local": "wrangler d1 execute cricdraft-db --local --file=data/seed.sql && wrangler d1 execute cricdraft-db --local --file=data/career-overrides.sql && wrangler d1 execute cricdraft-db --local --file=data/data-fixes.sql",
+    "db:seed:local": "wrangler d1 execute cricdraft-db --local --file=data/seed.sql && wrangler d1 execute cricdraft-db --local --file=data/career-overrides.sql && wrangler d1 execute cricdraft-db --local --file=data/data-fixes.sql && wrangler d1 execute cricdraft-db --local --file=data/phase-stats.sql",
     "dev:web": "vite",
     "build:web": "vite build"
   },

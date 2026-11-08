@@ -112,7 +112,7 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         expect(await overflow()).toBe(0);
         // Result: how often this XI wins, then the head-to-head, with the scorecards closed
         await page.waitForSelector("text=Head to head");
-        expect(await page.locator(".h2h .row").count()).toBe(8);
+        expect(await page.locator(".h2h .row").count()).toBe(format === "T20" ? 10 : 8);
         expect(await page.locator(".chance").count()).toBe(1);
         expect(await page.locator("details.box[open]").count()).toBe(0);
         await page.click("summary:has-text('Scorecards')");

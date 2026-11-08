@@ -23,6 +23,9 @@ export interface Player {
   active_span_end?: number;
 }
 
+/** T20 phase stats per phase: [bat_runs, bat_balls, bat_outs, bowl_balls, bowl_runs, bowl_wkts] (see core/phase-stats.ts). */
+export type PhaseStatLines = Record<"pp" | "mid" | "death", [number, number, number, number, number, number]>;
+
 export interface PlayerStats {
   player_id: string;
   format: MatchFormat;
@@ -39,6 +42,8 @@ export interface PlayerStats {
   bowl_wickets: number;
   bowl_average: number;
   bowl_economy: number;
+  /** T20 only, from Cricsheet ball-by-ball data: powerplay, middle and death numbers. */
+  phases?: PhaseStatLines;
 }
 
 export interface PlayerWithStats extends Player {

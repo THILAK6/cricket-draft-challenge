@@ -169,6 +169,27 @@ Switched from Claude Haiku to Workers AI to stay on the Cloudflare Free plan wit
   otherwise bat on to a draw. Test draws went from 4% to 13%, and the better-drafted XI now wins 65% of
   Tests (was 56%).
 
+## Phase 8 — T20 phase stats (powerplay, middle, death)
+
+- [x] **8.1 Data.** `src/etl/phase-stats.ts` reads Cricsheet's T20I ball-by-ball data and writes
+  `data/phase-stats.sql` (runs, balls, outs, and balls, runs, wickets bowled, per phase per player). The
+  GitHub Action "Phase stats from Cricsheet" downloads the data, runs it and commits the file (3,638
+  matches, 2,574 players; about 99% of each player's T20I career).
+- [x] **8.2 Level.** Career numbers are put on an average phase mix before anything else uses them: a
+  finisher's strike rate and a death bowler's economy come down, a middle-overs spinner's economy goes
+  up. This replaces the flat spinner adjustment for T20.
+- [x] **8.3 Shape.** In the match, each batter and bowler plays each phase as his numbers say, relative
+  to his own level and pulled towards normal for small samples. Death and powerplay overs go to the
+  bowlers who are actually good then (the old "finisher" rules of thumb only apply to players without
+  phase data).
+- [x] **8.4 Head-to-head.** T20 adds "Death bowling" (economy in overs 16-20) and "Finishers" (strike
+  rate in overs 16-20, from #4-#8), each with the balls behind the number.
+- Result: balanced v top-rated in T20 back up to 59% (from 50%), the better-drafted XI wins 66%, and
+  real-player T20 totals average about 155.
+- [ ] **8.5 ODI phases** (1-10, 11-40, 41-50): the same script and engine, once T20 has been played a while.
+- Production: `npx wrangler d1 execute cricdraft-db --remote --file=data/phase-stats.sql` (until then
+  the game runs as before).
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

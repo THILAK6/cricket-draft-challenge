@@ -41,7 +41,7 @@ The game is built to stay inside the Free plan (limits as published by Cloudflar
 | Durable Object duration: 13,000 GB-s per day | Rooms use plain HTTP, so they are only billed while handling a request (about 1 s per game, plus up to 2.5 s per AI pick while Workers AI answers). |
 | Workers AI: 10,000 Neurons per day | Nothing by default. With `AI_VOICE=on`, the AI opponent's voice: one call per AI pick (about 330 tokens in, 30 out on `llama-3.1-8b-instruct-fp8-fast`), about 2.4 Neurons a pick, 27 a game, so roughly 350 games a day. Past the allowance calls fail (no charge on the Free plan) and the rule-based AI picks silently until midnight UTC. `AI_VOICE_MODEL` tries another model. Each room's state records its calls and tokens (`voiceUsage`). |
 | 100,000 rows written per day (D1 and Durable Objects) | About 15 per game (one saved room state per request) plus one D1 row for the scenario. |
-| 5 million rows read per day | About 1,500-2,100 D1 rows per pool load, cached per isolate for 10 minutes. |
+| 5 million rows read per day | About 1,500-2,100 D1 rows per pool load (plus up to 1,000 T20 phase-stat rows), cached per isolate for 10 minutes. |
 | 5 GB Durable Object storage | About 70-90 KB per room; rooms delete themselves after 7 days (an alarm). |
 
 `tests/free-plan-budget.test.ts` fails if Worker requests or picks get much more expensive. To watch
@@ -61,7 +61,7 @@ npm run db:migrate:local
 npm run db:seed:local
 ```
 
-`db:seed:local` loads the player pool from `data/seed.sql`, then applies `data/career-overrides.sql` and `data/data-fixes.sql` (country and per-format role corrections); without it there are no players to draft. For the production database, apply `src/db/schema.sql` and `data/data-fixes.sql` with `--remote`.
+`db:seed:local` loads the player pool from `data/seed.sql`, then applies `data/career-overrides.sql` and `data/data-fixes.sql` (country, role and bowling-style corrections) and `data/phase-stats.sql` (T20 powerplay/middle/death numbers, rebuilt by the "Phase stats from Cricsheet" GitHub Action); without it there are no players to draft. For the production database, apply `src/db/schema.sql`, `data/data-fixes.sql` and `data/phase-stats.sql` with `--remote`.
 
 **Career totals.** Cricsheet only covers matches from 2001-2002, so players with earlier careers (Tendulkar, Ponting, ...) would have truncated totals. `npm run etl:career` reads full-career matches, runs, averages, balls bowled and wickets from Wikipedia's cricketer infobox (found through the ESPNcricinfo id on Wikidata) and writes `data/career-overrides.sql`. Strike rate and batting-order shares still come from Cricsheet.
 

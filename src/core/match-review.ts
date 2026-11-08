@@ -6,6 +6,8 @@ import { isNaturalOpener } from "./batting-order";
 import { isBowlingOption } from "./validator";
 import { calculateDeterministicScore } from "./scoring";
 import { ballsToOvers } from "./overs";
+import { eraAdjusted } from "./era";
+import { hasBattingPhases, hasBowlingPhases, phaseLine, phaseShape } from "./phase-stats";
 
 /**
  * The argument after the game, the way it went at school: your openers against theirs, your
@@ -27,7 +29,7 @@ export interface UnitLine {
 }
 
 export interface Matchup {
-  key: "openers" | "middle" | "keeper" | "allrounders" | "pace" | "spin" | "depth" | "pitch";
+  key: "openers" | "middle" | "keeper" | "allrounders" | "pace" | "spin" | "death" | "finish" | "depth" | "pitch";
   label: string;
   /** What the per-player numbers are, e.g. "avg · SR · inns". */
   cols?: string;
@@ -131,6 +133,34 @@ const PITCH_NEED: Record<string, { what: "seamers" | "spinners" | "hitters"; lab
   HIGH_SCORING_FLAT: { what: "hitters", label: "Suits the flat pitch" },
 };
 
+/**
+ * T20: the two best death bowlers and the two best finishers (from #4-#8), judged on what they did in overs
+ * 16-20 (their level, adjusted for when they played, times how much better or worse they are at the
+ * death, pulled towards normal for small samples). Shown with their raw death numbers and balls.
+ */
+function deathUnits(all: PlayerWithStats[], squad: Squad, f: MatchFormat): { death: Unit; finish: Unit } {
+  const deathEcon = (p: PlayerWithStats) => eraAdjusted(p, f).stats.bowl_economy * phaseShape(p, f, "death").econ;
+  const deathSr = (p: PlayerWithStats) => eraAdjusted(p, f).stats.bat_strike_rate * phaseShape(p, f, "death").sr;
+  const bowlers = all.filter((p) => isBowlingOption(p) && hasBowlingPhases(p, f) && p.stats.bowl_economy > 0).sort((a, b) => deathEcon(a) - deathEcon(b)).slice(0, 2);
+  // Finishers: whoever bats #4-#8, the batters actually in at the death (openers rarely are)
+  const hitters = squad
+    .slice(3, 8)
+    .filter((p): p is PlayerWithStats => !!p && p.primary_role !== "BOWL" && hasBattingPhases(p, f))
+    .sort((a, b) => deathSr(b) - deathSr(a))
+    .slice(0, 2);
+  const show = (p: PlayerWithStats, kind: "econ" | "sr") => {
+    const l = phaseLine(p, "death");
+    const v = kind === "econ" ? l.econ : l.sr;
+    const n = kind === "econ" ? l.bowlBalls : l.batBalls;
+    return { name: p.name, stat: v === undefined ? `— · 0` : `${kind === "econ" ? v.toFixed(1) : Math.round(v)} · ${n}` };
+  };
+  return {
+    // Lower is better for economy: the value is turned round so that higher always wins
+    death: { line: { names: bowlers.map((p) => p.name), stat: bowlers.length ? "" : "nobody proven", players: bowlers.map((p) => show(p, "econ")) }, value: bowlers.length ? 100 / mean(bowlers.map(deathEcon)) : 0 },
+    finish: { line: { names: hitters.map((p) => p.name), stat: hitters.length ? "" : "nobody proven", players: hitters.map((p) => show(p, "sr")) }, value: hitters.length ? mean(hitters.map(deathSr)) : 0 },
+  };
+}
+
 function units(squad: Squad, challenge: Challenge): Record<Matchup["key"], Unit> {
   const f = (challenge.format || "T20") as MatchFormat;
   const all = players(squad);
@@ -186,6 +216,7 @@ function units(squad: Squad, challenge: Challenge): Record<Matchup["key"], Unit>
     // The attack is judged on the bowlers who will bowl most of the overs
     pace: { line: { names: names(pace), stat: pace.length ? "" : "none", players: each(pace, bowlLine) }, value: sum(pace.slice(0, 4).map(bowl)) },
     spin: { line: { names: names(spin), stat: spin.length ? "" : "none", players: each(spin, bowlLine) }, value: sum(spin.slice(0, 3).map(bowl)) },
+    ...(f === "T20" ? deathUnits(all, squad, f) : { death: EMPTY_UNIT, finish: EMPTY_UNIT }),
     depth: { line: { names: names(tail), stat: tail.length ? `#7-#11 ${batStat(tail, f).replace(/ · SR \d+/, "")}` : "" }, value: mean(tail.map(bat)) },
     pitch: {
       line: { names: names(fit), stat: fitStat },
@@ -194,6 +225,8 @@ function units(squad: Squad, challenge: Challenge): Record<Matchup["key"], Unit>
   };
 }
 
+const EMPTY_UNIT: Unit = { line: { names: [], stat: "" }, value: 0 };
+
 const LABELS: Record<Matchup["key"], string> = {
   openers: "Openers",
   middle: "Middle order",
@@ -201,6 +234,8 @@ const LABELS: Record<Matchup["key"], string> = {
   allrounders: "All-rounders",
   pace: "Pace attack",
   spin: "Spin attack",
+  death: "Death bowling",
+  finish: "Finishers",
   depth: "Batting depth",
   pitch: "Pitch fit",
 };
@@ -214,8 +249,11 @@ export function buildHeadToHead(userSquad: Squad, aiSquad: Squad, challenge: Cha
   const f = (challenge.format || "T20") as MatchFormat;
   const cols: Partial<Record<Matchup["key"], string>> = {
     openers: COLS[f].bat, middle: COLS[f].bat, keeper: COLS[f].bat, allrounders: COLS[f].ar, pace: COLS[f].bowl, spin: COLS[f].bowl,
+    death: "econ in overs 16-20 · balls", finish: "SR in overs 16-20 · balls",
   };
-  const rows: Matchup[] = (Object.keys(LABELS) as Matchup["key"][]).map((k) => ({
+  // Death bowling and finishers come from T20 phase stats only
+  const keys = (Object.keys(LABELS) as Matchup["key"][]).filter((k) => f === "T20" || (k !== "death" && k !== "finish"));
+  const rows: Matchup[] = keys.map((k) => ({
     key: k,
     label: label(k),
     ...(cols[k] ? { cols: cols[k] } : {}),
