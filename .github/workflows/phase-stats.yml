@@ -1,0 +1,34 @@
+name: Phase stats from Cricsheet
+
+# Builds data/phase-stats.sql (powerplay, middle and death numbers for every T20I player) from
+# Cricsheet's ball-by-ball data and commits it. Run it from the Actions tab ("Run workflow").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download T20I ball-by-ball data
+        run: |
+          mkdir -p data/raw/t20s_json
+          curl -sSfL https://cricsheet.org/downloads/t20s_json.zip -o data/raw/t20s_json.zip
+          unzip -q data/raw/t20s_json.zip -d data/raw/t20s_json
+      - run: npx tsx src/etl/phase-stats.ts data/raw/t20s_json data/phase-stats.sql
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/phase-stats.sql
+          git diff --cached --quiet && echo "No change" && exit 0
+          git commit -m "data: T20 phase stats from Cricsheet"
+          git push
