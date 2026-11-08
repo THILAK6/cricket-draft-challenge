@@ -104,7 +104,10 @@ Switched from Claude Haiku to Workers AI to stay on the Cloudflare Free plan wit
 - [x] **4.2 Banter line** shown with each AI pick in the banner (and on the toss screen when the AI picks first).
 - [x] **4.3 Never stall.** 2.5 s timeout, errors, an unreadable reply, no binding, or the daily free
   allowance used up → the rule-based pick. The game works fully without it.
-- [x] **4.4 No key needed.** It uses the Worker's `AI` binding. `AI_VOICE=off` switches it off.
+- [x] **4.4 No key needed.** It uses the Worker's `AI` binding.
+- **Switched off by default after play-testing:** the free 8B model got facts wrong (Saeed Ajmal, an
+  off-spinner, called "the leg spin master") and its puns wore thin. The banner shows the rules'
+  accurate reasons again. `AI_VOICE=on` brings the voice back.
 - [ ] **4.5 Optional:** Workers AI writes the post-match commentary in place of Gemini (about 1 call a game).
 - Estimated use: about 2.4 Neurons a pick, 27 a game, so about 350 games a day inside the free 10,000
   Neurons. Check real numbers in the Cloudflare dashboard (Workers AI) or a room's `voiceUsage`.

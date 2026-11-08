@@ -288,9 +288,13 @@ export class DraftRoom implements DurableObject {
     }
   }
 
-  /** The opponent's voice is on when the Workers AI binding exists, unless AI_VOICE is "off". */
+  /**
+   * The opponent's Workers AI voice is off unless AI_VOICE is "on": the small free model got cricket
+   * facts wrong (an off-spinner called a leg-spinner) and its puns wore thin, so the rules' own
+   * reasons, which are always accurate, are shown instead.
+   */
   private voiceOn(): boolean {
-    return !!this.env?.AI && this.env?.AI_VOICE !== "off";
+    return !!this.env?.AI && this.env?.AI_VOICE === "on";
   }
 
   private noLegalPick(squad: (PlayerWithStats | null)[], ctx: PickContext): boolean {

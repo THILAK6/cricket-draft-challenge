@@ -11,7 +11,7 @@ export interface Env {
   DB: D1Database;
   DRAFT_ROOM: DurableObjectNamespace;
   AI?: any;
-  /** "off" silences the AI opponent's Workers AI voice (the rules still pick). */
+  /** "on" lets Workers AI choose the AI's picks from the rules' shortlist and add a line (off by default). */
   AI_VOICE?: string;
   /** Workers AI model for the voice (default in core/ai-voice.ts). */
   AI_VOICE_MODEL?: string;

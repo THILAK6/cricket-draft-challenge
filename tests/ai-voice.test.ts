@@ -87,9 +87,9 @@ describe("in the draft room", () => {
     const m = new Map<string, unknown>();
     return { storage: { get: async (k: string) => m.get(k), put: async (k: string, v: unknown) => void m.set(k, structuredClone(v)), setAlarm: async () => {} } } as any;
   };
-  async function room(ai: unknown) {
+  async function room(ai: unknown, voice = "on") {
     const { challenge, pool } = await buildRandomDraft(d1, "T20", lcg(21));
-    const r = new DraftRoom(store(), { AI: ai });
+    const r = new DraftRoom(store(), { AI: ai, AI_VOICE: voice });
     const state: Partial<DraftState> = {
       roomId: "room_voice", challenge, pool, userPicks: empty(), aiPicks: empty(), currentTurn: "USER", round: 1, maxRounds: 11,
       status: "DRAFTING", lastActionTimestamp: 0, difficulty: "hard", firstPick: "USER",
@@ -111,6 +111,14 @@ describe("in the draft room", () => {
     expect(calls).toBe(2);
     for (const a of out.aiPicks) expect(a.line).toBe("You wanted him? Too slow.");
     expect(out.state.voiceUsage.calls).toBe(2);
+  });
+
+  it("stays quiet by default: no Workers AI calls unless AI_VOICE is on", async () => {
+    let calls = 0;
+    const r = await room({ run: async () => (calls++, { response: "PICK: 1\nLINE: hi" }) }, "");
+    const out = await pick(r);
+    expect(calls).toBe(0);
+    for (const a of out.aiPicks) expect(a.line).toBeUndefined();
   });
 
   it("drafts on with the rules' picks when Workers AI fails", async () => {
