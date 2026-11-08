@@ -206,9 +206,10 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
         needKey = n.key;
       }
     }
-    // Two proper openers, once the XI starts to take shape
-    if (openers < 2 && isNaturalOpener(p) && left <= 2 - openers + 4) {
-      const v = 15;
+    // Two proper openers: a makeshift opener struggles against the new ball (most in Tests). Matters
+    // more as the XI takes shape
+    if (openers < 2 && isNaturalOpener(p) && stage >= 0.25) {
+      const v = (format === "TEST" ? 12 : 8) + 10 * stage;
       if (v > need) {
         need = v;
         needKey = "OPEN";

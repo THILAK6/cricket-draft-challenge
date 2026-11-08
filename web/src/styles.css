@@ -151,11 +151,9 @@ h1, h2, h3, p { margin: 0; }
 .prow .name { font-weight: 700; font-size: 15px; }
 .prow .name .cty { color: var(--muted); font-weight: 600; font-size: 13px; margin-left: 4px; }
 .prow .sub { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; min-width: 0; }
-.prow .rating { width: 34px; text-align: center; font-weight: 800; font-size: 15px; color: var(--gold); flex: none; }
-.prow .rating small { display: block; font-size: 9px; color: var(--faint); font-weight: 700; letter-spacing: 0.05em; }
 .prow .pick { flex: none; min-width: 72px; min-height: 40px; border-radius: 10px; border: 0; background: var(--gold); color: var(--gold-ink); font-weight: 800; }
 .prow .blocked { flex: none; width: 92px; font-size: 11px; line-height: 1.2; color: var(--faint); text-align: right; }
-.prow.dim .name, .prow.dim .rating { opacity: 0.55; }
+.prow.dim .name { opacity: 0.55; }
 .empty { padding: 32px 16px; text-align: center; color: var(--muted); }
 
 /* ---------- AI pick banner ---------- */

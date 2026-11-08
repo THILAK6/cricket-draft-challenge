@@ -3,18 +3,11 @@ import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "../core
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
 import { generateScenario } from "./scenario-generator";
-import { displayRating, playerQuality, stature } from "../core/player-quality";
+import { stature } from "../core/player-quality";
 import { correctRole } from "../core/roles";
 import { themeByKey, type PoolTheme, type ThemeKey } from "../core/themes";
 import { PLAYER_MID_YEAR } from "../core/era-data";
 
-/**
- * Adds a 1-99 rating to each player: format quality on one scale for every pool, so a 95 is a
- * star wherever he turns up (about 30 is a fringe international).
- */
-export function ratePool(pool: PlayerWithStats[], format: MatchFormat): PlayerWithStats[] {
-  return pool.map((p) => ({ ...p, rating: displayRating(playerQuality(p, format)) }));
-}
 
 /**
  * Players in each draft room: a fresh random 44 per draft. Both XIs take 22, so half the pool is
@@ -470,13 +463,13 @@ export async function buildRandomDraft(
       // A freshly generated ground, conditions and selection rule, checked against this very pool
       for (let tries = 0; tries < 12; tries++) {
         const challenge = make(generateScenario(format, rand, { hosts: theme.countries }));
-        if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format), theme: theme.key };
+        if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: pool, theme: theme.key };
       }
       if (!theme.countries) {
         // Otherwise one of the hand-written scenarios
         for (const t of shuffled(templates, rand)) {
           const challenge = make(t);
-          if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: ratePool(pool, format), theme: theme.key };
+          if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: pool, theme: theme.key };
         }
       }
     }
@@ -487,7 +480,7 @@ export async function buildRandomDraft(
   if (result) return result;
   // Extremely unlikely: fall back to the fixed pool every template is verified against.
   const pool = await getPlayerPool(db, format, VERIFIED_POOL_SIZE);
-  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: ratePool(pool, format), theme: "mixed" };
+  return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: pool, theme: "mixed" };
 }
 
 export async function generateValidatedChallenge(

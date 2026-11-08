@@ -124,6 +124,16 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
   Evenly drafted XIs stay near 50/50. Players perform close to their real records against average
   opposition, so stars aren't inflated. Re-measure with `SKILL=<file> npx vitest run tests/skill-signal.test.ts`.
 
+## Phase 5b — No ratings, balance wins (from play-testing)
+
+- [x] **Ratings removed from the game.** No rating column, sort or sheet line, and none in the data
+  the server sends. Players are judged by their numbers (average, strike rate, wickets, economy,
+  caps); the list is in role order with a sort for each stat. Ratings stay internal to the AI.
+- [x] **Balance matters in the match.** A makeshift opener struggles against the new ball (most in
+  Tests), an all-pace or all-spin attack is easier to line up once a batter is in, and non-hitters
+  can't finish in the death overs. A balanced XI (Captain AI) now beats a "top-rated" XI 61% in T20
+  (was 55%), 64.5% in ODIs (was 61.5%) and 53% in Tests (was 47%).
+
 ## Phase 6 — Result screen
 
 - [ ] **6.1 Head-to-head first.** Compare openers, middle order, keeper, all-rounders, pace attack, spin

@@ -96,12 +96,6 @@ export const bowlingRating = (p: PlayerWithStats, format: MatchFormat) => {
   return raw > 0 ? scale(raw, CALIBRATION[format].bowl) : 0;
 };
 
-/** Above 90, ratings bend so the very best still separate instead of all hitting the cap. */
-export function displayRating(q: number): number {
-  const r = q <= 90 ? q : 90 + 9 * (1 - Math.exp(-(q - 90) / 15));
-  return Math.max(1, Math.min(99, Math.round(r)));
-}
-
 /** Format-specific overall quality, about 30-100, from career stats only. */
 export function playerQuality(p: PlayerWithStats, format: string): number {
   const f = (format === "ODI" || format === "TEST" ? format : "T20") as MatchFormat;

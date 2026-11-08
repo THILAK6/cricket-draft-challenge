@@ -4,6 +4,7 @@ import { buildMatchFacts, checkTacticClaims, type MatchFacts, type TacticClaim }
 import { phasesReached, collapsedEarly, comparablePhases, phaseRunRate, PHASE_BOUNDS } from "./phases";
 import type { Challenge, MatchFormat, PitchType, PlayerWithStats } from "./types";
 import { eraAdjusted } from "./era";
+import { isNaturalOpener } from "./batting-order";
 import { computeMatchPerformance, type MatchPerformance } from "./performance";
 import { buildSelectionReport, type SelectionReport } from "./selection-report";
 
@@ -633,6 +634,11 @@ function simulateInnings(
     .map((p, idx) => ({ player: p, slotIndex: idx }))
     .filter((item): item is { player: PlayerWithStats; slotIndex: number } => item.player !== null);
 
+  // Balance: who opens (the first two in the order) and whether the attack has both pace and spin
+  const openerIds = new Set(battersInOrder.slice(0, 2).map((b) => b.player.id));
+  const frontlineAttack = bowlingLineup.filter((p): p is PlayerWithStats => !!p && (p.primary_role === "BOWL" || p.primary_role === "AR"));
+  const oneDimensional = !(frontlineAttack.some((p) => p.bowling_category === "PACE") && frontlineAttack.some((p) => p.bowling_category === "SPIN"));
+
   // Valid bowlers selection:
   // 1. Frontline bowlers & All-Rounders
   const specialistBowlers = bowlingLineup.filter(
@@ -805,7 +811,11 @@ function simulateInnings(
         striker.runs,
         striker.balls,
         isDeterioratedPitch,
-        rng
+        rng,
+        {
+          makeshiftOpener: phase === "PP" && openerIds.has(strikerData.id) && !isNaturalOpener(strikerData),
+          oneDimensional,
+        }
       );
 
       striker.balls++;
@@ -1418,7 +1428,8 @@ function resolveBall(
   batterRunsSoFar: number,
   batterBallsSoFar: number,
   isDeterioratedPitch: boolean,
-  rng: () => number
+  rng: () => number,
+  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean } = {}
 ): { runs: number; isOut: boolean } {
   const isTest = format === "TEST";
   const isOdi = format === "ODI";
@@ -1452,6 +1463,12 @@ function resolveBall(
   // A set batter is harder to dislodge
   if (batterBallsSoFar >= 25 && batterRunsSoFar >= 25) wktChance *= 0.72;
 
+  // Balance. A batter who doesn't usually open, facing the new ball, is a makeshift opener; an
+  // attack of only pace or only spin is easier to line up once a batter is in.
+  if (fit.makeshiftOpener) wktChance *= isTest ? 1.5 : 1.3;
+  const settledAgainstSameness = fit.oneDimensional && batterBallsSoFar >= 20;
+  if (settledAgainstSameness) wktChance *= 0.85;
+
   if (rng() < Math.min(0.5, wktChance)) return { runs: 0, isOut: true };
 
   // --- Runs -------------------------------------------------------------------------------
@@ -1479,6 +1496,12 @@ function resolveBall(
       if (batterRunsSoFar >= 20) rpb *= 1.06;
     }
   }
+
+  // Balance, on the scoring side: makeshift openers are slower, a one-dimensional attack leaks a
+  // little, and a batter who isn't a hitter can't finish in the last overs
+  if (fit.makeshiftOpener) rpb *= 0.9;
+  if (settledAgainstSameness) rpb *= 1.05;
+  if (!isTest && phase === "DEATH" && batter.primary_role !== "BOWL" && batter.stats.finisher_innings < 3 && bat.sr < base.sr * 1.05) rpb *= 0.9;
 
   // Pitch modifier on runs
   if (pitch === "HIGH_SCORING_FLAT") rpb *= 1.1;

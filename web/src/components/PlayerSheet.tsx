@@ -37,7 +37,6 @@ export function PlayerSheet(props: {
             </p>
             <p class="faint" style="font-size:13px;margin-top:2px">
               {s.matches} {format === "TEST" ? "Tests" : format === "ODI" ? "ODIs" : "T20Is"}
-              {p.rating ? ` · rating ${p.rating}/99` : ""}
             </p>
           </div>
           <button type="button" class="btn btn-sm btn-ghost" onClick={props.onClose} aria-label="Close">

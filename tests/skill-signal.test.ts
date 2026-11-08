@@ -56,19 +56,36 @@ function draftSnake(pool: PlayerWithStats[], ch: Challenge, f: MatchFormat): [Sq
   return [arrangeSquad(a, f), arrangeSquad(b, f)];
 }
 
+/** Snake draft: the Captain AI (balanced) against a drafter who always takes the top-rated legal player. */
+function draftBalancedVsTopRated(pool: PlayerWithStats[], ch: Challenge, f: MatchFormat, captainFirst: boolean): [Squad, Squad] {
+  let rest = [...pool];
+  const cap: Squad = Array(11).fill(null), top: Squad = Array(11).fill(null);
+  const first = captainFirst ? cap : top, second = captainFirst ? top : cap;
+  const order = Array.from({ length: 22 }, (_, i) => ((Math.floor(i / 2) % 2 === 0) === (i % 2 === 0) ? first : second));
+  order.forEach((side, i) => {
+    const p = side === cap
+      ? chooseAiPick({ pool: rest, squad: cap, opponentSquad: top, challenge: ch, difficulty: "normal", noiseSeed: 1, round: i })!.player
+      : best(rest, top, ch, f);
+    side[side.indexOf(null)] = p;
+    rest = rest.filter((q) => q.id !== p.id);
+  });
+  return [arrangeSquad(cap, f), arrangeSquad(top, f)];
+}
+
 const avgQ = (xi: Squad, f: MatchFormat) => xi.reduce((s, p) => s + playerQuality(p!, f), 0) / 11;
 
 it.skipIf(!out)("skill signal table", async () => {
-  const lines: string[] = ["format | strong v weak: strong wins | rating gap | even drafts: side A wins | avg innings | sims"];
+  const lines: string[] = ["format | strong v weak: strong wins | rating gap | even drafts: side A wins | balanced v top-rated: balanced wins | avg innings | sims"];
   lines.unshift(`model ${JSON.stringify(BALL_MODEL)}`);
   for (const f of FORMATS) {
     const seeds = f === "TEST" ? 4 : 10;
-    let sw = 0, sn = 0, ew = 0, en = 0, gap = 0, runs = 0, inns = 0;
+    let sw = 0, sn = 0, ew = 0, en = 0, bw = 0, bn = 0, gap = 0, runs = 0, inns = 0;
     for (let d = 0; d < POOLS; d++) {
       const { challenge, pool } = await buildRandomDraft(d1, f, lcg(500 + d));
       const { xi: strong, rest } = draftAlone(pool, challenge, f);
       const { xi: weak } = draftAlone(rest, challenge, f);
       const [ea, eb] = draftSnake(pool, challenge, f);
+      const [bal, top] = draftBalancedVsTopRated(pool, challenge, f, d % 2 === 0);
       gap += avgQ(strong, f) - avgQ(weak, f);
       for (let s = 1; s <= seeds; s++) {
         const seed = d * 1000 + s;
@@ -80,13 +97,16 @@ it.skipIf(!out)("skill signal table", async () => {
         const e = simulateCricketMatch(ea, eb, challenge, seed + 77);
         ew += e.winner === "USER" ? 1 : e.winner === "AI" ? 0 : 0.5;
         en++;
+        const b = simulateCricketMatch(bal, top, challenge, seed + 131);
+        bw += b.winner === "USER" ? 1 : b.winner === "AI" ? 0 : 0.5;
+        bn++;
         for (const inn of [m1.userInnings, m1.aiInnings]) {
           runs += inn.totalRuns;
           inns++;
         }
       }
     }
-    lines.push(`${f} | ${((sw / sn) * 100).toFixed(1)}% | ${(gap / POOLS).toFixed(1)} | ${((ew / en) * 100).toFixed(1)}% | ${(runs / inns).toFixed(0)} | ${sn + en}`);
+    lines.push(`${f} | ${((sw / sn) * 100).toFixed(1)}% | ${(gap / POOLS).toFixed(1)} | ${((ew / en) * 100).toFixed(1)}% | ${((bw / bn) * 100).toFixed(1)}% | ${(runs / inns).toFixed(0)} | ${sn + en + bn}`);
   }
   writeFileSync(out!, lines.join("\n") + "\n");
 }, 1_200_000);

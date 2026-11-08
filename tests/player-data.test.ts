@@ -63,14 +63,9 @@ describe("player ratings", () => {
     }
   });
 
-  it("shows ratings 1-99 that still separate the very best", async () => {
+  it("sends no rating with the players: you judge them by their numbers", async () => {
     const { pool: p } = await buildRandomDraft(d1, "TEST");
-    for (const x of p) {
-      expect(x.rating).toBeGreaterThanOrEqual(1);
-      expect(x.rating).toBeLessThanOrEqual(99);
-    }
-    const tops = p.filter((x) => x.rating! >= 97).length;
-    expect(tops).toBeLessThan(5);
+    for (const x of p) expect(x).not.toHaveProperty("rating");
   });
 });
 
@@ -89,7 +84,7 @@ describe("pool themes", () => {
 
       const legends = await buildRandomDraft(d1, f, Math.random, "legends");
       const mixed = await buildRandomDraft(d1, f, Math.random, "mixed");
-      const avg = (xs: PlayerWithStats[]) => xs.reduce((s, p) => s + (p.rating ?? 0), 0) / xs.length;
+      const avg = (xs: PlayerWithStats[]) => xs.reduce((s, p) => s + playerQuality(p, f), 0) / xs.length;
       expect(avg(legends.pool)).toBeGreaterThan(avg(mixed.pool));
     }
   });

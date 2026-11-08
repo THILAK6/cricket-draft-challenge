@@ -17,7 +17,7 @@ export interface RoomProps {
 
 type Tab = "pool" | "you" | "ai" | "board";
 type Filter = "ALL" | "NEEDED" | RoleKey;
-type Sort = "rating" | "bat" | "bowl" | "caps";
+type Sort = "role" | "avg" | "sr" | "wkts" | "econ" | "caps" | "name";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "ALL", label: "All" },
@@ -37,9 +37,6 @@ function shortReason(reason: string): string {
   return "Not allowed";
 }
 
-const batValue = (p: Player, test: boolean) => (test ? p.stats.bat_average : p.stats.bat_average * 0.5 + p.stats.bat_strike_rate * 0.25);
-const bowlValue = (p: Player, test: boolean) =>
-  p.stats.bowl_wickets <= 0 ? -1 : test ? p.stats.bowl_wickets / Math.max(1, p.stats.matches) * 10 - p.stats.bowl_average / 10 : p.stats.bowl_wickets / Math.max(1, p.stats.matches) * 10 - p.stats.bowl_economy;
 
 export function Draft(props: RoomProps) {
   const { state } = props;
@@ -48,7 +45,8 @@ export function Draft(props: RoomProps) {
   const [tab, setTab] = useState<Tab>("pool");
   const [side, setSide] = useState<"you" | "ai" | "board">("you");
   const [filter, setFilter] = useState<Filter>("ALL");
-  const [sort, setSort] = useState<Sort>("rating");
+  // No ratings: the list is in role order, and every sort is a plain career number
+  const [sort, setSort] = useState<Sort>("role");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Player | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,18 +81,23 @@ export function Draft(props: RoomProps) {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const test = format === "TEST";
     let list = state.pool.filter((p) => {
       if (q && !p.name.toLowerCase().includes(q) && !p.country.toLowerCase().includes(q)) return false;
       if (filter === "ALL") return true;
       if (filter === "NEEDED") return openNeeds.some((n) => n.matches(p));
       return roleKey(p) === filter;
     });
+    const ROLE_ORDER: Record<RoleKey, number> = { BAT: 0, WK: 1, AR: 2, PACE: 3, SPIN: 4 };
+    const bowls = (p: Player) => p.stats.bowl_wickets > 0 && p.stats.bowl_economy > 0;
+    // Higher first, except economy (lower is better); players who don't bowl go last on bowling sorts
     const key: Record<Sort, (p: Player) => number> = {
-      rating: (p) => p.rating ?? 0,
-      bat: (p) => batValue(p, test),
-      bowl: (p) => bowlValue(p, test),
+      role: (p) => -ROLE_ORDER[roleKey(p)],
+      avg: (p) => p.stats.bat_average,
+      sr: (p) => p.stats.bat_strike_rate,
+      wkts: (p) => p.stats.bowl_wickets,
+      econ: (p) => (bowls(p) ? -p.stats.bowl_economy : -99),
       caps: (p) => p.stats.matches,
+      name: () => 0,
     };
     list = [...list].sort((a, b) => key[sort](b) - key[sort](a) || a.name.localeCompare(b.name));
     return list;
@@ -134,10 +137,13 @@ export function Draft(props: RoomProps) {
         <div class="search">
           <input type="search" placeholder="Search player or country" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} aria-label="Search players" />
           <select value={sort} onChange={(e) => setSort((e.target as HTMLSelectElement).value as Sort)} aria-label="Sort players">
-            <option value="rating">Best</option>
-            <option value="bat">Batting</option>
-            <option value="bowl">Bowling</option>
+            <option value="role">By role</option>
+            <option value="avg">Batting average</option>
+            <option value="sr">Strike rate</option>
+            <option value="wkts">Wickets</option>
+            <option value="econ">Economy</option>
             <option value="caps">Caps</option>
+            <option value="name">Name</option>
           </select>
         </div>
         <div class="filters" role="tablist" aria-label="Filter by role">
@@ -174,10 +180,6 @@ export function Draft(props: RoomProps) {
           const rk = roleKey(p);
           return (
             <div class={`prow ${l.ok ? "" : "dim"}`} key={p.id}>
-              <div class="rating" title="Rating from career stats in this format (1-99)">
-                {p.rating ?? "–"}
-                <small>RATING</small>
-              </div>
               <button type="button" class="main" onClick={() => setOpen(p)} aria-label={`${p.name}, details`}>
                 <span class="name ellipsis">
                   {shortName(p)}
