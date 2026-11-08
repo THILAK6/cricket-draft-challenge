@@ -52,7 +52,9 @@ Found by playing a full T20 draft on an emulated iPhone 13 (390 × 664 viewport)
 - [x] **U.7 Your XI screen.** Rows are tall, with ▲▼ and × buttons on every player. Use a compact
   list during the draft, and a single "set batting order" step at the end (ties to 1.4).
 - [x] **U.8 Pre-match screen.** Put the bowling plan (new ball, death bowler) in a simple bottom sheet
-  with sensible defaults, and make "Play match" the main action.
+  with sensible defaults, and make "Play match" the main action. _Later:_ the plan was removed. The
+  captain picks bowlers from their records (strike bowlers take the new ball, the tightest close the
+  innings, T20 from real phase numbers), and the batting order is set by drag and drop.
 - [x] **U.9 Result screen on mobile.** A sticky scoreline, collapsible sections, and scorecards closed by
   default (the layout itself is Phase 6).
 - [x] **U.10 Plain language.** Replace jargon such as "selection points", "Venue & conditions

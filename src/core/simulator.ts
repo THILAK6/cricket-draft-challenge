@@ -1308,6 +1308,19 @@ function selectBowlerForOver(
       if (isPartTimer) weight -= 500;
     }
 
+    // The captain goes by the record: better bowlers bowl more, the best wicket-takers share the new
+    // ball, and the tightest bowlers get the death (T20: from their actual phase numbers, below)
+    if (!isPartTimer) {
+      const prof = ballProfile(b, format);
+      const base = FORMAT_BASE[format];
+      const strike = base.bowlSr / prof.bowlSr - 1; // +0.2 = takes wickets 20% more often than typical
+      const tight = 1 - prof.econ / base.econ; // +0.1 = 10% cheaper than typical
+      add(strike * 120 + tight * 160);
+      const phaseKnown = format === "T20" && hasBowlingPhases(b, format);
+      if (!phaseKnown && phase === "PP") add(strike * (over <= 2 ? 260 : 120), strike >= 0.2 && over <= 2 ? `${b.name}, the main strike bowler, takes the new ball` : undefined, "open");
+      if (!phaseKnown && phase === "DEATH" && !isTest) add(tight * 400, tight >= 0.1 ? `${b.name}, the tightest bowler, closes the innings` : undefined, "death");
+    }
+
     // T20 with phase stats: give the ball to whoever is actually good in this phase
     if (format === "T20" && hasBowlingPhases(b, format) && !isPartTimer) {
       const sh = phaseShape(b, format, PHASE_OF_SIM[phase]);
@@ -1318,10 +1331,8 @@ function selectBowlerForOver(
 
     if (phase === "DEATH") {
       if (format === "T20") {
-        if (!hasBowlingPhases(b, format) && b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 7.8) weight += 50;
         if (isPacer) weight += 25;
       } else if (format === "ODI") {
-        if (b.stats.bowl_economy > 0 && b.stats.bowl_economy <= 5.5) weight += 45;
         if (isPacer) weight += 25;
       } else {
         if (isPacer) weight += 40;

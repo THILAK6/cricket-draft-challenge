@@ -125,7 +125,8 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         expect(after[2]).toBe(before[0]);
         expect(after[0]).toBe(before[1]);
         expect(await overflow()).toBe(0);
-        await page.click("summary:has-text('Bowling plan')");
+        // No bowling plan to fill in: the captain picks bowlers from their records
+        expect(await page.locator("summary:has-text('Bowling plan')").count()).toBe(0);
         expect(await overflow()).toBe(0);
         await page.click("text=Play the match");
         await page.waitForSelector(".scorehead", { timeout: 20_000 });

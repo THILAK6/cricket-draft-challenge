@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../api";
-import { isBowlingOption } from "../../../src/core/validator";
 import { keyStats, PITCH_LABEL, ROLE_SHORT, roleKey, shortName, type Player } from "../format";
 import { XIList, type RoomProps } from "./Draft";
 import { PlayerSheet } from "./PlayerSheet";
@@ -10,8 +9,6 @@ export function Lineup(props: RoomProps) {
   const { state } = props;
   const format = state.challenge.format;
   const [busy, setBusy] = useState(false);
-  const [newBall, setNewBall] = useState<[string, string]>(["", ""]);
-  const [death, setDeath] = useState("");
   const [open, setOpen] = useState<Player | null>(null);
   const [view, setView] = useState<"you" | "ai">("you");
   const squad = state.userPicks;
@@ -77,13 +74,11 @@ export function Lineup(props: RoomProps) {
     return { transform: "translateY(0)" };
   };
 
-  const bowlers = squad.filter((p): p is Player => !!p && p.primary_role !== "WK" && isBowlingOption(p));
-
   const play = async () => {
     setBusy(true);
     try {
-      const plan = { newBall: newBall.filter(Boolean), death: death || undefined };
-      const { state: next } = await api.play(props.roomId, plan);
+      // Who bowls when is the captain's call, from each bowler's record
+      const { state: next } = await api.play(props.roomId, {});
       props.onState(next);
       window.scrollTo(0, 0);
     } catch (e) {
@@ -91,19 +86,6 @@ export function Lineup(props: RoomProps) {
       setBusy(false);
     }
   };
-
-  const select = (value: string, onChange: (v: string) => void, exclude: string[] = []) => (
-    <select value={value} onChange={(e) => onChange((e.target as HTMLSelectElement).value)}>
-      <option value="">Auto</option>
-      {bowlers
-        .filter((b) => !exclude.includes(b.id) || b.id === value)
-        .map((b) => (
-          <option value={b.id}>
-            {shortName(b)} · {ROLE_SHORT[roleKey(b)]}
-          </option>
-        ))}
-    </select>
-  );
 
   return (
     <div class="lineup">
@@ -129,7 +111,7 @@ export function Lineup(props: RoomProps) {
 
       {view === "you" ? (
         <div class={`xi lineup-list ${drag ? "dragging" : ""}`} style="margin-top:6px">
-          <p class="faint" style="font-size:12px;padding:0 16px 4px">Drag ⠿ to change the order.</p>
+          <p class="faint" style="font-size:12px;padding:0 16px 4px">Drag ⠿ to change the order. Your captain picks who bowls when, from their records.</p>
           {squad.map((p, i) =>
             p ? (
               <div class={`xrow ${drag?.from === i ? "lifted" : ""}`} style={rowStyle(i)} key={p.id}>
@@ -168,26 +150,6 @@ export function Lineup(props: RoomProps) {
         </div>
       )}
 
-      <details class="box">
-        <summary>Bowling plan (optional)</summary>
-        <div class="inner">
-          <p class="muted" style="font-size:13px">Leave it on Auto and your captain picks from the conditions.</p>
-          <div class="two">
-            <label class="field">
-              New ball
-              {select(newBall[0], (v) => setNewBall([v, newBall[1]]), [newBall[1]])}
-            </label>
-            <label class="field">
-              Other end
-              {select(newBall[1], (v) => setNewBall([newBall[0], v]), [newBall[0]])}
-            </label>
-          </div>
-          <label class="field">
-            Death overs
-            {select(death, setDeath)}
-          </label>
-        </div>
-      </details>
 
       <div class="sticky-cta">
         <button type="button" class="btn btn-primary" disabled={busy} onClick={play}>
