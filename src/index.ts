@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DraftRoom } from "./durable-objects/DraftRoom";
-import { generateValidatedChallenge, buildRandomDraft, saveChallenge } from "./worker/challenge-generator";
+import { generateValidatedChallenge } from "./worker/challenge-generator";
 import type { PlayerWithStats } from "./core/types";
 import type { Challenge, MatchFormat } from "./core/types";
 
@@ -104,56 +104,27 @@ app.post("/api/challenges/generate", async (c) => {
   }
 });
 
-// Start a new draft room session with a challenge
+// Start a new draft room. The Worker only picks a room id and forwards: the room (a Durable
+// Object, 30 s CPU per request) loads the pool and builds the draft, so this request stays far
+// under the Workers Free plan's 10 ms CPU limit even in a cold isolate.
 app.post("/api/draft/start", async (c) => {
   try {
-    const body = await c.req.json<{ challengeId?: string; format?: MatchFormat; difficulty?: string; theme?: string }>();
+    const body = await c.req.json<{ format?: MatchFormat; difficulty?: string; theme?: string }>().catch(() => ({}) as any);
     const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
-    // The scenario and the 30-player pool are both random per draft; nothing is selectable.
     const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
-    const { challenge, pool, theme } = await buildRandomDraft(c.env.DB, format, Math.random, body.theme);
-    await saveChallenge(c.env.DB, challenge);
-
-    // Instantiate unique Durable Object room
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const doId = c.env.DRAFT_ROOM.idFromName(roomId);
-    const stub = c.env.DRAFT_ROOM.get(doId);
-
-    const initState = {
-      roomId,
-      challenge,
-      pool,
-      userPicks: Array(11).fill(null),
-      aiPicks: Array(11).fill(null),
-      currentTurn: "USER",
-      round: 1,
-      maxRounds: 11,
-      status: "DRAFTING",
-      lastActionTimestamp: Date.now(),
-      difficulty,
-      theme,
-    };
-
-    // Initialize state inside the Durable Object
-    const initRes = await stub.fetch(
-      new Request(`http://internal/init`, {
+    const stub = c.env.DRAFT_ROOM.get(c.env.DRAFT_ROOM.idFromName(roomId));
+    const res = await stub.fetch(
+      new Request("http://internal/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(initState),
+        body: JSON.stringify({ roomId, format, difficulty, theme: body.theme }),
       })
     );
-
-    if (!initRes.ok) {
-      return c.json({ error: "Failed to initialize draft room state" }, 500);
-    }
-
-    return c.json({
-      success: true,
-      roomId,
-      challenge,
-      poolSize: pool.length,
-      theme,
-    });
+    const data = (await res.json()) as any;
+    if (!res.ok) return c.json({ error: data?.error || "Failed to start draft room" }, 500);
+    const state = data.state;
+    return c.json({ success: true, roomId, challenge: state.challenge, poolSize: state.pool.length, theme: state.theme });
   } catch (err: any) {
     console.error("[API] Failed to start draft room:", err);
     return c.json({ error: err.message || "Failed to start draft room" }, 500);
@@ -169,8 +140,8 @@ app.all("/api/room/:roomId/*", async (c) => {
   const url = new URL(c.req.url);
   const doPath = url.pathname.replace(`/api/room/${roomId}`, "") || "/";
 
-  // Room initialization is internal-only (done by /api/draft/start); never expose it publicly.
-  if (doPath.endsWith("/init")) {
+  // Room creation is internal-only (done by /api/draft/start); never expose it publicly.
+  if (doPath.endsWith("/init") || doPath.endsWith("/create")) {
     return c.json({ error: "Not found" }, 404);
   }
   const doUrl = new URL(doPath + url.search, url.origin);

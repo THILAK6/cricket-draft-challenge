@@ -17,9 +17,20 @@ const NEUTRAL: EraFactors = { sr: 1, avg: 1, econ: 1, bavg: 1 };
  * a 75 ODI strike rate in 2002 is worth more than the same number in 2016. Players with no era data
  * (or synthetic test players) are left unchanged.
  */
+const factorCache = new Map<string, EraFactors>();
 export function eraFactors(p: { id: string }, format: MatchFormat): EraFactors {
   const year = PLAYER_MID_YEAR[format]?.[p.id];
   if (!year) return NEUTRAL;
+  // Same (format, year) always gives the same factors: compute each once per isolate
+  const key = `${format}:${year}`;
+  const hit = factorCache.get(key);
+  if (hit) return hit;
+  const f = computeFactors(format, year);
+  factorCache.set(key, f);
+  return f;
+}
+
+function computeFactors(format: MatchFormat, year: number): EraFactors {
   const table = ERA_BASELINES[format];
   const all = table.all;
   let era = table[bucketOf(format, year)];
@@ -37,28 +48,30 @@ export function eraFactors(p: { id: string }, format: MatchFormat): EraFactors {
   };
 }
 
-const cache = new WeakMap<PlayerWithStats, Map<MatchFormat, PlayerWithStats>>();
+/**
+ * Adjusted stats, cached by the stats object: copies of a player (`{ ...p, primary_role }`) share
+ * their stats, so they share the cache entry too.
+ */
+const cache = new WeakMap<PlayerWithStats["stats"], Map<MatchFormat, PlayerWithStats["stats"]>>();
 
 /** The player with strike rate, average, economy and bowling average scaled to the common baseline. */
 export function eraAdjusted(p: PlayerWithStats, format: MatchFormat): PlayerWithStats {
-  let byFormat = cache.get(p);
-  const hit = byFormat?.get(format);
-  if (hit) return hit;
-  const f = eraFactors(p, format);
-  const out: PlayerWithStats =
-    f === NEUTRAL
-      ? p
-      : {
-          ...p,
-          stats: {
+  let byFormat = cache.get(p.stats);
+  let stats = byFormat?.get(format);
+  if (!stats) {
+    const f = eraFactors(p, format);
+    stats =
+      f === NEUTRAL
+        ? p.stats
+        : {
             ...p.stats,
             bat_strike_rate: p.stats.bat_strike_rate * f.sr,
             bat_average: p.stats.bat_average * f.avg,
             bowl_economy: p.stats.bowl_economy * f.econ,
             bowl_average: p.stats.bowl_average * f.bavg,
-          },
-        };
-  if (!byFormat) cache.set(p, (byFormat = new Map()));
-  byFormat.set(format, out);
-  return out;
+          };
+    if (!byFormat) cache.set(p.stats, (byFormat = new Map()));
+    byFormat.set(format, stats);
+  }
+  return stats === p.stats ? p : { ...p, stats };
 }

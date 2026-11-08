@@ -23,8 +23,22 @@ const PRIOR: Record<MatchFormat, { avg: number; sr: number; batK: number; bavg: 
 
 const shrink = (value: number, n: number, prior: number, k: number) => (value * n + prior * k) / (n + k);
 
+/** Raw values depend only on a player's stats and era, so they are cached by the stats object. */
+const rawCache = new WeakMap<PlayerWithStats["stats"], Map<string, number>>();
+function memo(p: PlayerWithStats, key: string, fn: () => number): number {
+  let m = rawCache.get(p.stats);
+  if (!m) rawCache.set(p.stats, (m = new Map()));
+  let v = m.get(key);
+  if (v === undefined) m.set(key, (v = fn()));
+  return v;
+}
+
 /** Raw batting value: average and strike rate combined the way the format rewards them. */
 export function battingRaw(raw: PlayerWithStats, format: MatchFormat): number {
+  return memo(raw, `bat:${format}`, () => battingRawUncached(raw, format));
+}
+
+function battingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
   const p = eraAdjusted(raw, format);
   const s = p.stats;
   const pr = PRIOR[format];
@@ -38,6 +52,10 @@ export function battingRaw(raw: PlayerWithStats, format: MatchFormat): number {
 
 /** Raw bowling value: wickets and economy combined the way the format rewards them. 0 for non-bowlers. */
 export function bowlingRaw(raw: PlayerWithStats, format: MatchFormat): number {
+  return memo(raw, `bowl:${format}`, () => bowlingRawUncached(raw, format));
+}
+
+function bowlingRawUncached(raw: PlayerWithStats, format: MatchFormat): number {
   const p = eraAdjusted(raw, format);
   const s = p.stats;
   const pr = PRIOR[format];

@@ -6,6 +6,10 @@ import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
 import { chooseAiPick } from "../core/ai-draft";
 import { arrangeSquad } from "../core/batting-order";
+import { buildRandomDraft, saveChallenge } from "../worker/challenge-generator";
+
+/** Rooms delete themselves this long after they were created, so storage never fills up (5 GB on the Free plan). */
+export const ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Stable per-room number: Easy's misjudgements differ from match to match but replay identically. */
 function roomSeed(roomId: string): number {
@@ -67,6 +71,31 @@ export class DraftRoom implements DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
+    // Internal: build a fresh draft (pool + scenario) here, where the CPU budget is 30 s, then start it
+    if (url.pathname.endsWith("/create") && request.method === "POST") {
+      if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
+      const body = await readJson<{ roomId?: string; format?: MatchFormat; difficulty?: DraftState["difficulty"]; theme?: string }>(request);
+      if (!body?.roomId || !this.env?.DB) return Response.json({ error: "Invalid create payload" }, { status: 400 });
+      const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
+      const { challenge, pool, theme } = await buildRandomDraft(this.env.DB, format, Math.random, body.theme);
+      // Keeping a record of the scenario is optional: never fail the draft over it
+      await saveChallenge(this.env.DB, challenge).catch(() => {});
+      return this.initialise({
+        roomId: body.roomId,
+        challenge,
+        pool,
+        userPicks: Array(11).fill(null),
+        aiPicks: Array(11).fill(null),
+        currentTurn: "USER",
+        round: 1,
+        maxRounds: 11,
+        status: "DRAFTING",
+        lastActionTimestamp: Date.now(),
+        difficulty: body.difficulty ?? "normal",
+        theme,
+      });
+    }
+
     if (url.pathname.endsWith("/init") && request.method === "POST") {
       // A room can only be initialized once; the public proxy also blocks this path.
       if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
@@ -74,20 +103,7 @@ export class DraftRoom implements DurableObject {
       if (!body || !body.challenge || !Array.isArray(body.pool)) {
         return Response.json({ error: "Invalid init payload" }, { status: 400 });
       }
-      body.matchSeed = body.matchSeed ?? generateSeed();
-      // The toss: whoever wins it picks first
-      body.firstPick = body.firstPick ?? (generateSeed() % 2 === 0 ? "USER" : "AI");
-      body.pickOrder = snakeOrder(body.firstPick);
-      body.pickIndex = 0;
-      body.pickLog = [];
-      body.lastAiPicks = [];
-      body.status = "DRAFTING";
-      this.draftState = body;
-      this.normalize(body);
-      body.currentTurn = body.pickOrder[0];
-      this.runAiTurns();
-      await this.persistAndBroadcast("INIT");
-      return Response.json({ success: true, state: this.draftState });
+      return this.initialise(body);
     }
 
     if (url.pathname.endsWith("/state") && request.method === "GET") {
@@ -126,6 +142,32 @@ export class DraftRoom implements DurableObject {
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  /** Toss, snake order, the AI's first pick if it won the toss, and the room's self-deletion alarm. */
+  private async initialise(body: DraftState): Promise<Response> {
+    body.matchSeed = body.matchSeed ?? generateSeed();
+    // The toss: whoever wins it picks first
+    body.firstPick = body.firstPick ?? (generateSeed() % 2 === 0 ? "USER" : "AI");
+    body.pickOrder = snakeOrder(body.firstPick);
+    body.pickIndex = 0;
+    body.pickLog = [];
+    body.lastAiPicks = [];
+    body.status = "DRAFTING";
+    this.draftState = body;
+    this.normalize(body);
+    body.currentTurn = body.pickOrder[0];
+    this.runAiTurns();
+    await this.persistAndBroadcast("INIT");
+    // One alarm per room (a single row written): clean up a week later
+    await this.state.storage.setAlarm?.(Date.now() + ROOM_TTL_MS);
+    return Response.json({ success: true, state: this.draftState });
+  }
+
+  /** The room's week is up: delete everything it stored. */
+  async alarm() {
+    await this.state.storage.deleteAll();
+    this.draftState = null;
   }
 
   private format(): MatchFormat {

@@ -24,7 +24,7 @@ try {
 const DIST = resolve("dist");
 const TYPES: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 
-function fakeRoomNamespace() {
+function fakeRoomNamespace(roomEnv: () => unknown) {
   const rooms = new Map<string, DraftRoom>();
   const store = () => {
     const m = new Map<string, unknown>();
@@ -33,16 +33,15 @@ function fakeRoomNamespace() {
   return {
     idFromName: (name: string) => name,
     get: (id: string) => {
-      if (!rooms.has(id)) rooms.set(id, new DraftRoom(store(), {}));
+      if (!rooms.has(id)) rooms.set(id, new DraftRoom(store(), roomEnv()));
       return rooms.get(id)!;
     },
   };
 }
 
-const env = {
-  DB: { prepare: (sql: string) => ({ bind: (...a: unknown[]) => ({ ...(d1.prepare(sql) as any).bind(...a), run: async () => ({}), first: async () => null }) }) },
-  DRAFT_ROOM: fakeRoomNamespace(),
-};
+const DB = { prepare: (sql: string) => ({ bind: (...a: unknown[]) => ({ ...(d1.prepare(sql) as any).bind(...a), run: async () => ({}), first: async () => null }) }) };
+// Rooms get the database too: they build their own drafts
+const env = { DB, DRAFT_ROOM: fakeRoomNamespace(() => ({ DB })) };
 
 let server: Server;
 let base = "";
