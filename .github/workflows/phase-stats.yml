@@ -25,7 +25,11 @@ jobs:
         run: |
           for f in t20s odis tests; do
             mkdir -p data/raw/${f}_json
-            curl -sSfL https://cricsheet.org/downloads/${f}_json.zip -o data/raw/${f}_json.zip
+            # Cricsheet sometimes answers with something that is not a zip: try again, and check the file
+            for attempt in 1 2 3 4; do
+              curl -sSfL https://cricsheet.org/downloads/${f}_json.zip -o data/raw/${f}_json.zip && unzip -tq data/raw/${f}_json.zip >/dev/null && break
+              echo "download of $f failed (attempt $attempt)"; sleep $((attempt * 15))
+            done
             unzip -q data/raw/${f}_json.zip -d data/raw/${f}_json
           done
       - run: npx tsx src/etl/splits.ts data/raw

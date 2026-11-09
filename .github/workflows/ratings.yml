@@ -25,7 +25,11 @@ jobs:
       - name: Download ball-by-ball data
         run: |
           mkdir -p data/raw/t20s_json
-          curl -sSfL https://cricsheet.org/downloads/t20s_json.zip -o data/raw/t20s_json.zip
+          # Cricsheet sometimes answers with something that is not a zip: try again, and check the file
+          for attempt in 1 2 3 4; do
+            curl -sSfL https://cricsheet.org/downloads/t20s_json.zip -o data/raw/t20s_json.zip && unzip -tq data/raw/t20s_json.zip >/dev/null && break
+            echo "download failed (attempt $attempt)"; sleep $((attempt * 15))
+          done
           unzip -q data/raw/t20s_json.zip -d data/raw/t20s_json
       - run: npx tsx src/etl/ratings.ts data/raw
       - name: Commit if changed
