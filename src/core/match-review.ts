@@ -42,6 +42,12 @@ export interface HeadToHead {
   rows: Matchup[];
   /** Match-ups each side won. */
   won: Record<Side, number>;
+  /**
+   * The rows that move the result most in this format, from the match engine. Counting rows won says
+   * nothing about who is stronger (on replayed pairs it picked the stronger side 40-49% of the time),
+   * so the card shows who leads where it counts instead.
+   */
+  matters?: Matchup["key"][];
 }
 
 export interface DraftAward {
@@ -245,6 +251,41 @@ const LABELS: Record<Matchup["key"], string> = {
   pitch: "Pitch fit",
 };
 
+/**
+ * How much each unit's edge moves the result, per format: fitted on drafted pairs replayed in the
+ * match engine (tests/h2h-calibration.test.ts). Applied to the relative difference between the sides.
+ */
+export const ROW_WEIGHTS: Record<MatchFormat, Partial<Record<Matchup["key"], number>>> = {
+  T20: { openers: -0.028, middle: 0.011, keeper: -0.006, allrounders: -0.001, pace: -0.015, spin: -0.012, death: 0.042, finish: 0.058, depth: 0.007, pitch: 0.053 },
+  ODI: { openers: 0.056, middle: 0.058, keeper: 0.071, allrounders: 0.006, pace: -0.034, spin: -0.023, death: 0.058, finish: 0.203, depth: -0.097, pitch: 0.143 },
+  TEST: { openers: -0.025, middle: 0.52, keeper: -0.114, allrounders: -0.018, pace: 0.043, spin: -0.046, depth: 0.28, pitch: 0.12 },
+};
+
+/** The rows that count most in a format: those with at least 40% of the biggest weight (at most three). */
+export function rowsThatMatter(f: MatchFormat): Matchup["key"][] {
+  const w = Object.entries(ROW_WEIGHTS[f]).filter(([, v]) => (v ?? 0) > 0) as [Matchup["key"], number][];
+  const top = Math.max(0, ...w.map(([, v]) => v));
+  return w.filter(([, v]) => v >= 0.4 * top).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k);
+}
+
+/** One unit's relative difference between the sides (user minus AI, over their average), within +-1. */
+export const relDiff = (u: number, a: number) => {
+  const m = (Math.abs(u) + Math.abs(a)) / 2;
+  return m === 0 ? 0 : Math.max(-1, Math.min(1, (u - a) / m));
+};
+
+/** The relative difference of every unit, for fitting ROW_WEIGHTS. */
+export function unitDiffs(userSquad: Squad, aiSquad: Squad, challenge: Challenge): Partial<Record<Matchup["key"], number>> {
+  const u = units(userSquad, challenge), a = units(aiSquad, challenge);
+  const f = (challenge.format || "T20") as MatchFormat;
+  const out: Partial<Record<Matchup["key"], number>> = {};
+  for (const k of Object.keys(LABELS) as Matchup["key"][]) {
+    if (f === "TEST" && (k === "death" || k === "finish")) continue;
+    out[k] = relDiff(u[k].value, a[k].value);
+  }
+  return out;
+}
+
 /** Position by position: whose unit is better on career numbers. */
 export function buildHeadToHead(userSquad: Squad, aiSquad: Squad, challenge: Challenge): HeadToHead {
   const u = units(userSquad, challenge);
@@ -268,7 +309,7 @@ export function buildHeadToHead(userSquad: Squad, aiSquad: Squad, challenge: Cha
     edge: k === "pitch" ? (Math.abs(u[k].value - a[k].value) < 2 ? "EVEN" : u[k].value > a[k].value ? "USER" : "AI") : edgeOf(u[k].value, a[k].value),
   }));
   const won = { USER: rows.filter((r) => r.edge === "USER").length, AI: rows.filter((r) => r.edge === "AI").length };
-  return { rows, won };
+  return { rows, won, matters: rowsThatMatter(f).filter((k) => keys.includes(k)) };
 }
 
 /** "192 off 354 and 3/125 (51.0 ov)": the bigger part of the day first. */

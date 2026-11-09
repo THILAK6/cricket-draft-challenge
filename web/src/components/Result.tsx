@@ -98,7 +98,7 @@ export function Result(props: ResultProps) {
 
       <WinChanceLine chance={review.winChance} winner={sim.winner} />
 
-      <HeadToHeadCard h2h={review.headToHead} />
+      <HeadToHeadCard h2h={review.headToHead} format={sim.format} />
 
       {(results?.decisiveDifference || sim.keyMoments.length > 0) && (
         <div class="card stack" style="gap:8px">
@@ -215,17 +215,35 @@ function names(xs: string[]): string {
   return s.length === 2 ? `${s[0]} & ${s[1]}` : s.join(", ");
 }
 
-function HeadToHeadCard({ h2h }: { h2h: HeadToHead }) {
+function HeadToHeadCard({ h2h, format }: { h2h: HeadToHead; format: string }) {
   const level = h2h.rows.length - h2h.won.USER - h2h.won.AI;
   return (
     <div class="card stack" style="gap:6px">
       <div class="label">Head to head</div>
-      <p class="h2h-sum">
-        <b class="you">You {h2h.won.USER}</b>
-        <span class="muted"> · </span>
-        <b class="ai">AI {h2h.won.AI}</b>
-        {level > 0 && <span class="muted"> · {level} level</span>}
-      </p>
+      {h2h.matters?.length ? (
+        <p class="h2h-sum">
+          <span class="muted">Counts most in {format === "TEST" ? "a Test" : `${format === "ODI" ? "an" : "a"} ${format}`}: </span>
+          {h2h.matters.map((k, i) => {
+            const r = h2h.rows.find((x) => x.key === k);
+            if (!r) return null;
+            return (
+              <span>
+                {i > 0 ? <span class="muted">, </span> : null}
+                <b class={r.edge === "USER" ? "you" : r.edge === "AI" ? "ai" : ""}>{r.label}</b>
+                <span class="muted"> ({r.edge === "USER" ? "you lead" : r.edge === "AI" ? "AI leads" : "level"})</span>
+              </span>
+            );
+          })}
+        </p>
+      ) : (
+        // Matches saved before this: the old count
+        <p class="h2h-sum">
+          <b class="you">You {h2h.won.USER}</b>
+          <span class="muted"> · </span>
+          <b class="ai">AI {h2h.won.AI}</b>
+          {level > 0 && <span class="muted"> · {level} level</span>}
+        </p>
+      )}
       <div class="h2h">
         {h2h.rows.map((r) => (
           <div class={`row ${r.edge === "USER" ? "u" : r.edge === "AI" ? "a" : "e"}`}>
@@ -242,7 +260,7 @@ function HeadToHeadCard({ h2h }: { h2h: HeadToHead }) {
         ))}
       </div>
       <p class="faint" style="font-size:12px">
-        Career numbers in this format. The arrow points to the stronger unit; a short career counts for less than the same numbers over a long one.
+        Career numbers in this format. The arrow points to the stronger unit; a short career counts for less than the same numbers over a long one. Winning more rows does not mean the stronger side: the replays above say what it adds up to.
       </p>
     </div>
   );

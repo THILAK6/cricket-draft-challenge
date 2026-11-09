@@ -51,6 +51,9 @@ describe("head to head", () => {
     expect(buildHeadToHead(test.pool.slice(0, 11), test.pool.slice(11, 22), test.challenge).rows.map((r) => r.key)).not.toContain("death");
     expect(h.rows.every((r) => r.edge === "EVEN")).toBe(true);
     expect(h.won).toEqual({ USER: 0, AI: 0 });
+    // The rows that count most in this format (from the engine), never the row count
+    expect(h.matters!.length).toBeGreaterThan(0);
+    expect(h.matters!.every((k) => h.rows.some((r) => r.key === k))).toBe(true);
   });
 
   it("shows career numbers, never a rating", async () => {
