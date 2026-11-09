@@ -131,6 +131,17 @@ const norms: Record<Fmt, { phase: Record<string, { bat: Bat; bowl: Bowl }>; pos:
 const eraBucket = (fmt: Fmt, year: number) => String(fmt === "T20" ? Math.floor(year / 3) * 3 : Math.floor(year / 5) * 5);
 const era: Record<Fmt, Record<string, { bat: Bat; bowl: Bowl }>> = { T20: {}, ODI: {}, TEST: {} };
 
+/**
+ * Real innings by position in the match (Full Member v Full Member, full-length): how many, mean runs,
+ * mean overs, how often all out or declared. And how matches end. For checking the engine against reality.
+ */
+const innStats: Record<Fmt, { n: number; runs: number; balls: number; allOut: number; declared: number }[]> = { T20: [], ODI: [], TEST: [] };
+const resStats: Record<Fmt, { matches: number; draws: number; ties: number; decisive: number; batFirstWins: number }> = {
+  T20: { matches: 0, draws: 0, ties: 0, decisive: 0, batFirstWins: 0 },
+  ODI: { matches: 0, draws: 0, ties: 0, decisive: 0, batFirstWins: 0 },
+  TEST: { matches: 0, draws: 0, ties: 0, decisive: 0, batFirstWins: 0 },
+};
+
 /** First-innings totals: at each game ground (all internationals), and Full Member matches overall. */
 const par: Record<Fmt, { ground: Record<string, number[]>; all: number[] }> = { T20: { ground: {}, all: [] }, ODI: { ground: {}, all: [] }, TEST: { ground: {}, all: [] } };
 
@@ -168,6 +179,8 @@ for (const src of SOURCES) {
     innings.forEach((inn: any, idx: number) => {
       const order: string[] = [];
       let total = 0;
+      let legalBalls = 0;
+      let wicketsDown = 0;
       let reduced = false;
       // Limited overs: the side batting second is chasing
       const chase = src.fmt === "TEST" ? null : idx === 0 ? "first" : idx === 1 ? "second" : null;
@@ -183,6 +196,8 @@ for (const src of SOURCES) {
           const pos = posOf(order.indexOf(d.batter) + 1);
           const legalForBatter = !ex.wides;
           const legalForBowler = !ex.wides && !ex.noballs;
+          if (legalForBowler) legalBalls++;
+          wicketsDown += ((d.wickets ?? []) as any[]).length;
           const batRuns = d.runs?.batter ?? 0;
           const conceded = batRuns + (ex.wides ?? 0) + (ex.noballs ?? 0);
           const outs = (d.wickets ?? []) as any[];
@@ -253,11 +268,29 @@ for (const src of SOURCES) {
       order.forEach((n, i) => {
         if (people[n]) slot(get(src.fmt, people[n]).pos, posOf(i + 1), () => [0, 0, 0, 0] as [number, number, number, number])[3] += 1;
       });
+      if (fullMembers && !reduced && idx < 4 && legalBalls > 0) {
+        const s = (innStats[src.fmt][idx] ??= { n: 0, runs: 0, balls: 0, allOut: 0, declared: 0 });
+        s.n++;
+        s.runs += total;
+        s.balls += legalBalls;
+        if (wicketsDown >= 10) s.allOut++;
+        if (inn.declared) s.declared++;
+      }
       if (idx === 0 && !reduced && total > 0) {
         if (ground) (par[src.fmt].ground[ground] ??= []).push(total);
         if (fullMembers) par[src.fmt].all.push(total);
       }
     });
+    if (fullMembers && !(src.overs && info.overs && info.overs !== src.overs)) {
+      const r = resStats[src.fmt], o = info.outcome ?? {};
+      r.matches++;
+      if (o.result === "draw") r.draws++;
+      else if (o.result === "tie") r.ties++;
+      else if (o.winner) {
+        r.decisive++;
+        if (src.fmt !== "TEST" && o.winner === innings[0]?.team) r.batFirstWins++;
+      }
+    }
     used++;
   }
   console.log(`[splits] ${src.fmt}: ${used} matches`);
@@ -286,6 +319,8 @@ for (const fmt of ["T20", "ODI", "TEST"] as Fmt[]) {
         { sr: r1((v.bat[0] / Math.max(1, v.bat[1])) * 100), avg: r1(v.bat[0] / Math.max(1, v.bat[2])), econ: r1((v.bowl[1] / Math.max(1, v.bowl[0])) * 6), bavg: r1(v.bowl[1] / Math.max(1, v.bowl[2])), balls: v.bat[1] },
       ])
     ),
+    innings: innStats[fmt].map((s) => ({ n: s.n, runs: Math.round(s.runs / s.n), overs: r1(s.balls / s.n / 6), allOut: r1((s.allOut / s.n) * 100), declared: r1((s.declared / s.n) * 100) })),
+    results: resStats[fmt],
     par: {
       all: Math.round(mean(par[fmt].all)),
       ground: Object.fromEntries(Object.entries(par[fmt].ground).sort().map(([g, xs]) => [g, { avg: Math.round(mean(xs)), n: xs.length }])),

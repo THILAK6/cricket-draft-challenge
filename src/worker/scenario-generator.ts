@@ -16,7 +16,7 @@ interface Ground {
 }
 
 const ALL: MatchFormat[] = ["T20", "ODI", "TEST"];
-const GROUNDS: Ground[] = [
+export const GROUNDS: Ground[] = [
   { name: "Lord's Cricket Ground, London", short: "Lord's", country: "ENG", pitches: ["GREEN_SEAMER", "SLOW_LOW"], formats: ALL },
   { name: "Edgbaston, Birmingham", short: "Edgbaston", country: "ENG", pitches: ["GREEN_SEAMER", "HIGH_SCORING_FLAT"], formats: ALL },
   { name: "Headingley, Leeds", short: "Headingley", country: "ENG", pitches: ["GREEN_SEAMER"], formats: ALL },
