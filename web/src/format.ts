@@ -17,7 +17,12 @@ export const PITCH_TIP: Record<string, string> = {
   SLOW_LOW: "Hard to score. Spinners, cutters and batters who rotate the strike.",
 };
 
-export const FORMAT_LABEL: Record<MatchFormat, string> = { T20: "T20", ODI: "ODI", TEST: "Test" };
+/** What the game calls the IPL mode on screen (one place to rename it). */
+export const IPL_LABEL = "IPL";
+export type Mode = MatchFormat | "IPL";
+export const FORMAT_LABEL: Record<Mode, string> = { T20: "T20", ODI: "ODI", TEST: "Test", IPL: IPL_LABEL };
+/** The label for a match: the league when there is one, else the format. */
+export const matchLabel = (c: { format: MatchFormat; league?: "IPL" }) => (c.league ? IPL_LABEL : FORMAT_LABEL[c.format]);
 
 export type RoleKey = "BAT" | "WK" | "AR" | "PACE" | "SPIN";
 

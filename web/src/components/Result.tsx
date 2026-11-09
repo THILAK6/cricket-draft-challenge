@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
 import { buildDraftAwards, buildHeadToHead, type DraftAward, type DraftDecision, type HeadToHead, type MatchReview, type TypicalScorecard, type WinChance } from "../../../src/core/match-review";
-import { FORMAT_LABEL, parLine, PITCH_LABEL, shortName } from "../format";
+import { matchLabel, parLine, PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 import { matchLink } from "../api";
 
@@ -62,7 +62,7 @@ export function Result(props: ResultProps) {
     <div class="result">
       {props.savedAt && (
         <p class="saved-head muted">
-          {FORMAT_LABEL[sim.format]} at {props.state.challenge.venue.name} · played {new Date(props.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
+          {matchLabel(props.state.challenge)} at {props.state.challenge.venue.name} · played {new Date(props.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
         </p>
       )}
       <div class="scorehead">

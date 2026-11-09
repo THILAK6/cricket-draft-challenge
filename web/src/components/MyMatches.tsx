@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { MatchSummary } from "../../../src/core/match-snapshot";
 import { api } from "../api";
-import { FORMAT_LABEL, PITCH_LABEL } from "../format";
+import { FORMAT_LABEL, PITCH_LABEL, type Mode } from "../format";
 import type { MatchFormat } from "../../../src/core/types";
 
 const SHOW = 5;
@@ -33,7 +33,7 @@ export function MyMatches({ onOpen }: { onOpen: (id: string) => void }) {
                     {m.userScore} <span class="muted">v</span> {m.aiScore}
                   </b>
                   <span class="muted">
-                    {FORMAT_LABEL[m.format as MatchFormat] ?? m.format} · {m.venue.split(",")[0]} · {PITCH_LABEL[m.pitch] ?? m.pitch}
+                    {FORMAT_LABEL[m.format as Mode] ?? m.format} · {m.venue.split(",")[0]} · {PITCH_LABEL[m.pitch] ?? m.pitch}
                   </span>
                 </span>
                 <span class="faint when">{new Date(m.playedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>

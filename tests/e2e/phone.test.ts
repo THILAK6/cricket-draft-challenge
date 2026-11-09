@@ -77,7 +77,7 @@ describe.skipIf(!playwright)("phone playthrough", () => {
 
   afterAll(() => server?.close());
 
-  for (const format of ["T20", "TEST"] as const) {
+  for (const format of ["T20", "TEST", "IPL"] as const) {
     it(`${format}: a full draft takes one tap per pick, with no sideways scrolling`, async () => {
       const browser = await playwright.chromium.launch();
       const ctx = await browser.newContext({ ...playwright.devices["iPhone 13"] });
@@ -90,8 +90,20 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.goto(base);
         expect(await overflow()).toBe(0);
         if (format === "TEST") await page.click("button.choice:has-text('Test')");
+        if (format === "IPL") {
+          await page.click("button.choice:has-text('IPL')");
+          // The league's own pool themes
+          expect(await page.locator(".themes button:has-text('IPL legends')").count()).toBe(1);
+          expect(await page.locator(".themes button:has-text('The Ashes')").count()).toBe(0);
+          if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, 'setup-IPL.png'), fullPage: true });
+        }
         await page.click("text=Next: the ground and the toss");
         await page.waitForSelector("text=Start drafting");
+        if (format === "IPL") {
+          // The franchise rule is on the briefing, and the match is the IPL's
+          expect(await page.locator("text=/overseas/i").count()).toBeGreaterThan(0);
+          expect(await page.locator("text=/IPL/").count()).toBeGreaterThan(0);
+        }
         expect(await overflow()).toBe(0);
         await page.click("text=Start drafting");
         await page.waitForSelector(".prow");
@@ -166,11 +178,11 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         expect(await overflow()).toBe(0);
         // Result: how often this XI wins, then the head-to-head, with the scorecards closed
         await page.waitForSelector("text=Head to head");
-        expect(await page.locator(".h2h .row").count()).toBe(format === "T20" ? 10 : 8);
+        expect(await page.locator(".h2h .row").count()).toBe(format === "TEST" ? 8 : 10);
         expect(await page.locator(".chance").count()).toBe(1);
         // Head to head: every area closed, each with who leads; one tap opens it
         expect(await page.locator(".h2h details.row[open]").count()).toBe(0);
-        expect(await page.locator(".h2h .lead").count()).toBe(format === "T20" ? 10 : 8);
+        expect(await page.locator(".h2h .lead").count()).toBe(format === "TEST" ? 8 : 10);
         await page.click(".h2h details.row summary >> nth=0");
         expect(await page.locator(".h2h details.row[open]").count()).toBe(1);
         await page.click(".h2h details.row summary >> nth=0");
@@ -205,7 +217,7 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.waitForSelector(".saved-head");
         expect(page.url()).toMatch(/\?match=[a-z2-9]{10}$/);
         expect(await page.locator(".verdict h2").textContent()).toBe(headline);
-        expect(await page.locator(".h2h .row").count()).toBe(format === "T20" ? 10 : 8);
+        expect(await page.locator(".h2h .row").count()).toBe(format === "TEST" ? 8 : 10);
         expect(await overflow()).toBe(0);
         // The link works on its own, as a friend would open it
         const link = page.url();

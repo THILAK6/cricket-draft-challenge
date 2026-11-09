@@ -20,8 +20,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  start: (format: MatchFormat, difficulty: Difficulty, theme: string) =>
-    request<{ roomId: string; theme: string }>("/api/draft/start", { format, difficulty, theme, deviceId: deviceId() }),
+  start: (format: MatchFormat, difficulty: Difficulty, theme: string, league?: "IPL") =>
+    request<{ roomId: string; theme: string }>("/api/draft/start", { format, difficulty, theme, league, deviceId: deviceId() }),
   state: (roomId: string) => request<{ state: DraftState }>(`/api/room/${roomId}/state`),
   pick: (roomId: string, playerId: string) => request<{ state: DraftState }>(`/api/room/${roomId}/pick`, { playerId }),
   reorder: (roomId: string, fromIndex: number, toIndex: number) =>

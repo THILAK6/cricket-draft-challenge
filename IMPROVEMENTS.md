@@ -250,6 +250,15 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 13.4 "Typical (200)" tab in Scorecards: every player's card averaged over the same 200 replays as the win chance (no extra simulations): runs, strike rate, how often out and best for batters; overs, runs, wickets and economy for bowlers; the side's average and middle 80% of scores. Tests are averaged per match across both innings. The real scorecard stays as it was.
 - [x] 13.5 Drag landing follows where the rows really are (rows differ in height in a draft), not a fixed row height.
 
+## Phase 14 — IPL mode (done)
+
+- [x] 14.1 Data (`src/etl/ipl.ts`, `src/etl/league.ts`, workflow "IPL data from Cricsheet"): 1,209 IPL matches into the international data's columns for 475 players (10+ matches), plus phases, batting positions, chasing, the league's own norms by phase and season, and real par at 13 IPL grounds. 185 players new to the game are added (the international files place their country; Afghan players are placed by name). Pace/spin for new players is guessed from overs and stumpings (94% right on players whose type is known); known "pace" bowlers whose wickets are full of stumpings (Kumble, Kartik, Chawla) are spinners in the IPL.
+- [x] 14.2 Design: IPL is the T20 engine with a league tag. `PlayerStats.league` and `Challenge.league` select the IPL's norms (phase, position, chase, seasons, ground par) and rating anchors; the 50-odd `format === "T20"` checks are untouched.
+- [x] 14.3 Rules: `max_overseas` (at most 4 from outside India) in pick legality, the endgame lookahead, squad check and both feasibility searches. IPL grounds, IPL themes (all seasons, legends, recent, early years), IPL scenarios.
+- [x] 14.4 Calibration to the real league (`tests/scoring-audit.test.ts`, AUDIT_IPL): runs x0.94, wickets x1.3, no catch-up boost for chasers. First innings 182 (real par 169, stronger XIs), all out 8% (7%), batting first wins 44% (45.5%). Better XI wins 58%+ of replays.
+- [ ] 14.5 Still off: chasers are all out 20% of the time (real 12%); flat pitches run 20% above par; players with no international record are assumed Indian (a few IPL-only overseas players may be missing from the list in `KNOWN_ABROAD`); batting hand is RHB for players new to the game.
+- [ ] 14.6 Next: franchise themes (one club's players), the auction as a draft format.
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

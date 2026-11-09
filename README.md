@@ -64,6 +64,8 @@ npm run db:seed:local
 
 `db:seed:local` loads the player pool from `data/seed.sql`, then applies `data/career-overrides.sql` and `data/data-fixes.sql` (country, role and bowling-style corrections) `data/phase-stats.sql` (T20 and ODI powerplay/middle/death numbers) and `data/player-splits.sql` (records by batting position, region and chasing), both rebuilt by the "Player splits from Cricsheet" GitHub Action; without it there are no players to draft. For the production database, apply `src/db/schema.sql`, `data/data-fixes.sql`, `data/phase-stats.sql` and `data/player-splits.sql` with `--remote`.
 
+**IPL mode** needs `data/ipl.sql` (built by the "IPL data from Cricsheet" Action from Cricsheet's IPL files; it also adds the IPL players the game did not have). Apply it last, with `npx wrangler d1 execute cricdraft-db --remote --file=data/ipl.sql`; it only touches the IPL rows and is safe to run again. Until it is applied, choosing IPL says the IPL data is not loaded and the other formats are unaffected.
+
 **Career totals.** Cricsheet only covers matches from 2001-2002, so players with earlier careers (Tendulkar, Ponting, ...) would have truncated totals. `npm run etl:career` reads full-career matches, runs, averages, balls bowled and wickets from Wikipedia's cricketer infobox (found through the ESPNcricinfo id on Wikidata) and writes `data/career-overrides.sql`. Strike rate and batting-order shares still come from Cricsheet.
 
 ### 3. Run Dev Server

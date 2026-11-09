@@ -1,5 +1,5 @@
 import type { DraftState } from "../../../src/core/types";
-import { BASE_RULES, FORMAT_LABEL, parLine, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
+import { BASE_RULES, matchLabel, parLine, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
 import { themeByKey } from "../../../src/core/themes";
 
 export function Briefing(props: { state: DraftState; busy: boolean; onBack: () => void; onReroll: () => void; onStart: () => void }) {
@@ -16,7 +16,7 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
       <div class="stack" style="gap:6px">
         <h1>{challenge.title}</h1>
         <p class="muted">
-          {FORMAT_LABEL[challenge.format]} at {challenge.venue.name}
+          {matchLabel(challenge)} at {challenge.venue.name}
         </p>
       </div>
 

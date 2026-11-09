@@ -1,13 +1,15 @@
-import type { MatchFormat } from "../../../src/core/types";
+import type { Mode } from "../format";
 import type { Difficulty } from "../api";
-import { POOL_THEMES, themeByKey, type ThemeKey } from "../../../src/core/themes";
+import { IPL_THEMES, POOL_THEMES, type ThemeKey } from "../../../src/core/themes";
 import { PERSONA_INFO } from "../../../src/core/personas";
 import { MyMatches } from "./MyMatches";
+import { IPL_LABEL } from "../format";
 
-const FORMATS: { key: MatchFormat; title: string; text: string }[] = [
+const FORMATS: { key: Mode; title: string; text: string }[] = [
   { key: "T20", title: "T20", text: "20 overs a side. Hitters, finishers and death bowling." },
   { key: "ODI", title: "ODI", text: "50 overs a side. Build an innings; depth and spin matter." },
   { key: "TEST", title: "Test", text: "Two innings each. Patience at the top, and twenty wickets." },
+  { key: "IPL", title: IPL_LABEL, text: "T20 with the league's players, 2008 to now. At most four overseas in your XI." },
 ];
 
 const LEVELS: { key: Difficulty; level: string }[] = [
@@ -17,11 +19,11 @@ const LEVELS: { key: Difficulty; level: string }[] = [
 ];
 
 export function Setup(props: {
-  format: MatchFormat;
+  format: Mode;
   difficulty: Difficulty;
   theme: ThemeKey;
   busy: boolean;
-  onFormat: (f: MatchFormat) => void;
+  onFormat: (f: Mode) => void;
   onDifficulty: (d: Difficulty) => void;
   onTheme: (t: ThemeKey) => void;
   onNext: () => void;
@@ -50,13 +52,13 @@ export function Setup(props: {
       <div class="stack" style="gap:8px">
         <div class="label">Player pool</div>
         <div class="themes">
-          {POOL_THEMES.map((t) => (
+          {(props.format === "IPL" ? IPL_THEMES : POOL_THEMES).map((t) => (
             <button type="button" class={props.theme === t.key ? "on" : ""} onClick={() => props.onTheme(t.key)} aria-pressed={props.theme === t.key}>
               {t.label}
             </button>
           ))}
         </div>
-        <p class="muted" style="font-size:13px">{themeByKey(props.theme).description}</p>
+        <p class="muted" style="font-size:13px">{((props.format === "IPL" ? IPL_THEMES : POOL_THEMES).find((t) => t.key === props.theme) ?? (props.format === "IPL" ? IPL_THEMES : POOL_THEMES)[0]).description}</p>
       </div>
       <div class="stack" style="gap:8px">
         <div class="label">Your opponent</div>

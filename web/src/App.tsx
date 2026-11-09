@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import type { DraftState, MatchFormat } from "../../src/core/types";
+import type { DraftState } from "../../src/core/types";
+import { type Mode } from "./format";
 import type { MatchSnapshot } from "../../src/core/match-snapshot";
 import { api, savedRoom, type Difficulty } from "./api";
 import { Setup } from "./components/Setup";
@@ -8,7 +9,7 @@ import { Draft } from "./components/Draft";
 import { Lineup } from "./components/Lineup";
 import { Result } from "./components/Result";
 import { Toast, useToast } from "./components/Toast";
-import { themeByKey, type ThemeKey } from "../../src/core/themes";
+import { themesFor, type ThemeKey } from "../../src/core/themes";
 
 type Screen = "loading" | "setup" | "briefing" | "room" | "match";
 
@@ -38,7 +39,8 @@ export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [roomId, setRoomId] = useState<string | null>(null);
   const [state, setState] = useState<DraftState | null>(null);
-  const [format, setFormat] = useState<MatchFormat>("T20");
+  // What to play: a format, or the IPL (T20 with the league's players and rules)
+  const [format, setFormat] = useState<Mode>("T20");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [theme, setTheme] = useState<ThemeKey>("mixed");
   const [busy, setBusy] = useState(false);
@@ -96,7 +98,7 @@ export function App() {
       .then(({ state }) => {
         setRoomId(id);
         setState(state);
-        setFormat(state.challenge.format);
+        setFormat(state.challenge.league ?? state.challenge.format);
         setScreen("room");
       })
       .catch(() => {
@@ -108,8 +110,8 @@ export function App() {
   const newRoom = async () => {
     setBusy(true);
     try {
-      const { roomId, theme: used } = await api.start(format, difficulty, theme);
-      if (used !== theme) toast.show(`Not enough ${themeByKey(theme).label} players for a ${format} draft, so this one uses a mixed pool.`);
+      const { roomId, theme: used } = await api.start(format === "IPL" ? "T20" : format, difficulty, theme, format === "IPL" ? "IPL" : undefined);
+      if (used !== theme) toast.show(`Not enough ${themesFor(format === "IPL" ? "IPL" : undefined).find((t) => t.key === theme)?.label ?? ""} players for that draft, so this one uses the full pool.`);
       const { state } = await api.state(roomId);
       setRoomId(roomId);
       setState(state);
@@ -133,7 +135,7 @@ export function App() {
   if (screen === "loading") body = <div class="loading">Loading…</div>;
   else if (screen === "setup")
     body = (
-      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={setFormat} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} onOpenMatch={(id) => openMatch(id)} />
+      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={(m) => { setFormat(m); setTheme(m === "IPL" ? "ipl-all" : "mixed"); }} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} onOpenMatch={(id) => openMatch(id)} />
     );
   else if (screen === "match" && saved)
     body = <Result state={savedAsState(saved)} toast={toast.show} onNewGame={() => closeMatch()} savedAt={saved.playedAt} />;

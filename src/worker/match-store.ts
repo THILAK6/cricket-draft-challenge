@@ -55,7 +55,7 @@ export function summaryOf(s: MatchSnapshot): MatchSummary {
   return {
     id: s.id,
     playedAt: s.playedAt,
-    format: sim.format,
+    format: s.challenge.league ?? sim.format,
     venue: s.challenge.venue.name,
     pitch: s.challenge.venue.pitch_type,
     winner: sim.winner,
