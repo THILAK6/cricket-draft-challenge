@@ -146,6 +146,29 @@ export const DATA_NORMS = {
         "balls": 251682
       }
     },
+    "innings": [
+      {
+        "n": 1138,
+        "runs": 161,
+        "overs": 19.35,
+        "allOut": 11.07,
+        "declared": 0
+      },
+      {
+        "n": 1035,
+        "runs": 147,
+        "overs": 18.26,
+        "allOut": 21.45,
+        "declared": 0
+      }
+    ],
+    "results": {
+      "matches": 1138,
+      "draws": 0,
+      "ties": 17,
+      "decisive": 1085,
+      "batFirstWins": 549
+    },
     "par": {
       "all": 161,
       "ground": {
@@ -402,6 +425,29 @@ export const DATA_NORMS = {
         "balls": 1076824
       }
     },
+    "innings": [
+      {
+        "n": 2074,
+        "runs": 249,
+        "overs": 46.78,
+        "allOut": 32.84,
+        "declared": 0
+      },
+      {
+        "n": 1758,
+        "runs": 220,
+        "overs": 41.98,
+        "allOut": 38,
+        "declared": 0
+      }
+    ],
+    "results": {
+      "matches": 2074,
+      "draws": 0,
+      "ties": 20,
+      "decisive": 1965,
+      "batFirstWins": 930
+    },
     "par": {
       "all": 249,
       "ground": {
@@ -637,6 +683,43 @@ export const DATA_NORMS = {
         "bavg": 32.34,
         "balls": 1724988
       }
+    },
+    "innings": [
+      {
+        "n": 898,
+        "runs": 343,
+        "overs": 101.95,
+        "allOut": 80.29,
+        "declared": 19.04
+      },
+      {
+        "n": 894,
+        "runs": 322,
+        "overs": 97.9,
+        "allOut": 87.36,
+        "declared": 10.29
+      },
+      {
+        "n": 886,
+        "runs": 252,
+        "overs": 76.79,
+        "allOut": 62.42,
+        "declared": 30.14
+      },
+      {
+        "n": 658,
+        "runs": 185,
+        "overs": 58.64,
+        "allOut": 47.72,
+        "declared": 0
+      }
+    ],
+    "results": {
+      "matches": 898,
+      "draws": 169,
+      "ties": 0,
+      "decisive": 729,
+      "batFirstWins": 0
     },
     "par": {
       "all": 343,
