@@ -66,6 +66,12 @@ export const ConstraintSchema = z.discriminatedUnion("type", [
     value: z.number().int().min(1).max(11),
     exceptions: z.record(z.string(), z.number().int().min(1).max(11)).optional(),
   }),
+  // Franchise rule (the IPL): at most `value` players from outside `home` (a squad of mostly Indian players)
+  z.object({
+    type: z.literal("max_overseas"),
+    value: z.number().int().min(0).max(11),
+    home: z.string(),
+  }),
   z.object({
     type: z.literal("min_category"),
     category: z.enum(["PACE", "SPIN", "WK", "AR"]),
@@ -94,6 +100,8 @@ export const ChallengeSchema = z.object({
   id: z.string(),
   title: z.string(),
   format: z.enum(["T20", "ODI", "TEST"]),
+  /** "IPL": T20 cricket with the IPL's players, norms and franchise rules (the match engine plays it as T20) */
+  league: z.enum(["IPL"]).optional(),
   venue: z.object({
     name: z.string(),
     country: z.string(),

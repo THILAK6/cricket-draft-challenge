@@ -64,6 +64,8 @@ export function ruleText(c: Constraint): string {
       const ex = c.exceptions ? Object.entries(c.exceptions).map(([k, v]) => ` (${v} from ${k})`).join("") : "";
       return `At most ${c.value} players from one country${ex}`;
     }
+    case "max_overseas":
+      return `At most ${c.value} overseas players (from outside ${c.home === "IND" ? "India" : c.home})`;
     case "min_category": {
       const what = { PACE: "pace bowlers", SPIN: "spinners", WK: "wicketkeepers", AR: "all-rounders" }[c.category];
       return `At least ${c.count} ${what}`;

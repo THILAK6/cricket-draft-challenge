@@ -292,6 +292,9 @@ export function roleOf(p: PlayerAgg): Role {
   return "BAT";
 }
 
+/** Stumpings are a real share of his wickets: only spinners (almost) have that. */
+export const strongSpin = (p: PlayerAgg, minStumped = 4, share = 0.06) => p.stumpedWkts >= minStumped && p.stumpedWkts / Math.max(1, p.bowlWkts) >= share;
+
 /**
  * Pace or spin from how he is used, for players with no recorded style: spinners bowl most of their
  * overs in the middle (7-15) and take stumpings; pacers share the new ball and the death.
@@ -299,7 +302,8 @@ export function roleOf(p: PlayerAgg): Role {
  */
 export function categoryGuess(p: PlayerAgg): "PACE" | "SPIN" | "NONE" {
   if (p.bowlBalls < 120) return "NONE";
-  if (p.stumpedWkts >= 2) return "SPIN";
+  // A keeper standing up to a medium-pacer stumps one now and then; a spinner's wickets are 5%+ stumpings
+  if (strongSpin(p, 3, 0.05)) return "SPIN";
   const mid = p.phase.mid[3] / Math.max(1, p.bowlBalls);
   return mid >= 0.62 ? "SPIN" : "PACE";
 }

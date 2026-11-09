@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { LeagueAccumulator, categoryGuess, normsOf, roleOf, statsOf, type PlayerAgg } from "./league";
+import { LeagueAccumulator, categoryGuess, normsOf, roleOf, statsOf, strongSpin, type PlayerAgg } from "./league";
 import { COUNTRY_MAP } from "./countries";
 import { iplGroundOf } from "../core/ipl-grounds";
 
@@ -39,6 +39,8 @@ console.log(`[ipl] ${used} of ${files.length} matches read, ${acc.players.size} 
 
 // ---- Countries, from the international files: the side a player represented most --------------------
 const teamCounts = new Map<string, Map<string, number>>();
+/** Every team name in the international files, to see which ones the country table does not cover */
+const teamsSeen = new Map<string, number>();
 for (const d of ["t20s_json", "odis_json", "tests_json"]) {
   const p = path.join(RAW, d);
   if (!fs.existsSync(p)) continue;
@@ -47,6 +49,7 @@ for (const d of ["t20s_json", "odis_json", "tests_json"]) {
       const info = JSON.parse(fs.readFileSync(path.join(p, f), "utf-8")).info ?? {};
       if (info.gender !== "male" || !info.registry?.people) continue;
       for (const [team, names] of Object.entries(info.players ?? {}) as [string, string[]][]) {
+        teamsSeen.set(team, (teamsSeen.get(team) ?? 0) + 1);
         if (!COUNTRY_MAP[team]) continue;
         for (const n of names) {
           const id = info.registry.people[n];
@@ -61,9 +64,18 @@ for (const d of ["t20s_json", "odis_json", "tests_json"]) {
     }
   }
 }
-const countryOf = (id: string): string | undefined => {
+/**
+ * Overseas players the international files do not place (a country the table lacks, or a player who
+ * has only played franchise cricket), by the name Cricsheet gives them in the IPL files.
+ */
+const KNOWN_ABROAD: Record<string, string> = {
+  "Rashid Khan": "AFG", "Noor Ahmad": "AFG", "Mohammad Nabi": "AFG", "Mujeeb Ur Rahman": "AFG", "Naveen-ul-Haq": "AFG",
+  "Fazalhaq Farooqi": "AFG", "Rahmanullah Gurbaz": "AFG", "Azmatullah Omarzai": "AFG", "AM Ghazanfar": "AFG",
+  "KK Cooper": "WI",
+};
+const countryOf = (id: string, name = ""): string | undefined => {
   const m = teamCounts.get(id);
-  if (!m) return undefined;
+  if (!m) return KNOWN_ABROAD[name];
   const top = [...m].sort((a, b) => b[1] - a[1])[0][0];
   return COUNTRY_MAP[top];
 };
@@ -95,21 +107,23 @@ const sql: string[] = [
   "DELETE FROM player_splits WHERE format = 'IPL';",
 ];
 const added: { p: PlayerAgg; country: string; role: string; category: string }[] = [];
-const roleRows: { id: string; role: string; category: string }[] = [];
+const roleRows: { id: string; role: string; category: string; force?: string }[] = [];
 for (const p of eligible) {
   const role = roleOf(p);
   const guess = categoryGuess(p);
   const k = known.get(p.id);
   const bowls = role === "BOWL" || role === "AR";
   if (!k) {
-    const country = countryOf(p.id) ?? "IND";
+    const country = countryOf(p.id, p.name) ?? "IND";
     const category = bowls ? (guess === "NONE" ? "PACE" : guess) : "NONE";
     added.push({ p, country, role, category });
     sql.push(
       `INSERT OR IGNORE INTO players (id, cricinfo_id, name, short_name, country, batting_hand, bowling_category, bowling_style, primary_role) VALUES ('crick_${p.id}', '', '${esc(p.name)}', '${esc(p.name)}', '${country}', 'RHB', '${category}', '${category === "SPIN" ? "Off break" : category === "PACE" ? "Right-arm fast-medium" : ""}', '${role}');`
     );
   }
-  roleRows.push({ id: p.id, role, category: bowls ? guess : "NONE" });
+  // A known "pace" bowler whose wickets are full of stumpings is a spinner the game has down wrong (Kumble, Kartik, Chawla)
+  const fix = bowls && k && k.category === "PACE" && strongSpin(p) ? "SPIN" : undefined;
+  roleRows.push({ id: p.id, role, category: bowls ? guess : "NONE", ...(fix ? { force: fix } : {}) });
 }
 const batches = (rows: string[], head: string) =>
   Array.from({ length: Math.ceil(rows.length / 150) }, (_, i) => `${head} VALUES\n${rows.slice(i * 150, i * 150 + 150).join(",\n")};`);
@@ -129,7 +143,9 @@ for (const r of roleRows) {
   sql.push(
     batter
       ? `INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bowling_category) VALUES ('crick_${r.id}', 'IPL', '${r.role}', 'NONE');`
-      : `INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bowling_category) SELECT id, 'IPL', '${r.role}', CASE WHEN bowling_category = 'NONE' THEN '${r.category === "NONE" ? "PACE" : r.category}' ELSE bowling_category END FROM players WHERE id = 'crick_${r.id}';`
+      : r.force
+        ? `INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bowling_category) VALUES ('crick_${r.id}', 'IPL', '${r.role}', '${r.force}');`
+        : `INSERT OR REPLACE INTO player_format_roles (player_id, format, primary_role, bowling_category) SELECT id, 'IPL', '${r.role}', CASE WHEN bowling_category = 'NONE' THEN '${r.category === "NONE" ? "PACE" : r.category}' ELSE bowling_category END FROM players WHERE id = 'crick_${r.id}';`
   );
 }
 sql.push(
@@ -185,6 +201,8 @@ md.push("", "## The pace/spin guess (used only for players new to the game)", ""
 const byCountry: Record<string, number> = {};
 for (const a of added) byCountry[a.country] = (byCountry[a.country] ?? 0) + 1;
 const guessedIndian = added.filter((a) => a.country === "IND" && !teamCounts.has(a.p.id)).length;
+md.push("", "## Teams in the international files", "", ...[...teamsSeen].sort((a, b) => b[1] - a[1]).slice(0, 45).map(([t, n]) => `- ${t}: ${n} matches${COUNTRY_MAP[t] ? "" : " (not in the country table)"}`));
+md.push("", `Players placed by name (not in the international files): ${added.filter((a) => a.country !== "IND" && !teamCounts.has(a.p.id)).map((a) => `${a.p.name} ${a.country}`).join(", ") || "none"}.`);
 md.push("", "## Players new to the game", "", `${added.length} added (${eligible.length - added.length} already there). By country: ${Object.entries(byCountry).map(([c, n]) => `${c} ${n}`).join(", ")}. ${guessedIndian} are Indian only because they have no international record (a few may be overseas players).`);
 md.push("", "Roles of the added players: " + ["BAT", "WK", "AR", "BOWL"].map((r) => `${r} ${added.filter((a) => a.role === r).length}`).join(", ") + ".");
 const overseasNoIntl = added.filter((a) => a.country === "IND" && !teamCounts.has(a.p.id)).sort((a, b) => b.p.matches - a.p.matches).slice(0, 25).map((a) => `${a.p.name} (${a.p.matches})`);

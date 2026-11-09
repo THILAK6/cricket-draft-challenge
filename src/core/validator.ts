@@ -97,6 +97,14 @@ export function validateSquad(squad: (PlayerWithStats | null)[], challenge: Chal
         break;
       }
 
+      case "max_overseas": {
+        const overseas = nonNullSquad.filter((p) => p.country !== constraint.home).length;
+        if (overseas > constraint.value) {
+          violations.push(`Too many overseas players: allowed ${constraint.value}, found ${overseas}.`);
+        }
+        break;
+      }
+
       case "min_category": {
         let count = 0;
         if (constraint.category === "PACE") {
@@ -236,6 +244,18 @@ export function checkChallengeFeasibility(
       }
     }
 
+    if (constraint.type === "max_overseas") {
+      const home = pool.filter((p) => p.country === constraint.home).length;
+      const abroad = pool.length - home;
+      if (home + Math.min(constraint.value, abroad) < 11) {
+        return {
+          isFeasible: false,
+          validCombinationsFound: 0,
+          reasons: [`The overseas limit makes an 11-player squad impossible (${home} home players, ${constraint.value} overseas allowed).`],
+        };
+      }
+    }
+
     if (constraint.type === "min_category") {
       let available = 0;
       if (constraint.category === "PACE") available = pool.filter((p) => p.bowling_category === "PACE").length;
@@ -341,6 +361,10 @@ export function checkChallengeFeasibility(
     return 11;
   }
 
+  const overseas = overseasLimit(challenge);
+  let overseasUsed = 0;
+  const isAbroad = (p: PlayerWithStats) => !!overseas && p.country !== overseas.home;
+
   let nodesVisited = 0;
   let budgetExhausted = false;
 
@@ -382,9 +406,11 @@ export function checkChallengeFeasibility(
 
       // Branch pruning: Country limit exceeded
       if (curCountryCount >= maxCountry) continue;
+      if (isAbroad(candidate) && overseasUsed >= overseas!.value) continue;
 
       // Choose
       currentSelection.push(candidate);
+      if (isAbroad(candidate)) overseasUsed++;
       countryUsage.set(candidate.country, curCountryCount + 1);
       for (let r = 0; r < requirements.length; r++) if (requirements[r].matches(candidate)) have[r]++;
 
@@ -393,6 +419,7 @@ export function checkChallengeFeasibility(
 
       // Unchoose
       currentSelection.pop();
+      if (isAbroad(candidate)) overseasUsed--;
       countryUsage.set(candidate.country, curCountryCount);
       for (let r = 0; r < requirements.length; r++) if (requirements[r].matches(candidate)) have[r]--;
     }
@@ -460,6 +487,12 @@ export function checkDraftFeasibility(
       const available = pool.filter((p) => p.batting_hand === c.hand).length;
       if (available < 2 * c.positions.length) {
         return fail(`Pool cannot support two disjoint XIs: ${available} ${c.hand} batters, ${2 * c.positions.length} needed.`);
+      }
+    } else if (c.type === "max_overseas") {
+      const home = pool.filter((p) => p.country === c.home).length;
+      const capacity = home + Math.min(2 * c.value, pool.length - home);
+      if (capacity < 22) {
+        return fail(`Pool cannot support two disjoint XIs: the overseas limit allows only ${capacity} of 22 players.`);
       }
     } else if (c.type === "max_per_country") {
       const counts = new Map<string, number>();
@@ -558,6 +591,12 @@ const categoryMatcher = (cat: "PACE" | "SPIN" | "WK" | "AR") => (p: PlayerWithSt
 
 const CATEGORY_LABEL: Record<string, string> = { PACE: "pace bowlers", SPIN: "spinners", WK: "wicketkeepers", AR: "all-rounders" };
 
+/** The franchise limit on players from outside a home country (the IPL: four overseas), if the challenge has one. */
+export function overseasLimit(challenge: Challenge): { home: string; value: number } | undefined {
+  const c = challenge.constraints.find((x) => x.type === "max_overseas");
+  return c && c.type === "max_overseas" ? { home: c.home, value: c.value } : undefined;
+}
+
 function countryCap(challenge: Challenge, country: string): number {
   let cap = Infinity;
   for (const c of challenge.constraints) {
@@ -586,7 +625,11 @@ export function rulesFor(challenge: Challenge, mine: PlayerWithStats[] = [], poo
     const counts = new Map<string, number>();
     for (const p of mine) counts.set(p.country, (counts.get(p.country) || 0) + 1);
     const ids = new Set(mine.map((p) => p.id));
-    const open = pool.filter((p) => !ids.has(p.id) && (counts.get(p.country) || 0) < countryCap(challenge, p.country));
+    const os = overseasLimit(challenge);
+    const abroad = os ? mine.filter((p) => p.country !== os.home).length : 0;
+    const open = pool.filter(
+      (p) => !ids.has(p.id) && (counts.get(p.country) || 0) < countryCap(challenge, p.country) && !(os && p.country !== os.home && abroad >= os.value)
+    );
     for (const n of needs) {
       const reachable = mine.filter(n.matches).length + open.filter(n.matches).length;
       if (reachable < n.required) {
@@ -633,6 +676,11 @@ export function canPickPlayer(
   const cap = countryCap(challenge, player.country);
   if (mine.filter((p) => p.country === player.country).length >= cap) {
     return { allowed: false, reason: `Country cap: at most ${cap} from ${player.country}` };
+  }
+
+  const os = overseasLimit(challenge);
+  if (os && player.country !== os.home && mine.filter((p) => p.country !== os.home).length >= os.value) {
+    return { allowed: false, reason: `Overseas limit: at most ${os.value} players from outside ${os.home}` };
   }
 
   const after = [...mine, player];
@@ -682,6 +730,8 @@ export function canCompleteSquad(
 
   const counts = new Map<string, number>();
   for (const p of mine) counts.set(p.country, (counts.get(p.country) || 0) + 1);
+  const os = overseasLimit(challenge);
+  let abroad = os ? mine.filter((p) => p.country !== os.home).length : 0;
   const chosen = [...mine];
   let calls = 0;
   let exhausted = false;
@@ -696,10 +746,14 @@ export function canCompleteSquad(
       const c = cands[i];
       const n = counts.get(c.country) || 0;
       if (n >= countryCap(challenge, c.country)) continue;
+      const away = !!os && c.country !== os.home;
+      if (away && abroad >= os!.value) continue;
       counts.set(c.country, n + 1);
+      if (away) abroad++;
       chosen.push(c);
       const ok = fill(i + 1, remaining - 1);
       chosen.pop();
+      if (away) abroad--;
       counts.set(c.country, n);
       if (ok || exhausted) return true;
     }
