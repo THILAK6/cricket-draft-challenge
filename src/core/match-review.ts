@@ -79,12 +79,48 @@ export interface DraftDecision {
   text: string;
 }
 
+/** One batter across the replays: his average innings when he batted. */
+export interface TypicalBatter {
+  name: string;
+  /** Games he batted in, out of the replays */
+  bats: number;
+  /** Per innings: runs and balls, how often he was out, and his best */
+  runs: number;
+  balls: number;
+  outPct: number;
+  best: number;
+}
+/** One bowler across the replays: his average game when he bowled. */
+export interface TypicalBowler {
+  name: string;
+  bowls: number;
+  overs: number;
+  runs: number;
+  wickets: number;
+}
+export interface TypicalSide {
+  /** The side's first innings: average, and the middle 80% of games */
+  avgRuns: number;
+  low: number;
+  high: number;
+  batters: TypicalBatter[];
+  bowlers: TypicalBowler[];
+}
+/** What a side typically does: every player's card averaged over the replays, not any one game. */
+export interface TypicalScorecard {
+  played: number;
+  user: TypicalSide;
+  ai: TypicalSide;
+}
+
 export interface MatchReview {
   headToHead: HeadToHead;
   awards: DraftAward[];
   /** Your smartest and costliest choices between players, with the reasons. */
   decisions?: DraftDecision[];
   winChance?: WinChance;
+  /** The scorecard of the typical game, from the same replays as the win chance. */
+  typical?: TypicalScorecard;
 }
 
 const players = (s: Squad) => s.filter((p): p is PlayerWithStats => p !== null);
@@ -486,14 +522,91 @@ export function estimateWinChance(
   baseSeed: number,
   played = REPLAYS
 ): WinChance {
+  return replayMatch(simulate, baseSeed, played).winChance;
+}
+
+const oversToBalls = (o: string | number) => {
+  const [w, f] = String(o).split(".");
+  return Number(w) * 6 + Number(f ?? 0);
+};
+
+/**
+ * Replays the match, and (when the replays carry scorecards) averages every player's card at the
+ * same time: one set of simulations gives both the win chance and the typical scorecard.
+ */
+export function replayMatch(
+  simulate: (seed: number) => Pick<MatchSimulationResult, "winner"> & Partial<MatchSimulationResult>,
+  baseSeed: number,
+  played = REPLAYS,
+  /** The XIs in batting order, so the typical scorecard lists players in that order */
+  squads: { user: Squad; ai: Squad } = { user: [], ai: [] }
+): { winChance: WinChance; typical?: TypicalScorecard } {
   let wins = 0, losses = 0, draws = 0;
+  type Bat = { games: number; innings: number; runs: number; balls: number; outs: number; best: number };
+  type Bowl = { games: number; balls: number; runs: number; wkts: number };
+  const acc = { USER: { bat: new Map<string, Bat>(), bowl: new Map<string, Bowl>(), first: [] as number[] }, AI: { bat: new Map<string, Bat>(), bowl: new Map<string, Bowl>(), first: [] as number[] } };
+  let cards = false;
   for (let i = 1; i <= played; i++) {
-    const w = simulate((baseSeed + i * 7919) % 2147483646 || 1).winner;
-    if (w === "USER") wins++;
-    else if (w === "AI") losses++;
+    const r = simulate((baseSeed + i * 7919) % 2147483646 || 1);
+    if (r.winner === "USER") wins++;
+    else if (r.winner === "AI") losses++;
     else draws++;
+    if (!r.userInnings || !r.aiInnings) continue;
+    cards = true;
+    acc.USER.first.push(r.userInnings.totalRuns);
+    acc.AI.first.push(r.aiInnings.totalRuns);
+    // Per game: a player's innings and spells are summed over the match (Tests have two innings each)
+    const game = { USER: { bat: new Map<string, Bat>(), bowl: new Map<string, Bowl>() }, AI: { bat: new Map<string, Bat>(), bowl: new Map<string, Bowl>() } };
+    const sides: [("USER" | "AI"), (typeof r.userInnings)[]][] = [
+      ["USER", [r.userInnings, r.userSecondInnings].filter((x): x is NonNullable<typeof x> => !!x && x.totalBalls > 0)],
+      ["AI", [r.aiInnings, r.aiSecondInnings].filter((x): x is NonNullable<typeof x> => !!x && x.totalBalls > 0)],
+    ];
+    for (const [side, inns] of sides) {
+      const other = side === "USER" ? "AI" : "USER";
+      for (const inn of inns) {
+        for (const b of inn.batters) {
+          if (!b.balls && !b.isOut) continue;
+          const g = game[side].bat.get(b.name) ?? { games: 1, innings: 0, runs: 0, balls: 0, outs: 0, best: 0 };
+          g.innings++; g.runs += b.runs; g.balls += b.balls; g.outs += b.isOut ? 1 : 0; g.best = Math.max(g.best, b.runs);
+          game[side].bat.set(b.name, g);
+        }
+        // The bowlers on a side's batting card belong to the other side
+        for (const b of inn.bowlers) {
+          const g = game[other].bowl.get(b.name) ?? { games: 1, balls: 0, runs: 0, wkts: 0 };
+          g.balls += oversToBalls(b.overs); g.runs += b.runs; g.wkts += b.wickets;
+          game[other].bowl.set(b.name, g);
+        }
+      }
+    }
+    for (const side of ["USER", "AI"] as const) {
+      for (const [name, g] of game[side].bat) {
+        const t = acc[side].bat.get(name) ?? { games: 0, innings: 0, runs: 0, balls: 0, outs: 0, best: 0 };
+        t.games++; t.innings += g.innings; t.runs += g.runs; t.balls += g.balls; t.outs += g.outs; t.best = Math.max(t.best, g.best);
+        acc[side].bat.set(name, t);
+      }
+      for (const [name, g] of game[side].bowl) {
+        const t = acc[side].bowl.get(name) ?? { games: 0, balls: 0, runs: 0, wkts: 0 };
+        t.games++; t.balls += g.balls; t.runs += g.runs; t.wkts += g.wkts;
+        acc[side].bowl.set(name, t);
+      }
+    }
   }
-  return { played, wins, losses, draws };
+  const winChance = { played, wins, losses, draws };
+  if (!cards) return { winChance };
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const pct = (xs: number[], p: number) => [...xs].sort((a, b) => a - b)[Math.floor(p * (xs.length - 1))];
+  const side = (s: "USER" | "AI", squad: Squad): TypicalSide => {
+    const order = new Map(squad.map((p, i) => [p?.name ?? "", i]));
+    const rank = (n: string) => order.get(n) ?? 99;
+    return {
+      avgRuns: Math.round(mean(acc[s].first)),
+      low: pct(acc[s].first, 0.1),
+      high: pct(acc[s].first, 0.9),
+      batters: [...acc[s].bat].sort((a, b) => rank(a[0]) - rank(b[0])).map(([name, t]) => ({ name, bats: t.games, runs: r1(t.runs / t.innings), balls: r1(t.balls / t.innings), outPct: Math.round((t.outs / t.innings) * 100), best: t.best })),
+      bowlers: [...acc[s].bowl].filter(([, t]) => t.balls > 0).sort((a, b) => b[1].wkts / b[1].games - a[1].wkts / a[1].games).map(([name, t]) => ({ name, bowls: t.games, overs: r1(t.balls / t.games / 6), runs: r1(t.runs / t.games), wickets: Math.round((t.wkts / t.games) * 100) / 100 })),
+    };
+  };
+  return { winChance, typical: { played, user: side("USER", squads.user), ai: side("AI", squads.ai) } };
 }
 
 export interface ReviewInput {
@@ -505,15 +618,18 @@ export interface ReviewInput {
   /** Everyone who was available when the draft began (needed for the key decisions). */
   draftPool?: PlayerWithStats[];
   /** Replays the match with another seed (left out, no win chance is given). */
-  replay?: (seed: number) => Pick<MatchSimulationResult, "winner">;
+  replay?: (seed: number) => Pick<MatchSimulationResult, "winner"> & Partial<MatchSimulationResult>;
   seed?: number;
 }
 
 export function buildMatchReview(input: ReviewInput): MatchReview {
+  // One set of replays gives the win chance and the typical scorecard
+  const replayed = input.replay ? replayMatch(input.replay, input.seed ?? 1, REPLAYS, { user: input.userSquad, ai: input.aiSquad }) : undefined;
   return {
     headToHead: buildHeadToHead(input.userSquad, input.aiSquad, input.challenge),
     awards: buildDraftAwards(input.pickLog, input.simulation.matchFacts?.contributions),
     ...(input.draftPool ? { decisions: buildDraftDecisions(input.pickLog, input.draftPool, (p) => playerQuality(p, input.challenge.format || "T20")) } : {}),
-    winChance: input.replay ? estimateWinChance(input.replay, input.seed ?? 1) : undefined,
+    winChance: replayed?.winChance,
+    ...(replayed?.typical ? { typical: replayed.typical } : {}),
   };
 }

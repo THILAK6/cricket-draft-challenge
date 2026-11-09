@@ -28,14 +28,21 @@ export async function reorderXI(props: Pick<RoomProps, "state" | "roomId" | "onS
  */
 export function useDragOrder(onMove: (from: number, to: number) => void, enabled = true) {
   const [drag, setDrag] = useState<{ from: number; to: number; dy: number } | null>(null);
-  const ref = useRef<{ from: number; to: number; startY: number; rowH: number } | null>(null);
+  // Rows differ in height (an empty slot is shorter than a player with a record line), so the landing
+  // spot comes from where the rows really are: the row whose centre is nearest the dragged row's centre
+  const ref = useRef<{ from: number; to: number; startY: number; rowH: number; centres: number[] } | null>(null);
 
   const onGrab = (i: number, e: PointerEvent) => {
     if (!enabled || e.button > 0) return;
     const row = (e.currentTarget as HTMLElement).closest(".xrow") as HTMLElement | null;
     if (!row) return;
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    ref.current = { from: i, to: i, startY: e.clientY, rowH: row.getBoundingClientRect().height };
+    const rows = Array.from(row.parentElement?.querySelectorAll(":scope > .xrow") ?? []) as HTMLElement[];
+    const centres = rows.map((r) => {
+      const b = r.getBoundingClientRect();
+      return b.top + b.height / 2;
+    });
+    ref.current = { from: i, to: i, startY: e.clientY, rowH: row.getBoundingClientRect().height, centres };
     setDrag({ from: i, to: i, dy: 0 });
     e.preventDefault();
   };
@@ -43,7 +50,12 @@ export function useDragOrder(onMove: (from: number, to: number) => void, enabled
     const d = ref.current;
     if (!d) return;
     const dy = e.clientY - d.startY;
-    d.to = Math.max(0, Math.min(10, d.from + Math.round(dy / d.rowH)));
+    const at = (d.centres[d.from] ?? 0) + dy;
+    let best = d.from, gap = Infinity;
+    d.centres.forEach((c, k) => {
+      if (Math.abs(c - at) < gap) (gap = Math.abs(c - at)), (best = k);
+    });
+    d.to = Math.max(0, Math.min(10, best));
     setDrag({ from: d.from, to: d.to, dy });
   };
   const onDrop = () => {

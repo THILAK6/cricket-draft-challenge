@@ -247,6 +247,9 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 13.2 Key decisions (`buildDraftDecisions`): read from the draft itself by replaying the pick log against the full pool. Smart: the best keeper (or other scarce kind) left was taken ahead of a bigger name whose equals were still there or came to you later ("Buttler over Kohli: Buttler was the best keeper left, Root was still there"). Costly: a plentiful kind was taken ahead of the last good one of another kind, who went to the AI. One lesson per player passed over; no ratings shown.
 - [x] 13.3 Head to head: every area starts closed with who leads on its line; "Open all" shows the players. "Played 200 times" became "Same match, 200 replays", with a sentence saying what it means.
 
+- [x] 13.4 "Typical (200)" tab in Scorecards: every player's card averaged over the same 200 replays as the win chance (no extra simulations): runs, strike rate, how often out and best for batters; overs, runs, wickets and economy for bowlers; the side's average and middle 80% of scores. Tests are averaged per match across both innings. The real scorecard stays as it was.
+- [x] 13.5 Drag landing follows where the rows really are (rows differ in height in a draft), not a fixed row height.
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

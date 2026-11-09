@@ -113,10 +113,12 @@ describe.skipIf(!playwright)("phone playthrough", () => {
             movedName = before[from];
             const grip = page.locator(".side-panel.m-on .xi .grip").first();
             const box = (await grip.boundingBox())!;
-            const rowH = (await page.locator(".side-panel.m-on .xi .xrow").first().boundingBox())!.height;
-            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            // Aim at the middle of the row two places down (rows differ in height)
+            const target = (await page.locator(".side-panel.m-on .xi .xrow").nth(from + 2).boundingBox())!;
+            const gripY = box.y + box.height / 2, aimY = target.y + target.height / 2;
+            await page.mouse.move(box.x + box.width / 2, gripY);
             await page.mouse.down();
-            for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + (2 * rowH * s) / 8);
+            for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, gripY + ((aimY - gripY) * s) / 8);
             const saved = page.waitForResponse((r: any) => r.url().includes("/reorder"));
             await page.mouse.up();
             await saved;
@@ -142,10 +144,11 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         // The batting-order screen opens at the top
         expect(await page.evaluate("window.scrollY")).toBe(0);
         const box = (await grip.boundingBox())!;
-        const rowH = (await page.locator(".lineup-list .xrow").first().boundingBox())!.height;
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        const aim = (await page.locator(".lineup-list .xrow").nth(2).boundingBox())!;
+        const gy = box.y + box.height / 2, ay = aim.y + aim.height / 2;
+        await page.mouse.move(box.x + box.width / 2, gy);
         await page.mouse.down();
-        for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + (2 * rowH * s) / 8);
+        for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, gy + ((ay - gy) * s) / 8);
         if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `drag-${format}.png`) });
         const saved = page.waitForResponse((r: any) => r.url().includes("/reorder"));
         await page.mouse.up();
@@ -179,6 +182,16 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         expect(await page.locator("details.box[open]").count()).toBe(0);
         await page.click("summary:has-text('Scorecards')");
         expect(await overflow()).toBe(0);
+        // The typical card: every player averaged over the replays, for either side
+        await page.click("button:has-text('Typical')");
+        expect(await page.locator("table.sc").count()).toBe(2);
+        expect(await page.locator("table.sc tbody tr").count()).toBeGreaterThanOrEqual(12);
+        expect(await overflow()).toBe(0);
+        if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `typical-${format}.png`), fullPage: true });
+        await page.click(".tabs2 button:has-text('AI XI')");
+        expect(await page.locator("table.sc").count()).toBe(2);
+        expect(await overflow()).toBe(0);
+        await page.click(".tabs2 button:has-text('Your XI')");
         if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `result-${format}.png`), fullPage: true });
         // The match is saved: it can be shared, and reopened from My matches on the start screen
         expect(await page.locator("text=Share this match").count()).toBe(1);

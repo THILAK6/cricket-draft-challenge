@@ -217,6 +217,48 @@ describe("win chance", () => {
   });
 });
 
+describe("typical scorecard", () => {
+  it("averages every player's card over the same replays as the win chance", async () => {
+    const { challenge, pool } = await buildRandomDraft(d1, "T20", lcg(88));
+    const { user, ai } = draft(pool, challenge, "T20");
+    const replay = (s: number) => simulateCricketMatch(user, ai, challenge, s);
+    const sim = replay(3);
+    const r = buildMatchReview({ userSquad: user, aiSquad: ai, challenge, simulation: sim, seed: 3, replay });
+    const t = r.typical!;
+    expect(t.played).toBe(200);
+    // The same replays as the win chance
+    expect(r.winChance!.wins + r.winChance!.losses + r.winChance!.draws).toBe(200);
+    // Averages checked against the replays done by hand
+    const runs: number[] = [];
+    for (let i = 1; i <= 200; i++) runs.push(replay((3 + i * 7919) % 2147483646 || 1).userInnings.totalRuns);
+    expect(t.user.avgRuns).toBe(Math.round(runs.reduce((a, b) => a + b, 0) / 200));
+    expect(t.user.low).toBeLessThanOrEqual(t.user.avgRuns);
+    expect(t.user.high).toBeGreaterThanOrEqual(t.user.avgRuns);
+    // Everyone who batted is listed in batting order, once, with sensible numbers
+    expect(t.user.batters.map((b) => b.name)).toEqual(user.map((p) => p!.name).filter((n) => t.user.batters.some((b) => b.name === n)));
+    expect(t.user.batters[0].bats).toBeGreaterThan(150);
+    for (const b of [...t.user.batters, ...t.ai.batters]) {
+      expect(b.bats).toBeLessThanOrEqual(200);
+      expect(b.outPct).toBeGreaterThanOrEqual(0);
+      expect(b.outPct).toBeLessThanOrEqual(100);
+      expect(b.best).toBeGreaterThanOrEqual(b.runs);
+    }
+    // Bowlers: a side's wickets come out of the other side's batting: their average per game is about 10 a game at most
+    const wk = t.user.bowlers.reduce((s, b) => s + b.wickets * (b.bowls / 200), 0);
+    expect(wk).toBeGreaterThan(2);
+    expect(wk).toBeLessThanOrEqual(10);
+  }, 60_000);
+
+  it("covers both innings of a Test, per match", async () => {
+    const { challenge, pool } = await buildRandomDraft(d1, "TEST", lcg(89));
+    const { user, ai } = draft(pool, challenge, "TEST");
+    const replay = (s: number) => simulateCricketMatch(user, ai, challenge, s);
+    const r = buildMatchReview({ userSquad: user, aiSquad: ai, challenge, simulation: replay(2), seed: 2, replay });
+    expect(r.typical!.user.batters.length).toBeGreaterThanOrEqual(8);
+    expect(r.typical!.user.bowlers.some((b) => b.overs > 15)).toBe(true);
+  }, 120_000);
+});
+
 describe("Test match endings", () => {
   it("never declares behind, and never leaves a token over for the last innings", async () => {
     for (let d = 0; d < 12; d++) {

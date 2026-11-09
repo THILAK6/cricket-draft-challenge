@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
-import { buildDraftAwards, buildHeadToHead, type DraftAward, type DraftDecision, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
+import { buildDraftAwards, buildHeadToHead, type DraftAward, type DraftDecision, type HeadToHead, type MatchReview, type TypicalScorecard, type WinChance } from "../../../src/core/match-review";
 import { FORMAT_LABEL, parLine, PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 import { matchLink } from "../api";
@@ -123,8 +123,13 @@ export function Result(props: ResultProps) {
                 {x.label} {score(x.inn)}
               </button>
             ))}
+            {review.typical && (
+              <button type="button" class={shown === "typ" ? "on" : ""} onClick={() => setShown("typ")}>
+                Typical ({review.typical.played})
+              </button>
+            )}
           </div>
-          <Scorecard inn={current.inn} />
+          {shown === "typ" && review.typical ? <TypicalCard t={review.typical} /> : <Scorecard inn={current.inn} />}
         </div>
       </details>
 
@@ -350,6 +355,82 @@ function WinChanceLine({ chance, winner }: { chance?: WinChance; winner: string 
         <span class="l" style={{ width: `${l}%` }} />
       </div>
       <p class="muted" style="font-size:13px">{read}</p>
+    </div>
+  );
+}
+
+/** Every player's card averaged over the replays: what the match typically looks like. */
+function TypicalCard({ t }: { t: TypicalScorecard }) {
+  const [side, setSide] = useState<"user" | "ai">("user");
+  const s = t[side];
+  return (
+    <div class="stack" style="gap:12px">
+      <p class="muted" style="font-size:13px">
+        Averages over {t.played} replays of this match: same XIs, same ground, the luck re-rolled each time. Not one real game, so no one plays exactly like this.
+      </p>
+      <div class="tabs2">
+        <button type="button" class={side === "user" ? "on" : ""} onClick={() => setSide("user")}>Your XI</button>
+        <button type="button" class={side === "ai" ? "on" : ""} onClick={() => setSide("ai")}>AI XI</button>
+      </div>
+      <p style="font-size:14px">
+        {side === "user" ? "Your XI" : "AI XI"} score <b>{s.avgRuns}</b> on average. In 8 games out of 10 it is between {s.low} and {s.high}.
+      </p>
+      <table class="sc">
+        <thead>
+          <tr>
+            <th>Batter</th>
+            <th>In</th>
+            <th>Avg</th>
+            <th>SR</th>
+            <th>Out</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.batters.map((b) => (
+            <tr>
+              <td>
+                {shortName(b, 22)}
+                <span class="how">best {b.best}</span>
+              </td>
+              <td>{b.bats}</td>
+              <td>
+                <b>{b.runs}</b>
+              </td>
+              <td>{b.balls ? Math.round((b.runs / b.balls) * 100) : "-"}</td>
+              <td>{b.outPct}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table class="sc">
+        <thead>
+          <tr>
+            <th>Bowler</th>
+            <th>In</th>
+            <th>O</th>
+            <th>R</th>
+            <th>W</th>
+            <th>Econ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.bowlers.map((b) => (
+            <tr>
+              <td>{shortName(b, 22)}</td>
+              <td>{b.bowls}</td>
+              <td>{b.overs}</td>
+              <td>{b.runs}</td>
+              <td>
+                <b>{b.wickets}</b>
+              </td>
+              <td>{b.overs ? (b.runs / b.overs).toFixed(1) : "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p class="faint" style="font-size:12px">
+        In: games he batted or bowled in, out of {t.played}. Avg, SR and Out are for the innings he batted; overs, runs and wickets are his average in games he bowled.
+      </p>
     </div>
   );
 }
