@@ -231,6 +231,13 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 11.3 Tested a ball-by-ball model (`src/etl/rating-model.ts`, `ratings.ts`, workflow "T20 ball-by-ball ratings"): runs and wicket chance per ball = situation (phase x innings, ground, era, position) + team + batter - bowler, ridge-fitted with penalties chosen on held-out matches. Judged on 2025-26 T20Is it had not seen (`data/rating-model-report.md`). On Full Member matches, the cut in runs-per-ball error: today's raw career numbers +0.98%, the model +1.02% (fitted on all matches) / +1.06% (Full Member matches only), and **raw career numbers with Associate matches left out +1.26%** (innings-total error 27.0 v 28.7 today and 29.3 for the model). The model only wins when Associate matches are in the test, and Associates (who barely meet Full Members) cannot be placed on the scale reliably. Not adopted. Wicket skill is too noisy to separate any of them.
 - [ ] 11.4 Next: build each player's career numbers from Full Member v Full Member matches only (T20 first; ODI and Test the same way), and test a partial weight for Associate matches on held-out data.
 
+## Phase 12 — Engine against real cricket (done)
+
+- [x] 12.1 Scoring audit (`tests/scoring-audit.test.ts`): AI-v-AI drafts at every game ground and pitch, batting-first score against the real ground par, and every innings against real Full Member innings (`data-norms` `innings`, `results`, from the Cricsheet job). T20 (+9%) and ODI (+4%) were right: the game's XIs are stronger than the average side. **Tests were 23% low** (first innings 262 against 343; 91 overs against 102; draws 9% against 19%).
+- [x] 12.2 Test rates re-fitted (runs per ball x1.14, wicket rate x0.86): first innings 340 in 105 overs (real 343 in 102), fourth innings 190 (real 185), draws 16% (real 19%), whole-ground ratio 1.00. Strong-v-weak drafting signal unchanged (56%).
+- [x] 12.3 Head-to-head no longer counts rows won: on 1000 replayed pairs per format it picked the stronger side only 40%, 42% and 49% of the time (T20, ODI, Test). Fitted on those replays, the card now names what counts most (T20: finishers, pitch fit, death bowling; ODI: finishers, pitch fit; Test: middle order, batting depth) and who leads there. `tests/h2h-calibration.test.ts` refits the weights.
+- [ ] 12.4 Still off: Test third innings 12% low (222 against 252) and fourth innings 9 overs long; chasing sides are bowled out far less than real (T20 9% against 21%, ODI 21% against 38%); flat pitches run about 20% above ground par in every format.
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type
