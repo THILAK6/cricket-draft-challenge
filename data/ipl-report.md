@@ -69,13 +69,11 @@ League: first innings 169 in 19.88 overs, chasing 157; batting first wins 45.5% 
 
 ## The pace/spin guess (used only for players new to the game)
 
-Against 129 known bowlers with 300+ IPL balls: 114 right, 15 wrong (88.4% right).
+Against 129 known bowlers with 300+ IPL balls: 116 right, 13 wrong (89.9% right).
 
 - A Kumble: game PACE, guess SPIN
 - James Redfern Hopes: game PACE, guess SPIN
-- Bhuvneshwar Kumar Singh: game PACE, guess SPIN
 - Dwayne Romel Smith: game PACE, guess SPIN
-- RR Powar: game PACE, guess SPIN
 - PP Ojha: game PACE, guess SPIN
 - Umran Malik: game PACE, guess SPIN
 - PP Chawla: game PACE, guess SPIN
@@ -87,10 +85,60 @@ Against 129 known bowlers with 300+ IPL balls: 114 right, 15 wrong (88.4% right)
 - Marcus Peter Stoinis: game PACE, guess SPIN
 - Morawakage Maheesh Theekshana: game SPIN, guess PACE
 
+## Teams in the international files
+
+- India: 1037 matches
+- England: 961 matches
+- Australia: 942 matches
+- Sri Lanka: 905 matches
+- Pakistan: 878 matches
+- New Zealand: 835 matches
+- South Africa: 821 matches
+- West Indies: 819 matches
+- Bangladesh: 662 matches
+- Zimbabwe: 517 matches
+- Ireland: 306 matches
+- United Arab Emirates: 252 matches
+- Netherlands: 218 matches
+- Scotland: 214 matches
+- Nepal: 211 matches
+- Oman: 186 matches
+- Namibia: 186 matches
+- Kenya: 152 matches (not in the country table)
+- Hong Kong: 148 matches (not in the country table)
+- Canada: 147 matches
+- United States of America: 139 matches
+- Malaysia: 127 matches (not in the country table)
+- Bahrain: 121 matches (not in the country table)
+- Papua New Guinea: 120 matches
+- Uganda: 117 matches (not in the country table)
+- Rwanda: 116 matches (not in the country table)
+- Indonesia: 115 matches (not in the country table)
+- Nigeria: 103 matches (not in the country table)
+- Austria: 82 matches (not in the country table)
+- Singapore: 79 matches (not in the country table)
+- Malta: 77 matches (not in the country table)
+- Kuwait: 74 matches (not in the country table)
+- Romania: 73 matches (not in the country table)
+- Tanzania: 73 matches (not in the country table)
+- Germany: 70 matches (not in the country table)
+- Thailand: 70 matches (not in the country table)
+- Qatar: 66 matches (not in the country table)
+- Bermuda: 66 matches (not in the country table)
+- Botswana: 65 matches (not in the country table)
+- Japan: 60 matches (not in the country table)
+- Gibraltar: 57 matches (not in the country table)
+- Norway: 56 matches (not in the country table)
+- Bulgaria: 56 matches (not in the country table)
+- Sierra Leone: 56 matches (not in the country table)
+- Saudi Arabia: 54 matches (not in the country table)
+
+Players placed by name (not in the international files): Rahmanullah Gurbaz AFG, KK Cooper WI, Rashid Khan AFG, Mohammad Nabi AFG, Mujeeb Ur Rahman AFG, Azmatullah Omarzai AFG, AM Ghazanfar AFG, Naveen-ul-Haq AFG, Fazalhaq Farooqi AFG, Noor Ahmad AFG.
+
 ## Players new to the game
 
-185 added (290 already there). By country: IND 176, AUS 5, USA 2, NAM 1, UAE 1. 131 are Indian only because they have no international record (a few may be overseas players).
+185 added (290 already there). By country: IND 166, AFG 9, AUS 5, USA 2, WI 1, NAM 1, UAE 1. 121 are Indian only because they have no international record (a few may be overseas players).
 
 Roles of the added players: BAT 71, WK 14, AR 5, BOWL 95.
 
-Most-capped of those (check for overseas players among them): Rashid Khan (150), R Tewatia (121), R Bhatia (90), SK Trivedi (76), Abdul Samad (71), A Badoni (66), P Simran Singh (64), M Shahrukh Khan (62), SB Jakati (56), M Vohra (55), M Manhas (54), Shashank Singh (53), Noor Ahmad (50), S Gopal (49), Harpreet Brar (49), Iqbal Abdulla (46), TL Suman (43), N Wadhera (43), Yash Dayal (42), VG Arora (42), LR Shukla (42), M Ashwin (42), PJ Sangwan (40), MS Bisla (39), MK Lomror (39)
+Most-capped of those (check for overseas players among them): R Tewatia (121), R Bhatia (90), SK Trivedi (76), Abdul Samad (71), A Badoni (66), P Simran Singh (64), M Shahrukh Khan (62), SB Jakati (56), M Vohra (55), M Manhas (54), Shashank Singh (53), S Gopal (49), Harpreet Brar (49), Iqbal Abdulla (46), TL Suman (43), N Wadhera (43), Yash Dayal (42), VG Arora (42), LR Shukla (42), M Ashwin (42), PJ Sangwan (40), MS Bisla (39), MK Lomror (39), Suyash Sharma (37), Abishek Porel (36)
