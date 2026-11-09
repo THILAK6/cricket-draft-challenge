@@ -362,7 +362,7 @@ fs.writeFileSync(
     "    phases TEXT NOT NULL,",
     "    PRIMARY KEY (player_id, format)",
     ");",
-    "DELETE FROM player_phase_stats;",
+    "DELETE FROM player_phase_stats WHERE format IN ('T20', 'ODI', 'TEST');",
     ...batches(phaseRows, "INSERT OR REPLACE INTO player_phase_stats (player_id, format, phases)"),
     "",
   ].join("\n")
@@ -394,7 +394,7 @@ fs.writeFileSync(
     "    data TEXT NOT NULL,",
     "    PRIMARY KEY (player_id, format)",
     ");",
-    "DELETE FROM player_splits;",
+    "DELETE FROM player_splits WHERE format IN ('T20', 'ODI', 'TEST');",
     ...batches(splitRows, "INSERT OR REPLACE INTO player_splits (player_id, format, data)"),
     "",
   ].join("\n")

@@ -1,0 +1,47 @@
+name: IPL data from Cricsheet
+
+# Builds the game's IPL mode data from Cricsheet's IPL ball-by-ball files (src/etl/ipl.ts) and commits:
+#   data/ipl.sql                          IPL stats, roles, phases and splits (apply it to the database)
+#   src/core/data-norms-ipl.generated.ts  the league's norms, par scores and seasons
+#   data/ipl-report.md                    what was read and how the pace/spin guess did
+# The international files are downloaded too: they say which country each player represents.
+# Run it from the Actions tab ("Run workflow").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download ball-by-ball data
+        run: |
+          for f in ipl t20s odis tests; do
+            mkdir -p data/raw/${f}_json
+            # Cricsheet sometimes answers with something that is not a zip: try again, and check the file
+            for attempt in 1 2 3 4; do
+              curl -sSfL https://cricsheet.org/downloads/${f}_json.zip -o data/raw/${f}_json.zip && unzip -tq data/raw/${f}_json.zip >/dev/null && break
+              echo "download of $f failed (attempt $attempt)"; sleep $((attempt * 15))
+            done
+            unzip -q data/raw/${f}_json.zip -d data/raw/${f}_json
+          done
+      - run: npx tsx src/etl/ipl.ts data/raw
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ipl.sql src/core/data-norms-ipl.generated.ts data/ipl-report.md
+          git diff --cached --quiet && echo "No change" && exit 0
+          git commit -m "data: IPL stats, norms and report"
+          # Someone may have pushed while this ran: replay the data commit on top
+          git pull --rebase origin main
+          git push

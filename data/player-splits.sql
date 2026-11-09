@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS player_splits (
     data TEXT NOT NULL,
     PRIMARY KEY (player_id, format)
 );
-DELETE FROM player_splits;
+DELETE FROM player_splits WHERE format IN ('T20', 'ODI', 'TEST');
 INSERT OR REPLACE INTO player_splits (player_id, format, data) VALUES
 ('crick_00321fff', 'T20', '{"pos":{"tail":[43,65,7,15]},"region":{"asia":[20,20,3,252,315,9],"other":[23,45,4,496,508,33]},"chase":{"second":[28,47,5],"first":[15,18,2]}}'),
 ('crick_00467a76', 'T20', '{"pos":{"tail":[63,53,6,11],"six7":[14,17,2,2]},"region":{"other":[77,70,8,596,844,37]},"chase":{"first":[38,32,5],"second":[39,38,3]}}'),

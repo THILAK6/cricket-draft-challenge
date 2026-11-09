@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 
@@ -11,6 +11,8 @@ db.exec(readFileSync("data/career-overrides.sql", "utf8"));
 db.exec(readFileSync("data/data-fixes.sql", "utf8"));
 db.exec(readFileSync("data/phase-stats.sql", "utf8"));
 db.exec(readFileSync("data/player-splits.sql", "utf8"));
+// The IPL data comes from its own job; the game works without it
+if (existsSync("data/ipl.sql")) db.exec(readFileSync("data/ipl.sql", "utf8"));
 
 /** In-memory D1 stand-in over the seed data, for scripts and tests. */
 function statement(sql: string, args: unknown[] = []) {

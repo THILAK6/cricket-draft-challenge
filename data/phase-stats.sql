@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS player_phase_stats (
     phases TEXT NOT NULL,
     PRIMARY KEY (player_id, format)
 );
-DELETE FROM player_phase_stats;
+DELETE FROM player_phase_stats WHERE format IN ('T20', 'ODI', 'TEST');
 INSERT OR REPLACE INTO player_phase_stats (player_id, format, phases) VALUES
 ('crick_00321fff', 'T20', '{"pp":[0,0,0,6,3,1],"mid":[2,8,1,669,710,35],"death":[41,57,6,73,110,6]}'),
 ('crick_00467a76', 'T20', '{"pp":[0,0,0,180,251,9],"mid":[11,17,2,300,389,20],"death":[66,53,6,116,204,8]}'),
