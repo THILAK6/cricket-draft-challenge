@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { DraftState } from "../../../src/core/types";
 import { canPickPlayer, rulesFor } from "../../../src/core/validator";
 import { api } from "../api";
-import { keyStats, PITCH_LABEL, plainReason, ROLE_SHORT, roleKey, shortName, type Player, type RoleKey, type Squad } from "../format";
+import { keyStats, PITCH_LABEL, plainReason, positionLine, ROLE_SHORT, roleKey, shortName, type Player, type RoleKey, type Squad } from "../format";
 import { PlayerSheet } from "./PlayerSheet";
+import { reorderXI, useDragOrder } from "./useDragOrder";
 import { PERSONA_INFO } from "../../../src/core/personas";
 import type { ShowToast } from "./Toast";
 
@@ -219,9 +220,9 @@ export function Draft(props: RoomProps) {
       <div class={`panel side-panel ${tab === "you" ? "m-on" : ""} ${side === "you" ? "d-on" : ""}`}>
         <div class="section-head">
           <b>Your XI</b>
-          <span class="muted">{mine.length}/11 · batting order set after the draft</span>
+          <span class="muted">{mine.length}/11 · drag ⠿ to set the batting order</span>
         </div>
-        <XIList squad={state.userPicks} format={format} onOpen={setOpen} />
+        <XIList squad={state.userPicks} format={format} onOpen={setOpen} onMove={(from, to) => reorderXI(props, from, to)} />
         <div style="padding:10px 16px">
           <NeedChips needs={needs} mine={mine} />
         </div>
@@ -328,11 +329,28 @@ function NeedChips({ needs, mine }: { needs: ReturnType<typeof rulesFor>; mine: 
   );
 }
 
-export function XIList({ squad, format, onOpen }: { squad: Squad; format: DraftState["challenge"]["format"]; onOpen?: (p: Player) => void }) {
+export function XIList({ squad, format, onOpen, onMove }: { squad: Squad; format: DraftState["challenge"]["format"]; onOpen?: (p: Player) => void; onMove?: (from: number, to: number) => void }) {
+  // With onMove, each player has a handle to drag him to another batting spot (empty spots too)
+  const order = useDragOrder(onMove ?? (() => {}), !!onMove);
+  const { drag } = order;
   return (
-    <div class="xi">
+    <div class={`xi ${onMove ? "lineup-list" : ""} ${drag ? "dragging" : ""}`}>
       {squad.map((p, i) =>
-        p ? (
+        p && onMove ? (
+          <div class={`xrow ${drag?.from === i ? "lifted" : ""}`} style={order.rowStyle(i)} key={p.id}>
+            <span class="num">{order.landing(i) + 1}</span>
+            <button type="button" class="who" style="background:none;border:0;padding:0;text-align:left" onClick={() => onOpen?.(p)}>
+              <b class="ellipsis" style="display:block">{shortName(p, 26)}</b>
+              <span class="sub">
+                <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {p.country} · {keyStats(p, format)}
+              </span>
+              {positionLine(p, order.landing(i) + 1, format) && <span class="posrec">{positionLine(p, order.landing(i) + 1, format)}</span>}
+            </button>
+            <button type="button" class="grip" {...order.gripProps(i, p.name)}>
+              ⠿
+            </button>
+          </div>
+        ) : p ? (
           <button type="button" class="xrow" style="background:none;border-left:0;border-right:0;border-top:0;text-align:left;width:100%" onClick={() => onOpen?.(p)}>
             <span class="num">{i + 1}</span>
             <span class="who">
@@ -343,8 +361,8 @@ export function XIList({ squad, format, onOpen }: { squad: Squad; format: DraftS
             </span>
           </button>
         ) : (
-          <div class="xrow empty-slot">
-            <span class="num">{i + 1}</span>
+          <div class="xrow empty-slot" style={onMove ? order.rowStyle(i) : undefined} key={`empty${i}`}>
+            <span class="num">{onMove ? order.landing(i) + 1 : i + 1}</span>
             <span class="who">{i < 2 ? "Opener to pick" : i < 6 ? "Batter to pick" : i < 8 ? "All-rounder or keeper to pick" : "Bowler to pick"}</span>
           </div>
         )

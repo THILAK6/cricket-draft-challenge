@@ -209,7 +209,8 @@ export class DraftRoom implements DurableObject {
     const squad = ds[key].slice();
     if (by === "AI" && isValidSlot(aiSlot) && !squad[aiSlot]) squad[aiSlot] = player;
     else squad[squad.indexOf(null)] = player;
-    ds[key] = arrangeSquad(squad, this.format());
+    // Once the user has set his own order, his squad stays as he left it (new picks take the next empty spot)
+    ds[key] = by === "USER" && ds.userOrderManual ? squad : arrangeSquad(squad, this.format());
     ds.pickIndex = (ds.pickIndex ?? 0) + 1;
     ds.pickLog = [...(ds.pickLog ?? []), { n: ds.pickIndex, by, playerId: player.id, name: player.name, country: player.country, role: player.primary_role }];
     ds.round = Math.floor((ds.pickIndex) / 2) + 1;
@@ -304,17 +305,18 @@ export class DraftRoom implements DurableObject {
     return !ds.pool.some((p) => canPickPlayer(p, squad, ds.challenge, undefined, ctx).allowed);
   }
 
-  /** The batting order is the user's to set once both XIs are complete, until the match is played. */
+  /** The batting order is the user's to set from the first pick until the match is played. */
   private reorder(fromIndex: unknown, toIndex: unknown): Result {
     const ds = this.draftState;
     if (!ds) return { success: false, error: "Draft room not initialized", status: 400 };
     if (!isValidSlot(fromIndex) || !isValidSlot(toIndex)) return { success: false, error: "Invalid slot indices (must be integers 0-10)", status: 400 };
-    if (ds.status === "DRAFTING") return { success: false, error: "Set your batting order once the draft is over", status: 409 };
     if (ds.status === "COMPLETED") return { success: false, error: "The match has been played", status: 409 };
+    if (!ds.userPicks[fromIndex]) return { success: false, error: "There is nobody in that slot to move", status: 400 };
     const order = ds.userPicks.slice();
     const [moved] = order.splice(fromIndex, 1);
     order.splice(toIndex, 0, moved);
     ds.userPicks = order;
+    ds.userOrderManual = true;
     ds.lastActionTimestamp = Date.now();
     return { success: true };
   }

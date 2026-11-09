@@ -98,10 +98,34 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         expect(await overflow()).toBe(0);
 
         let taps = 0;
+        let movedName = "";
         for (let guard = 0; guard < 15 && !(await page.$("text=Play the match")); guard++) {
           const draft = page.locator(".prow .pick").first();
           await draft.click();
           taps++;
+          if (taps === 4) {
+            // Mid-draft: drag the first player in Your XI down two spots, then carry on drafting
+            await page.click(".tabbar button:has-text('Your XI')");
+            const rows = () => page.$$eval(".side-panel.m-on .xi .xrow", (els: any[]) => els.map((e) => (e.querySelector(".who b")?.textContent ?? "")));
+            if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `draft-xi-${format}.png`) });
+            const before = await rows();
+            const from = before.findIndex((n: string) => n);
+            movedName = before[from];
+            const grip = page.locator(".side-panel.m-on .xi .grip").first();
+            const box = (await grip.boundingBox())!;
+            const rowH = (await page.locator(".side-panel.m-on .xi .xrow").first().boundingBox())!.height;
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            for (let s = 1; s <= 8; s++) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + (2 * rowH * s) / 8);
+            const saved = page.waitForResponse((r: any) => r.url().includes("/reorder"));
+            await page.mouse.up();
+            await saved;
+            await page.waitForTimeout(100);
+            const after = await rows();
+            expect(after.indexOf(movedName), "the dragged player moved down two spots").toBe(from + 2);
+            expect(await overflow()).toBe(0);
+            await page.click(".tabbar button:has-text('Pool')");
+          }
           await page.waitForTimeout(150);
           expect(await page.$(".toast.error"), "a Draft tap was refused").toBeNull();
           expect(await page.$('[aria-modal="true"]'), "something must be dismissed to keep drafting").toBeNull();
@@ -112,6 +136,8 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         // Drag the opener down two places by his handle
         const names = () => page.$$eval(".lineup-list .xrow .who b", (els: any[]) => els.map((e) => e.textContent));
         const before = await names();
+        // The order set mid-draft survived the rest of the draft (the batting order screen opens as he left it)
+        expect(before.indexOf(movedName), "the order set during the draft is kept").toBeGreaterThanOrEqual(0);
         const grip = page.locator(".lineup-list .grip").first();
         // The batting-order screen opens at the top
         expect(await page.evaluate("window.scrollY")).toBe(0);

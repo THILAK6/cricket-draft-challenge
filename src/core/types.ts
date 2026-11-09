@@ -179,6 +179,8 @@ export interface DraftState {
   deviceId?: string;
   /** The saved match (worker/match-store.ts), once played: its share link is /?match=<id>. */
   matchId?: string;
+  /** The user has set his own batting order: later picks no longer re-sort his squad. */
+  userOrderManual?: boolean;
 }
 
 /** Snake draft: the first picker takes pick 1, then each side picks twice in turn, and the other side takes pick 22. */

@@ -158,9 +158,11 @@ describe("DraftRoom endpoint hardening", () => {
     expect((await call(room, "/reorder", { fromIndex: "0", toIndex: 1 })).status).toBe(400);
   });
 
-  it("lets the user set the batting order only between the draft and the match", async () => {
-    await call(room, "/pick", { playerId: "IND_lhb" });
-    expect((await call(room, "/reorder", { fromIndex: 0, toIndex: 1 })).status).toBe(409);
+  it("lets the user set the batting order from the first pick until the match is played", async () => {
+    const first = (await call(room, "/pick", { playerId: "IND_lhb" })).data.state;
+    const slot = first.userPicks.findIndex((p: any) => p);
+    // Nobody to move in an empty slot
+    expect((await call(room, "/reorder", { fromIndex: (slot + 1) % 11, toIndex: 0 })).status).toBe(400);
     const drafted = await draftToCompletion(room);
     expect(drafted.status).toBe("READY_TO_PLAY");
     const movedId = drafted.userPicks[10]!.id;
@@ -169,6 +171,26 @@ describe("DraftRoom endpoint hardening", () => {
     expect(res.data.state.userPicks[0].id).toBe(movedId);
     await call(room, "/start-match");
     expect((await call(room, "/reorder", { fromIndex: 0, toIndex: 1 })).status).toBe(409);
+  });
+
+  it("keeps an order the user has set while the draft goes on, and sorts as before until then", async () => {
+    // Untouched: the squad is sorted into a natural order after every pick (openers first)
+    const a = (await call(room, "/pick", { playerId: "IND_lhb" })).data.state;
+    const mineA = a.userPicks.filter(Boolean).map((p: any) => p.id);
+    expect(mineA).toEqual(["IND_lhb"]);
+    const b = (await call(room, "/pick", { playerId: "IND_wk" })).data.state;
+    const slotOf = (s: any, id: string) => s.userPicks.findIndex((p: any) => p?.id === id);
+    // Move the first pick to the very end (slot 10), then draft on: he stays there
+    const from = slotOf(b, "IND_lhb");
+    const moved = (await call(room, "/reorder", { fromIndex: from, toIndex: 10 })).data.state;
+    expect(slotOf(moved, "IND_lhb")).toBe(10);
+    expect(moved.userOrderManual).toBe(true);
+    const more = (await call(room, "/pick", { playerId: "AUS_rhb" })).data.state;
+    expect(slotOf(more, "IND_lhb")).toBe(10);
+    expect(more.userPicks.filter(Boolean).length).toBe(3);
+    // And a finished draft keeps it too
+    const done = await draftToCompletion(room);
+    expect(slotOf(done, "IND_lhb")).toBe(10);
   });
 
   it("refuses to simulate (via /referee or /start-match) before both squads are full", async () => {
