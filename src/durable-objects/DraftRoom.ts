@@ -432,6 +432,8 @@ export class DraftRoom implements DurableObject {
       challenge: ds.challenge,
       simulation,
       pickLog: ds.pickLog,
+      // Everyone who was on the board at the start: what is left of the pool, and both squads
+      draftPool: [...ds.pool, ...ds.userPicks.filter((p): p is PlayerWithStats => !!p), ...ds.aiPicks.filter((p): p is PlayerWithStats => !!p)],
       seed,
       replay: (s) => simulateCricketMatch(ds.userPicks, ds.aiPicks, ds.challenge, s, { userPlan: plan }),
     });

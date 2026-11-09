@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { InningsScorecard, MatchSimulationResult } from "../../../src/core/simulator";
-import { buildDraftAwards, buildHeadToHead, type DraftAward, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
+import { buildDraftAwards, buildHeadToHead, type DraftAward, type DraftDecision, type HeadToHead, type MatchReview, type WinChance } from "../../../src/core/match-review";
 import { FORMAT_LABEL, parLine, PITCH_LABEL, shortName } from "../format";
 import type { RoomProps } from "./Draft";
 import { matchLink } from "../api";
@@ -82,19 +82,10 @@ export function Result(props: ResultProps) {
       <div class="verdict">
         <h2 class={sim.winner === "USER" ? "good" : sim.winner === "AI" ? "bad" : ""}>{headline}</h2>
         <p class="muted" style="margin-top:4px">{sim.summary}</p>
-        {sim.playerOfTheMatch && (
-          <div class="potm">
-            <span aria-hidden="true">🏅</span>
-            <div class="grow">
-              <span class="muted" style="font-size:12px">Player of the match</span>
-              <div>
-                <b>{sim.playerOfTheMatch.name}</b> <span class="muted">{sim.playerOfTheMatch.performance}</span>
-              </div>
-            </div>
-          </div>
-        )}
         <p class="faint" style="font-size:13px;margin-top:8px">{sim.toss?.narrative}</p>
       </div>
+
+      <DraftCard review={review} />
 
       <WinChanceLine chance={review.winChance} winner={sim.winner} />
 
@@ -110,24 +101,6 @@ export function Result(props: ResultProps) {
               <div class="grow">
                 <b class={m.impactTeam === "USER" ? "you" : "ai"}>{m.title}</b>
                 <div class="muted" style="font-size:13px">{m.description}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {review.awards.length > 0 && (
-        <div class="card stack" style="gap:8px">
-          <div class="label">Draft awards</div>
-          {review.awards.map((a) => (
-            <div class="award">
-              <span class="ic" aria-hidden="true">{AWARD_ICON[a.kind]}</span>
-              <div class="grow">
-                <span class="muted" style="font-size:12px">{a.title}</span>
-                <div>
-                  <b class={a.team === "USER" ? "you" : "ai"}>{a.name}</b>
-                </div>
-                <div class="muted" style="font-size:13px">{a.text}</div>
               </div>
             </div>
           ))}
@@ -154,6 +127,18 @@ export function Result(props: ResultProps) {
           <Scorecard inn={current.inn} />
         </div>
       </details>
+
+      {sim.playerOfTheMatch && (
+        <div class="potm" style="margin:12px 16px 0">
+          <span aria-hidden="true">🏅</span>
+          <div class="grow">
+            <span class="muted" style="font-size:12px">Player of the match</span>
+            <div>
+              <b>{sim.playerOfTheMatch.name}</b> <span class="muted">{sim.playerOfTheMatch.performance}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {test && sim.dayChronicle && sim.dayChronicle.length > 0 && (
         <details class="box">
@@ -199,6 +184,47 @@ export function Result(props: ResultProps) {
 }
 
 const AWARD_ICON: Record<DraftAward["kind"], string> = { steal: "💎", best: "⭐", regret: "😬" };
+const DECISION_ICON: Record<DraftDecision["kind"], string> = { smart: "🧠", costly: "⚠️" };
+
+/** The draft is the game: the awards, and the choices that made or cost you, with the reasons. */
+function DraftCard({ review }: { review: MatchReview }) {
+  const decisions = review.decisions ?? [];
+  if (!review.awards.length && !decisions.length) return null;
+  return (
+    <div class="card stack draft-card" style="gap:8px">
+      <div class="label">The draft</div>
+      {review.awards.map((a) => (
+        <div class="award">
+          <span class="ic" aria-hidden="true">{AWARD_ICON[a.kind]}</span>
+          <div class="grow">
+            <span class="muted" style="font-size:12px">{a.title}</span>
+            <div>
+              <b class={a.team === "USER" ? "you" : "ai"}>{a.name}</b>
+            </div>
+            <div class="muted" style="font-size:13px">{a.text}</div>
+          </div>
+        </div>
+      ))}
+      {decisions.length > 0 && (
+        <>
+          <div class="label" style="margin-top:6px">Your key decisions</div>
+          {decisions.map((d) => (
+            <div class="award">
+              <span class="ic" aria-hidden="true">{DECISION_ICON[d.kind]}</span>
+              <div class="grow">
+                <span class="muted" style="font-size:12px">{d.kind === "smart" ? "Smart call" : "Costly call"} · pick {d.pick}</span>
+                <div>
+                  <b class={d.kind === "smart" ? "good" : "bad"}>{d.title}</b>
+                </div>
+                <div class="muted" style="font-size:13px">{d.text}</div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
 
 /** "Hope", "de Villiers": enough of a name to argue about. */
 function surname(name: string): string {
@@ -217,9 +243,14 @@ function names(xs: string[]): string {
 
 function HeadToHeadCard({ h2h, format }: { h2h: HeadToHead; format: string }) {
   const level = h2h.rows.length - h2h.won.USER - h2h.won.AI;
+  // Every area starts closed, with who leads on its line; "Open all" shows the numbers
+  const [all, setAll] = useState(false);
   return (
     <div class="card stack" style="gap:6px">
-      <div class="label">Head to head</div>
+      <div class="row" style="align-items:center;justify-content:space-between;gap:8px">
+        <div class="label">Head to head</div>
+        <button type="button" class="linkbtn" onClick={() => setAll(!all)}>{all ? "Close all" : "Open all"}</button>
+      </div>
       {h2h.matters?.length ? (
         <p class="h2h-sum">
           <span class="muted">Counts most in {format === "TEST" ? "a Test" : `${format === "ODI" ? "an" : "a"} ${format}`}: </span>
@@ -246,21 +277,24 @@ function HeadToHeadCard({ h2h, format }: { h2h: HeadToHead; format: string }) {
       )}
       <div class="h2h">
         {h2h.rows.map((r) => (
-          <div class={`row ${r.edge === "USER" ? "u" : r.edge === "AI" ? "a" : "e"}`}>
-            <div class="lbl">
-              <span class="arrow l" aria-hidden="true">{r.edge === "USER" ? "◀" : ""}</span>
-              <span>{r.label}</span>
-              <span class="arrow r" aria-hidden="true">{r.edge === "AI" ? "▶" : ""}</span>
-              <span class="sr-only">{r.edge === "USER" ? ": yours" : r.edge === "AI" ? ": the AI's" : ": level"}</span>
+          <details class={`row ${r.edge === "USER" ? "u" : r.edge === "AI" ? "a" : "e"}`} key={`${r.key}${all}`} open={all}>
+            <summary>
+              <span class="chev" aria-hidden="true">▸</span>
+              <span class="sum-lbl">{r.label}</span>
+              <span class={`lead ${r.edge === "USER" ? "you" : r.edge === "AI" ? "ai" : "even"}`}>
+                {r.edge === "USER" ? "◀ You lead" : r.edge === "AI" ? "AI leads ▶" : "Level"}
+              </span>
+            </summary>
+            <div class="body">
+              {r.cols && <div class="cols">{r.cols}</div>}
+              <UnitSide line={r.user} side="l" />
+              <UnitSide line={r.ai} side="r" />
             </div>
-            {r.cols && <div class="cols">{r.cols}</div>}
-            <UnitSide line={r.user} side="l" />
-            <UnitSide line={r.ai} side="r" />
-          </div>
+          </details>
         ))}
       </div>
       <p class="faint" style="font-size:12px">
-        Career numbers in this format. The arrow points to the stronger unit; a short career counts for less than the same numbers over a long one. Winning more rows does not mean the stronger side: the replays above say what it adds up to.
+        Career numbers in this format. Tap an area to see the players. A short career counts for less than the same numbers over a long one. Leading more areas does not mean the stronger side: the replays above say what it adds up to.
       </p>
     </div>
   );
@@ -302,10 +336,13 @@ function WinChanceLine({ chance, winner }: { chance?: WinChance; winner: string 
     : "Two well-matched XIs: it could go either way.";
   return (
     <div class="card stack" style="gap:8px">
-      <div class="label">Played {chance.played} times</div>
+      <div class="label">Same match, {chance.played} replays</div>
       <p>
         Your XI wins <b class="you">{w}%</b>
         {d > 0 ? <>, draws {d}%</> : null} and loses <b class="ai">{l}%</b>.
+      </p>
+      <p class="faint" style="font-size:12px">
+        We replayed this exact match, same two XIs and same ground, {chance.played} more times with the luck re-rolled (the toss, who gets set, which ball finds the edge). It shows whether you won on the draft or on the dice.
       </p>
       <div class="chance" role="img" aria-label={`Win ${w}%, draw ${d}%, lose ${l}%`}>
         <span class="w" style={{ width: `${w}%` }} />

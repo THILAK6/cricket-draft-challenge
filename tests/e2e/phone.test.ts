@@ -165,6 +165,17 @@ describe.skipIf(!playwright)("phone playthrough", () => {
         await page.waitForSelector("text=Head to head");
         expect(await page.locator(".h2h .row").count()).toBe(format === "T20" ? 10 : 8);
         expect(await page.locator(".chance").count()).toBe(1);
+        // Head to head: every area closed, each with who leads; one tap opens it
+        expect(await page.locator(".h2h details.row[open]").count()).toBe(0);
+        expect(await page.locator(".h2h .lead").count()).toBe(format === "T20" ? 10 : 8);
+        await page.click(".h2h details.row summary >> nth=0");
+        expect(await page.locator(".h2h details.row[open]").count()).toBe(1);
+        await page.click(".h2h details.row summary >> nth=0");
+        // The draft comes first; the player of the match is below the scorecards
+        const y = async (sel: string) => (await page.locator(sel).first().boundingBox())?.y ?? -1;
+        if (await page.locator(".draft-card").count()) expect(await y(".draft-card")).toBeLessThan(await y(".chance"));
+        expect(await y("details.box:has(summary:text('Scorecards'))")).toBeLessThan(await y(".potm"));
+        expect(await y(".chance")).toBeLessThan(await y(".h2h"));
         expect(await page.locator("details.box[open]").count()).toBe(0);
         await page.click("summary:has-text('Scorecards')");
         expect(await overflow()).toBe(0);

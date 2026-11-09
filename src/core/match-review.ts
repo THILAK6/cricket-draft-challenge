@@ -1,7 +1,7 @@
 import type { Challenge, MatchFormat, PickLogEntry, PlayerWithStats } from "./types";
 import type { MatchSimulationResult } from "./simulator";
 import type { Contribution } from "./impact";
-import { battingRaw, bowlingRaw, battingRating, bowlingRating } from "./player-quality";
+import { battingRaw, bowlingRaw, battingRating, bowlingRating, playerQuality } from "./player-quality";
 import { isNaturalOpener } from "./batting-order";
 import { isBowlingOption } from "./validator";
 import { calculateDeterministicScore } from "./scoring";
@@ -68,9 +68,22 @@ export interface WinChance {
   draws: number;
 }
 
+/** A pick of yours looked at in the light of what was on the board and what happened next. */
+export interface DraftDecision {
+  kind: "smart" | "costly";
+  title: string;
+  /** Pick number in the draft (1-22). */
+  pick: number;
+  picked: string;
+  passed: string;
+  text: string;
+}
+
 export interface MatchReview {
   headToHead: HeadToHead;
   awards: DraftAward[];
+  /** Your smartest and costliest choices between players, with the reasons. */
+  decisions?: DraftDecision[];
   winChance?: WinChance;
 }
 
@@ -370,6 +383,94 @@ export function buildDraftAwards(pickLog: PickLogEntry[] | undefined, contributi
   return out;
 }
 
+type Kind = "keeper" | "batter" | "all-rounder" | "seamer" | "spinner" | "bowler";
+const kindOf = (p: PlayerWithStats): Kind =>
+  p.primary_role === "WK" ? "keeper" : p.primary_role === "BAT" ? "batter" : p.primary_role === "AR" ? "all-rounder" : p.bowling_category === "PACE" ? "seamer" : p.bowling_category === "SPIN" ? "spinner" : "bowler";
+const PLURAL: Record<Kind, string> = { keeper: "keepers", batter: "batters", "all-rounder": "all-rounders", seamer: "seamers", spinner: "spinners", bowler: "bowlers" };
+
+/** Players this close in quality are "of a level": one can stand in for the other. */
+const TIER = 8;
+
+const list = (ps: PlayerWithStats[]) => (ps.length === 2 ? `${ps[0].name} and ${ps[1].name}` : ps.map((p) => p.name).join(", "));
+
+/**
+ * Your key decisions, read off the draft itself: at each of your picks, who was on the board (the
+ * pick log and the full pool replay it), and what happened afterwards.
+ *
+ *  - Smart: you took a player of a kind that was running out (the best keeper left, with a big drop
+ *    to the next) ahead of a bigger name of a kind that was easy to replace (his equals were still
+ *    there, or you got one later).
+ *  - Costly: you took a player of a plentiful kind ahead of the last good one of another kind, who
+ *    then went to the AI.
+ *
+ * Kinds are keeper, batter, all-rounder, seamer, spinner. Quality is the stats-only rating the AI
+ * uses; it is never shown, only the reasoning.
+ */
+export function buildDraftDecisions(
+  pickLog: PickLogEntry[] | undefined,
+  draftPool: PlayerWithStats[] | undefined,
+  quality: (p: PlayerWithStats) => number
+): DraftDecision[] {
+  if (!pickLog?.length || !draftPool?.length) return [];
+  const byId = new Map(draftPool.map((p) => [p.id, p]));
+  const taken = new Set<string>();
+  const near = (x: PlayerWithStats, ref: PlayerWithStats) => kindOf(x) === kindOf(ref) && quality(x) >= quality(ref) - TIER;
+  const mine = pickLog.filter((e) => e.by === "USER");
+  const found: (DraftDecision & { score: number })[] = [];
+
+  for (const e of pickLog) {
+    const avail = draftPool.filter((p) => !taken.has(p.id));
+    taken.add(e.playerId);
+    const P = byId.get(e.playerId);
+    if (e.by !== "USER" || !P) continue;
+    const others = avail.filter((p) => p.id !== P.id);
+    const B = others.reduce<PlayerWithStats | undefined>((best, p) => (!best || quality(p) > quality(best) ? p : best), undefined);
+    // Only a choice between a lesser name and a bigger one of another kind is a decision
+    if (!B || quality(B) < quality(P) + 3 || kindOf(B) === kindOf(P)) continue;
+    const gP = kindOf(P), gB = kindOf(B);
+
+    const equalsOfB = others.filter((x) => x.id !== B.id && near(x, B));
+    const equalsOfP = others.filter((x) => near(x, P));
+    const nextP = others.filter((x) => kindOf(x) === gP).sort((a, b) => quality(b) - quality(a))[0];
+    const gap = nextP ? quality(P) - quality(nextP) : Infinity;
+    const gotLater = mine.filter((u) => u.n > e.n).map((u) => ({ n: u.n, p: byId.get(u.playerId)! })).find((u) => u.p && near(u.p, B));
+    const aiTook = pickLog.find((x) => x.by === "AI" && x.playerId === B.id && x.n > e.n);
+
+    if (gap >= TIER && (gotLater || equalsOfB.length >= 2)) {
+      const hadKeeper = mine.filter((u) => u.n < e.n).some((u) => byId.get(u.playerId)?.primary_role === "WK");
+      const why =
+        `${P.name} was the best ${gP} left` +
+        (nextP ? (gap >= 15 ? `, with a big drop to the next (${nextP.name}).` : `, a clear step up on the next (${nextP.name}).`) : ", and the last one of any standard.") +
+        (gP === "keeper" && !hadKeeper ? " You had no keeper yet." : "");
+      const alt = gotLater
+        ? ` ${B.name} looked bigger, but ${gotLater.p.name}, almost his equal, was still there, and you took him at pick ${gotLater.n}.`
+        : ` ${B.name} could be replaced: ${list(equalsOfB.slice(0, 2))} ${equalsOfB.length > 1 ? "were" : "was"} still on the board.`;
+      found.push({ kind: "smart", title: `${P.name} over ${B.name}`, pick: e.n, picked: P.name, passed: B.name, text: why + alt, score: Math.min(gap, 30) + (gotLater ? 10 : 0) + equalsOfB.length });
+    } else if (aiTook && !gotLater && equalsOfP.length >= 2 && equalsOfB.length <= 1) {
+      const last = equalsOfB.length === 0 ? `the last ${gB} of his class` : `one of the last two ${PLURAL[gB]} of his class`;
+      found.push({
+        kind: "costly",
+        title: `${P.name} over ${B.name}`,
+        pick: e.n,
+        picked: P.name,
+        passed: B.name,
+        text: `${list(equalsOfP.slice(0, 2))} ${equalsOfP.length > 1 ? "were" : "was"} of ${P.name}'s level and still there, but ${B.name} was ${last}, and went to the AI at pick ${aiTook.n}.`,
+        score: equalsOfP.length + 10,
+      });
+    }
+  }
+  // One lesson per player passed over: the strongest case for each (the earliest pick on a tie)
+  const top = (kind: DraftDecision["kind"], n: number) => {
+    const seen = new Set<string>();
+    return found
+      .filter((d) => d.kind === kind)
+      .sort((a, b) => b.score - a.score || a.pick - b.pick)
+      .filter((d) => !seen.has(d.passed) && !!seen.add(d.passed))
+      .slice(0, n);
+  };
+  return [...top("smart", 3), ...top("costly", 2)].map(({ score: _s, ...d }) => d);
+}
+
 /** Replays per format: enough for a steady percentage, well inside the free plan's CPU limit. */
 export const REPLAYS = 200;
 
@@ -398,6 +499,8 @@ export interface ReviewInput {
   challenge: Challenge;
   simulation: MatchSimulationResult;
   pickLog?: PickLogEntry[];
+  /** Everyone who was available when the draft began (needed for the key decisions). */
+  draftPool?: PlayerWithStats[];
   /** Replays the match with another seed (left out, no win chance is given). */
   replay?: (seed: number) => Pick<MatchSimulationResult, "winner">;
   seed?: number;
@@ -407,6 +510,7 @@ export function buildMatchReview(input: ReviewInput): MatchReview {
   return {
     headToHead: buildHeadToHead(input.userSquad, input.aiSquad, input.challenge),
     awards: buildDraftAwards(input.pickLog, input.simulation.matchFacts?.contributions),
+    ...(input.draftPool ? { decisions: buildDraftDecisions(input.pickLog, input.draftPool, (p) => playerQuality(p, input.challenge.format || "T20")) } : {}),
     winChance: input.replay ? estimateWinChance(input.replay, input.seed ?? 1) : undefined,
   };
 }

@@ -314,3 +314,18 @@ table.sc td .how { display: block; font-size: 11px; color: var(--faint); }
 .mymatches .grow > span { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mymatches .when { font-size: 12px; white-space: nowrap; }
 .saved-head { padding: 12px 16px 0; font-size: 13px; }
+
+/* Head to head: every area closed, with who leads on its line */
+.h2h details.row { display: block; padding: 0; }
+.h2h details.row > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; min-height: 44px; padding: 6px 0; }
+.h2h details.row > summary::-webkit-details-marker { display: none; }
+.h2h .chev { color: var(--faint); font-size: 12px; transition: transform 0.15s; }
+.h2h details.row[open] .chev { transform: rotate(90deg); }
+.h2h .sum-lbl { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text); }
+.h2h .lead { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
+.h2h .lead.you { color: var(--you); }
+.h2h .lead.ai { color: var(--ai); }
+.h2h .lead.even { color: var(--muted); }
+.h2h details.row .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px 12px; padding: 0 0 12px; }
+.linkbtn { background: none; border: 0; color: var(--you); font-weight: 700; font-size: 13px; padding: 6px 0 6px 10px; min-height: 32px; }
+.draft-card .label { margin: 0; }

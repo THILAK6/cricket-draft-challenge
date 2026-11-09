@@ -241,6 +241,12 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 12.6 Flat pitches scoring about 20% above ground par: not an engine error. Half of it is strong XIs gaining more on a flat deck (average XIs: 1.16 in T20, 1.12 in ODI); the rest is that a ground's real par averages all its pitches while the game's flat is the high end. Averaged over the pitches each ground can have, the engine is on par. Left unchanged.
 - [ ] 12.7 Remaining: Test fourth innings last about 10 overs longer than real (69 against 59); ODI first innings are all out 23% against 33% real.
 
+## Phase 13 — The draft first (done)
+
+- [x] 13.1 Result page order: the draft (awards and key decisions) first, then the replays, head to head, turning points, scorecards, then the player of the match.
+- [x] 13.2 Key decisions (`buildDraftDecisions`): read from the draft itself by replaying the pick log against the full pool. Smart: the best keeper (or other scarce kind) left was taken ahead of a bigger name whose equals were still there or came to you later ("Buttler over Kohli: Buttler was the best keeper left, Root was still there"). Costly: a plentiful kind was taken ahead of the last good one of another kind, who went to the AI. One lesson per player passed over; no ratings shown.
+- [x] 13.3 Head to head: every area starts closed with who leads on its line; "Open all" shows the players. "Played 200 times" became "Same match, 200 replays", with a sentence saying what it means.
+
 ## Phase 7 — School rules: names, not numbers (proposed)
 
 - [ ] **7.1 Names only by default.** During the draft each player shows country, role, bowling type

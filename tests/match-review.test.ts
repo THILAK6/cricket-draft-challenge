@@ -4,7 +4,7 @@ import { buildRandomDraft, getPlayerPool } from "../src/worker/challenge-generat
 import { chooseAiPick } from "../src/core/ai-draft";
 import { arrangeSquad } from "../src/core/batting-order";
 import { simulateCricketMatch } from "../src/core/simulator";
-import { buildHeadToHead, buildDraftAwards, estimateWinChance, buildMatchReview } from "../src/core/match-review";
+import { buildHeadToHead, buildDraftAwards, buildDraftDecisions, estimateWinChance, buildMatchReview } from "../src/core/match-review";
 import { snakeOrder, type Challenge, type MatchFormat, type PickLogEntry, type PlayerWithStats } from "../src/core/types";
 
 type Squad = (PlayerWithStats | null)[];
@@ -118,6 +118,73 @@ describe("draft awards", () => {
 
   it("gives no awards without a pick log", () => {
     expect(buildDraftAwards(undefined, [])).toEqual([]);
+  });
+});
+
+describe("key decisions", () => {
+  // Made-up players with a quality of their own, so the reasoning is what is tested
+  const Q: Record<string, number> = {};
+  const mk = (name: string, role: PlayerWithStats["primary_role"], q: number, cat: PlayerWithStats["bowling_category"] = "NONE"): PlayerWithStats => {
+    Q[name] = q;
+    return { id: name, name, country: "ENG", batting_hand: "RHB", bowling_category: cat, primary_role: role, stats: {} as any };
+  };
+  const quality = (p: PlayerWithStats) => Q[p.id];
+  const log = (...e: [number, "USER" | "AI", string][]): PickLogEntry[] => e.map(([n, by, name]) => ({ n, by, playerId: name, name, country: "ENG", role: "BAT" }));
+
+  it("calls a pick smart when the best keeper left was taken ahead of a star whose equal was still there", () => {
+    const pool = [mk("Kohli", "BAT", 100), mk("Root", "BAT", 97), mk("Buttler", "WK", 90), mk("Klaasen", "WK", 70), mk("Bumrah", "BOWL", 95, "PACE")];
+    const d = buildDraftDecisions(log([1, "USER", "Buttler"], [2, "AI", "Bumrah"], [3, "AI", "Kohli"], [4, "USER", "Root"]), pool, quality);
+    expect(d).toHaveLength(1);
+    expect(d[0].kind).toBe("smart");
+    expect(d[0].title).toBe("Buttler over Kohli");
+    expect(d[0].text).toMatch(/best keeper left/);
+    expect(d[0].text).toMatch(/Klaasen/);
+    expect(d[0].text).toMatch(/You had no keeper yet/);
+    expect(d[0].text).toMatch(/Root.*took him at pick 4/);
+  });
+
+  it("explains it from what was on the board when you did not get the equal yourself", () => {
+    const pool = [mk("Kohli", "BAT", 100), mk("Root", "BAT", 97), mk("Smith", "BAT", 96), mk("Buttler", "WK", 90), mk("Klaasen", "WK", 70)];
+    const d = buildDraftDecisions(log([1, "USER", "Buttler"], [2, "AI", "Kohli"], [3, "AI", "Root"], [4, "USER", "Klaasen"]), pool, quality);
+    expect(d[0].kind).toBe("smart");
+    expect(d[0].text).toMatch(/could be replaced: Root and Smith were still on the board/);
+  });
+
+  it("calls a pick costly when a plentiful kind was taken ahead of the last good one of another, who went to the AI", () => {
+    const pool = [mk("Kohli", "BAT", 100), mk("Bumrah", "BOWL", 95, "PACE"), mk("Starc", "BOWL", 93, "PACE"), mk("Rabada", "BOWL", 92, "PACE")];
+    const d = buildDraftDecisions(log([1, "USER", "Bumrah"], [2, "AI", "Kohli"], [3, "AI", "Starc"], [4, "USER", "Rabada"]), pool, quality);
+    expect(d).toHaveLength(1);
+    expect(d[0].kind).toBe("costly");
+    expect(d[0].text).toMatch(/Starc and Rabada were of Bumrah's level and still there/);
+    expect(d[0].text).toMatch(/Kohli was the last batter of his class, and went to the AI at pick 2/);
+  });
+
+  it("makes each point once, even when several picks passed on the same player", () => {
+    const pool = [mk("Kohli", "BAT", 100), mk("Bumrah", "BOWL", 95, "PACE"), mk("Starc", "BOWL", 93, "PACE"), mk("Rabada", "BOWL", 92, "PACE"), mk("Boult", "BOWL", 91, "PACE")];
+    const d = buildDraftDecisions(log([1, "USER", "Bumrah"], [2, "USER", "Starc"], [3, "AI", "Kohli"], [4, "USER", "Rabada"]), pool, quality);
+    expect(d.filter((x) => x.passed === "Kohli")).toHaveLength(1);
+  });
+
+  it("says nothing about an obvious pick (the best player left) or without the pool", () => {
+    const pool = [mk("A", "BAT", 100), mk("B", "BAT", 90)];
+    expect(buildDraftDecisions(log([1, "USER", "A"], [2, "AI", "B"]), pool, quality)).toEqual([]);
+    expect(buildDraftDecisions(log([1, "USER", "A"]), undefined, quality)).toEqual([]);
+  });
+
+  it("is part of every freshly drafted review, with only real picks in it", async () => {
+    for (let d = 0; d < 6; d++) {
+      const f: MatchFormat = d % 2 ? "ODI" : "T20";
+      const { challenge, pool } = await buildRandomDraft(d1, f, lcg(60 + d));
+      const { user, ai, log: pl } = draft(pool, challenge, f, "easy");
+      const sim = simulateCricketMatch(user, ai, challenge, 5);
+      const r = buildMatchReview({ userSquad: user, aiSquad: ai, challenge, simulation: sim, pickLog: pl, draftPool: pool });
+      expect(Array.isArray(r.decisions)).toBe(true);
+      for (const x of r.decisions!) {
+        expect(pl.some((e) => e.by === "USER" && e.name === x.picked && e.n === x.pick)).toBe(true);
+        expect(x.text.length).toBeGreaterThan(20);
+        expect(x.text).not.toMatch(/\d+(\.\d+)? points|rating/i);
+      }
+    }
   });
 });
 
