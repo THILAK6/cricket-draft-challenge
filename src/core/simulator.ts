@@ -861,7 +861,10 @@ function simulateInnings(
           oneDimensional,
           position: strikerIdx + 1,
           chasing: !!target && !isTest,
+          fourth: isTest && !!target,
           venue: challenge.venue.name,
+          // Required rate against the rate needed at the start of the chase (1 = on schedule)
+          pressure: target && !isTest ? ((target - totalRuns) / Math.max(1, maxOvers * 6 - totalBallsBowled + 1)) / (target / (maxOvers * 6)) : undefined,
         }
       );
 
@@ -1432,6 +1435,17 @@ interface FormatBase {
   six: number;
 }
 
+/**
+ * Situation effects fitted to real Full Member innings (see tests/scoring-audit.test.ts):
+ *  - wearThird / wearFourth: runs per ball on a worn pitch, Test third and fourth innings (real third
+ *    innings score at almost the first-innings rate; chases are slower)
+ *  - chaseRuns / chaseWkt: how far a chasing side's scoring and dismissal rates move with the
+ *    required rate against the one it started with (+1 = it needs twice as much per ball as at the start).
+ *    Only a side behind the rate takes the risk (chaseBehindOnly). Fitted so chasers are bowled out as
+ *    often as real ones (T20 21%, ODI 38%) and batting first wins as often (50.6%, 47.3%).
+ */
+export const TUNE = { wearThird: 0.97, wearFourth: 0.85, chaseRuns: 0.3, chaseWkt: 1.2, chaseBehindOnly: 1 };
+
 export const FORMAT_BASE: Record<MatchFormat, FormatBase> = {
   // wkt is a typical batter's own dismissal rate (1 / balls per dismissal), trimmed so the pitch and
   // matchup boosts on top don't push batters far below their career averages
@@ -1499,7 +1513,7 @@ function resolveBall(
   batterBallsSoFar: number,
   isDeterioratedPitch: boolean,
   rng: () => number,
-  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean; position?: number; chasing?: boolean; venue?: string } = {}
+  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean; position?: number; chasing?: boolean; venue?: string; pressure?: number; fourth?: boolean } = {}
 ): { runs: number; isOut: boolean } {
   const isTest = format === "TEST";
   const isOdi = format === "ODI";
@@ -1558,6 +1572,10 @@ function resolveBall(
   const settledAgainstSameness = fit.oneDimensional && batterBallsSoFar >= 20;
   if (settledAgainstSameness) wktChance *= 0.85;
 
+  // A chase: the further behind the required rate, the more risks are taken
+  const pressure = fit.pressure !== undefined ? (TUNE.chaseBehindOnly ? Math.max(0, fit.pressure - 1) : fit.pressure - 1) : 0;
+  if (pressure) wktChance *= Math.max(0.7, Math.min(2.2, 1 + TUNE.chaseWkt * pressure));
+
   if (rng() < Math.min(0.5, wktChance)) return { runs: 0, isOut: true };
 
   // --- Runs -------------------------------------------------------------------------------
@@ -1599,7 +1617,8 @@ function resolveBall(
   if (pitch === "SLOW_LOW") rpb *= 0.9;
   if (pitch === "GREEN_SEAMER") rpb *= 0.96;
   if (pitch === "DUSTBOWL") rpb *= 0.97;
-  if (isDeterioratedPitch) rpb *= 0.85;
+  if (isDeterioratedPitch) rpb *= fit.fourth ? TUNE.wearFourth : TUNE.wearThird;
+  if (pressure) rpb *= Math.max(0.75, Math.min(1.6, 1 + TUNE.chaseRuns * pressure));
 
   rpb = Math.max(0.15, Math.min(isTest ? 1.6 : 2.6, rpb));
   return { runs: rollRuns(rpb, base, bat.sr / base.sr, rng), isOut: false };

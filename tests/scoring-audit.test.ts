@@ -5,8 +5,9 @@ import { buildRandomDraft } from "../src/worker/challenge-generator";
 import { GROUNDS } from "../src/worker/scenario-generator";
 import { chooseAiPick } from "../src/core/ai-draft";
 import { arrangeSquad } from "../src/core/batting-order";
-import { FORMAT_BASE, simulateCricketMatch } from "../src/core/simulator";
+import { FORMAT_BASE, TUNE, simulateCricketMatch } from "../src/core/simulator";
 import { venuePar } from "../src/core/splits";
+import { playerQuality } from "../src/core/player-quality";
 import { DATA_NORMS } from "../src/core/data-norms.generated";
 import { snakeOrder, type Challenge, type MatchFormat, type PlayerWithStats } from "../src/core/types";
 
@@ -30,6 +31,11 @@ function draft(pool: PlayerWithStats[], challenge: Challenge, f: MatchFormat) {
 
 it.skipIf(!out)("scores like the real ground", async () => {
   // Sweeps: scale the Test base rates (TEST_RPB, TEST_WKT multipliers)
+  if (process.env.TUNE_WEAR3) TUNE.wearThird = Number(process.env.TUNE_WEAR3);
+  if (process.env.TUNE_WEAR4) TUNE.wearFourth = Number(process.env.TUNE_WEAR4);
+  if (process.env.TUNE_CHASE_RUNS) TUNE.chaseRuns = Number(process.env.TUNE_CHASE_RUNS);
+  if (process.env.TUNE_CHASE_ONE) TUNE.chaseBehindOnly = Number(process.env.TUNE_CHASE_ONE);
+  if (process.env.TUNE_CHASE_WKT) TUNE.chaseWkt = Number(process.env.TUNE_CHASE_WKT);
   if (process.env.TEST_RPB) FORMAT_BASE.TEST.rpb *= Number(process.env.TEST_RPB);
   if (process.env.TEST_WKT) FORMAT_BASE.TEST.wkt *= Number(process.env.TEST_WKT);
   const lines: string[] = ["format | ground | pitch | real par (matches) | engine mean (innings) | ratio", "---|---|---|---|---|---"];
@@ -48,7 +54,9 @@ it.skipIf(!out)("scores like the real ground", async () => {
       for (const pitch of g.pitches) {
         const runs: number[] = [];
         for (let k = 0; k < POOLS; k++) {
-          const { pool, challenge } = await buildRandomDraft(d1, f, lcg(500 + k * 7));
+          let { pool, challenge } = await buildRandomDraft(d1, f, lcg(500 + k * 7));
+          // AUDIT_MID: leave out the best 40% of the pool, so the XIs are ordinary international regulars
+          if (process.env.AUDIT_MID) pool = [...pool].sort((a, b) => playerQuality(a, f) - playerQuality(b, f)).slice(0, Math.floor(pool.length * 0.6));
           const ch: Challenge = { ...base, ...challenge, venue: { name: g.name, country: g.country, pitch_type: pitch } };
           const [u, a] = draft(pool, ch, f);
           for (let s = 0; s < 2; s++) {
