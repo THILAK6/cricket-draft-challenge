@@ -143,6 +143,14 @@ describe("key decisions", () => {
     expect(d[0].text).toMatch(/Root.*took him at pick 4/);
   });
 
+  it("says so when the star himself lasted to your next pick (you got both)", () => {
+    const pool = [mk("Kohli", "BAT", 100), mk("Bumrah", "BOWL", 95, "PACE"), mk("Muzarabani", "BOWL", 80, "PACE")];
+    const d = buildDraftDecisions(log([1, "USER", "Bumrah"], [2, "AI", "Muzarabani"], [3, "USER", "Kohli"]), pool, quality);
+    expect(d[0].kind).toBe("smart");
+    expect(d[0].text).toMatch(/Kohli looked bigger, but he was still there at pick 3, and you took him then: you got both/);
+    expect(d[0].text).not.toMatch(/Kohli, almost his equal/);
+  });
+
   it("explains it from what was on the board when you did not get the equal yourself", () => {
     const pool = [mk("Kohli", "BAT", 100), mk("Root", "BAT", 97), mk("Smith", "BAT", 96), mk("Buttler", "WK", 90), mk("Klaasen", "WK", 70)];
     const d = buildDraftDecisions(log([1, "USER", "Buttler"], [2, "AI", "Kohli"], [3, "AI", "Root"], [4, "USER", "Klaasen"]), pool, quality);

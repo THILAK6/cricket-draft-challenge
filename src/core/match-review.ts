@@ -442,8 +442,11 @@ export function buildDraftDecisions(
         `${P.name} was the best ${gP} left` +
         (nextP ? (gap >= 15 ? `, with a big drop to the next (${nextP.name}).` : `, a clear step up on the next (${nextP.name}).`) : ", and the last one of any standard.") +
         (gP === "keeper" && !hadKeeper ? " You had no keeper yet." : "");
+      // The star himself may have lasted to your next pick: you got both
       const alt = gotLater
-        ? ` ${B.name} looked bigger, but ${gotLater.p.name}, almost his equal, was still there, and you took him at pick ${gotLater.n}.`
+        ? gotLater.p.id === B.id
+          ? ` ${B.name} looked bigger, but he was still there at pick ${gotLater.n}, and you took him then: you got both.`
+          : ` ${B.name} looked bigger, but ${gotLater.p.name}, almost his equal, was still there, and you took him at pick ${gotLater.n}.`
         : ` ${B.name} could be replaced: ${list(equalsOfB.slice(0, 2))} ${equalsOfB.length > 1 ? "were" : "was"} still on the board.`;
       found.push({ kind: "smart", title: `${P.name} over ${B.name}`, pick: e.n, picked: P.name, passed: B.name, text: why + alt, score: Math.min(gap, 30) + (gotLater ? 10 : 0) + equalsOfB.length });
     } else if (aiTook && !gotLater && equalsOfP.length >= 2 && equalsOfB.length <= 1) {
