@@ -863,6 +863,7 @@ function simulateInnings(
           chasing: !!target && !isTest,
           fourth: isTest && !!target,
           venue: challenge.venue.name,
+          league: challenge.league,
           // Required rate against the rate needed at the start of the chase (1 = on schedule)
           pressure: target && !isTest ? ((target - totalRuns) / Math.max(1, maxOvers * 6 - totalBallsBowled + 1)) / (target / (maxOvers * 6)) : undefined,
         }
@@ -1443,8 +1444,10 @@ interface FormatBase {
  *    required rate against the one it started with (+1 = it needs twice as much per ball as at the start).
  *    Only a side behind the rate takes the risk (chaseBehindOnly). Fitted so chasers are bowled out as
  *    often as real ones (T20 21%, ODI 38%) and batting first wins as often (50.6%, 47.3%).
+ *  - iplRpb / iplWkt: scales on the T20 scoring and dismissal rates for the IPL (a league of better players
+ *    and shorter boundaries), fitted to the real IPL (tests/scoring-audit.test.ts, AUDIT_IPL)
  */
-export const TUNE = { wearThird: 0.97, wearFourth: 0.85, chaseRuns: 0.3, chaseWkt: 1.2, chaseBehindOnly: 1 };
+export const TUNE = { wearThird: 0.97, wearFourth: 0.85, chaseRuns: 0.3, chaseWkt: 1.2, chaseBehindOnly: 1, iplRpb: 0.94, iplWkt: 1.3, iplChaseRuns: 0, iplChaseWkt: 1.2 };
 
 export const FORMAT_BASE: Record<MatchFormat, FormatBase> = {
   // wkt is a typical batter's own dismissal rate (1 / balls per dismissal), trimmed so the pitch and
@@ -1513,7 +1516,7 @@ function resolveBall(
   batterBallsSoFar: number,
   isDeterioratedPitch: boolean,
   rng: () => number,
-  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean; position?: number; chasing?: boolean; venue?: string; pressure?: number; fourth?: boolean } = {}
+  fit: { makeshiftOpener?: boolean; oneDimensional?: boolean; position?: number; chasing?: boolean; venue?: string; league?: "IPL"; pressure?: number; fourth?: boolean } = {}
 ): { runs: number; isOut: boolean } {
   const isTest = format === "TEST";
   const isOdi = format === "ODI";
@@ -1538,11 +1541,12 @@ function resolveBall(
   const bowlShape = { econ: wp.econ * wreg.econ, wkt: wp.wkt * wreg.wkt };
   const batterHasPhases = hasBattingPhases(batter, format);
   // The ground: its real par score against the format's (more runs, slightly fewer wickets)
-  const venue = fit.venue ? venueParFactor(format, fit.venue) : 1;
+  const venue = fit.venue ? venueParFactor(format, fit.venue, fit.league) : 1;
 
   // --- Wicket -----------------------------------------------------------------------------
   let wktChance = base.wkt * Math.pow(base.bpd / bat.bpd, M.BAT_WKT) * Math.pow(base.bowlSr / bowl.bowlSr, M.BOWL_WKT);
   wktChance *= batShape.out * bowlShape.wkt * Math.pow(venue, -0.3);
+  if (fit.league === "IPL") wktChance *= TUNE.iplWkt;
 
   // Pitch condition impact. In Tests the effect is softer per ball: it compounds over 90 overs a day
   // (full-size boosts made green-seamer Tests finish in two days)
@@ -1574,13 +1578,14 @@ function resolveBall(
 
   // A chase: the further behind the required rate, the more risks are taken
   const pressure = fit.pressure !== undefined ? (TUNE.chaseBehindOnly ? Math.max(0, fit.pressure - 1) : fit.pressure - 1) : 0;
-  if (pressure) wktChance *= Math.max(0.7, Math.min(2.2, 1 + TUNE.chaseWkt * pressure));
+  if (pressure) wktChance *= Math.max(0.7, Math.min(2.2, 1 + (fit.league === "IPL" ? TUNE.iplChaseWkt : TUNE.chaseWkt) * pressure));
 
   if (rng() < Math.min(0.5, wktChance)) return { runs: 0, isOut: true };
 
   // --- Runs -------------------------------------------------------------------------------
   let rpb = base.rpb * Math.pow((bat.sr * batShape.sr) / base.sr, M.BAT_RUNS) * Math.pow((bowl.econ * bowlShape.econ) / base.econ, M.BOWL_RUNS);
   rpb *= Math.pow(venue, 0.7);
+  if (fit.league === "IPL") rpb *= TUNE.iplRpb;
   rpb *= mu.runs;
   const wicketsInHand = 10 - totalWicketsDown;
 
@@ -1618,7 +1623,7 @@ function resolveBall(
   if (pitch === "GREEN_SEAMER") rpb *= 0.96;
   if (pitch === "DUSTBOWL") rpb *= 0.97;
   if (isDeterioratedPitch) rpb *= fit.fourth ? TUNE.wearFourth : TUNE.wearThird;
-  if (pressure) rpb *= Math.max(0.75, Math.min(1.6, 1 + TUNE.chaseRuns * pressure));
+  if (pressure) rpb *= Math.max(0.75, Math.min(1.6, 1 + (fit.league === "IPL" ? TUNE.iplChaseRuns : TUNE.chaseRuns) * pressure));
 
   rpb = Math.max(0.15, Math.min(isTest ? 1.6 : 2.6, rpb));
   return { runs: rollRuns(rpb, base, bat.sr / base.sr, rng), isOut: false };

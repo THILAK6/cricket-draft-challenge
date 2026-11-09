@@ -18,3 +18,13 @@ it.skipIf(!out)("derives rating calibration anchors", async () => {
   }
   writeFileSync(out!, lines.join("\n"));
 });
+
+// The IPL pool: its own anchors (CALIBRATION_IPL). Run with: RATING_CAL_IPL=<file> npx vitest run tests/rating-calibration.test.ts
+const outIpl = process.env.RATING_CAL_IPL;
+it.skipIf(!outIpl)("derives the IPL rating anchors", async () => {
+  const pool = await getPlayerPool(d1, "T20", 2000, 20, "IPL");
+  const q = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+  const bat = pool.filter((p) => p.primary_role !== "BOWL").map((p) => battingRaw(p, "T20"));
+  const bowl = pool.filter((p) => p.primary_role === "BOWL" || p.primary_role === "AR").map((p) => bowlingRaw(p, "T20")).filter((v) => v > 0);
+  writeFileSync(outIpl!, `  bat: [${q(bat, 0.2).toFixed(3)}, ${q(bat, 0.98).toFixed(3)}], bowl: [${q(bowl, 0.2).toFixed(3)}, ${q(bowl, 0.98).toFixed(3)}],  // n=${bat.length}/${bowl.length}`);
+});

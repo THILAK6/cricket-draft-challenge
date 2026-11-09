@@ -115,12 +115,19 @@ export const CALIBRATION: Record<MatchFormat, { bat: [number, number]; bowl: [nu
 
 const scale = (v: number, [lo, hi]: [number, number]) => Math.max(0, Math.min(110, 30 + ((v - lo) / (hi - lo)) * 65));
 
+/**
+ * The IPL pool has its own spread (the league is the best T20 players, and scores more), so its
+ * players are scaled by anchors from the IPL pool itself: re-derive with tests/rating-calibration.test.ts.
+ */
+export const CALIBRATION_IPL: { bat: [number, number]; bowl: [number, number] } = { bat: [25.173, 55.877], bowl: [0.75, 1.166] };
+const anchors = (p: PlayerWithStats, format: MatchFormat) => (p.stats.league === "IPL" ? CALIBRATION_IPL : CALIBRATION[format]);
+
 /** Batting on the common 0-100 scale. */
-export const battingRating = (p: PlayerWithStats, format: MatchFormat) => scale(battingRaw(p, format), CALIBRATION[format].bat);
+export const battingRating = (p: PlayerWithStats, format: MatchFormat) => scale(battingRaw(p, format), anchors(p, format).bat);
 /** Bowling on the common 0-100 scale (0 for players who don't bowl). */
 export const bowlingRating = (p: PlayerWithStats, format: MatchFormat) => {
   const raw = bowlingRaw(p, format);
-  return raw > 0 ? scale(raw, CALIBRATION[format].bowl) : 0;
+  return raw > 0 ? scale(raw, anchors(p, format).bowl) : 0;
 };
 
 /** Format-specific overall quality, about 30-100, from career stats only. */

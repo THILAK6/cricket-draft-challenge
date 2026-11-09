@@ -26,8 +26,8 @@ type Norm = { sr: number; bpo: number; econ: number; bpw: number };
  * src/core/data-norms.generated.ts (rebuilt with the data).
  * sr = batting strike rate, bpo = balls per dismissal, econ = runs per over, bpw = balls per wicket.
  */
-export function phaseNorm(format: MatchFormat): Record<PhaseKey | "all", Norm> {
-  const n = formatNorms(format);
+export function phaseNorm(format: MatchFormat, league?: "IPL"): Record<PhaseKey | "all", Norm> {
+  const n = formatNorms(format, league);
   return { pp: n.phase.pp, mid: n.phase.mid, death: n.phase.death, all: n.all } as Record<PhaseKey | "all", Norm>;
 }
 
@@ -64,7 +64,7 @@ export function phaseMixFactors(p: PlayerWithStats, format: MatchFormat): { sr: 
   const out = { sr: 1, bpo: 1, econ: 1, bpw: 1 };
   if (!has(p, format)) return out;
   const l = p.stats.phases!;
-  const norm = phaseNorm(format);
+  const norm = phaseNorm(format, p.stats.league);
   const all = norm.all;
   if (hasBattingPhases(p, format)) {
     out.sr = all.sr / expected(l, 1, "sr", norm);
@@ -94,7 +94,7 @@ export function phaseShape(p: PlayerWithStats, format: MatchFormat, phase: Phase
     const batBalls = sumOf(l, 1);
     const bowlBalls = sumOf(l, 3);
     // His overall rate against what his mix of phases would expect
-    const norm = phaseNorm(format);
+    const norm = phaseNorm(format, p.stats.league);
     const relSr = batBalls ? (sumOf(l, 0) / batBalls) * 100 / expected(l, 1, "sr", norm) : 1;
     const relOut = batBalls ? (sumOf(l, 2) / batBalls) * expected(l, 1, "bpo", norm) : 1;
     const relEcon = bowlBalls ? ((sumOf(l, 4) / bowlBalls) * 6) / expected(l, 3, "econ", norm) : 1;

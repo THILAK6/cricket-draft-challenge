@@ -1,5 +1,6 @@
 import type { MatchFormat, PlayerSplitData, PlayerWithStats } from "./types";
 import { DATA_NORMS } from "./data-norms.generated";
+import { IPL_NORMS } from "./data-norms-ipl.generated";
 
 /**
  * Player splits from Cricsheet ball-by-ball data (data/player-splits.sql): a player's record by
@@ -36,7 +37,13 @@ const NORMS = DATA_NORMS as unknown as Record<
     par: { all: number; ground: Record<string, { avg: number; n: number }> };
   }
 >;
-export const formatNorms = (f: MatchFormat) => NORMS[f];
+type Norms = (typeof NORMS)[MatchFormat];
+/** The IPL's norms when the data has been built (src/etl/ipl.ts); its Twenty20 stand-in until then. */
+const IPL = (IPL_NORMS as unknown as (Norms & { midYear: Record<string, number> }) | null) ?? null;
+export const iplNormsLoaded = () => !!IPL;
+export const iplMidYear = (id: string): number | undefined => IPL?.midYear?.[id];
+/** The norms for a format; a league's players are judged against that league's own. */
+export const formatNorms = (f: MatchFormat, league?: "IPL"): Norms => (league === "IPL" && IPL ? IPL : NORMS[f]);
 
 /** Balls before a split's own numbers count for half. */
 const K = { sr: 150, out: 300, econ: 150, wkt: 300 };
@@ -110,7 +117,7 @@ export function positionShape(p: PlayerWithStats, f: MatchFormat, position: numb
   const d = p.stats.splits;
   if (!d?.pos) return NEUTRAL_SHAPE;
   const key = posOf(position);
-  return memo(d, `${f}:pos:${key}`, () => ({ ...NEUTRAL_SHAPE, ...batShape(d.pos!, NORMS[f].pos, key) }));
+  return memo(d, `${f}:pos:${key}`, () => ({ ...NEUTRAL_SHAPE, ...batShape(d.pos!, formatNorms(f, p.stats.league).pos, key) }));
 }
 
 /** How he bats and bowls in this region compared with his own level. */
@@ -121,7 +128,8 @@ export function regionShape(p: PlayerWithStats, f: MatchFormat, venueCountry: st
   return memo(d, `${f}:region:${key}`, () => {
     const bat = Object.fromEntries(Object.entries(d.region!).map(([k, v]) => [k, v!.slice(0, 3)])) as Partial<Record<RegionKey, number[]>>;
     const bowl = Object.fromEntries(Object.entries(d.region!).map(([k, v]) => [k, v!.slice(3, 6)])) as Partial<Record<RegionKey, number[]>>;
-    return { ...batShape(bat, NORMS[f].region, key), ...bowlShape(bowl, NORMS[f].region, key) };
+    const region = formatNorms(f, p.stats.league).region;
+    return { ...batShape(bat, region, key), ...bowlShape(bowl, region, key) };
   });
 }
 
@@ -130,7 +138,7 @@ export function chaseShape(p: PlayerWithStats, f: MatchFormat, chasing: boolean)
   const d = p.stats.splits;
   if (f === "TEST" || !d?.chase) return NEUTRAL_SHAPE;
   const key = chasing ? "second" : "first";
-  return memo(d, `${f}:chase:${key}`, () => ({ ...NEUTRAL_SHAPE, ...batShape(d.chase!, NORMS[f].chase, key) }));
+  return memo(d, `${f}:chase:${key}`, () => ({ ...NEUTRAL_SHAPE, ...batShape(d.chase!, formatNorms(f, p.stats.league).chase, key) }));
 }
 
 /** Matches at a ground before its own par counts for half. */
@@ -139,16 +147,16 @@ const VENUE_K = 10;
  * How high-scoring the ground is: its average first-innings total in internationals against the
  * format's, pulled towards 1 for grounds with few matches. 1 for grounds without data.
  */
-export function venueParFactor(f: MatchFormat, venueName: string): number {
-  const par = NORMS[f]?.par;
+export function venueParFactor(f: MatchFormat, venueName: string, league?: "IPL"): number {
+  const par = formatNorms(f, league)?.par;
   const g = par?.ground[venueName];
   if (!par || !g || !par.all) return 1;
   return shrink(g.avg / par.all, g.n, VENUE_K);
 }
 
 /** The ground's real par score (average first innings), when there is enough data to quote it. */
-export function venuePar(f: MatchFormat, venueName: string): { avg: number; matches: number } | null {
-  const g = NORMS[f]?.par.ground[venueName];
+export function venuePar(f: MatchFormat, venueName: string, league?: "IPL"): { avg: number; matches: number } | null {
+  const g = formatNorms(f, league)?.par.ground[venueName];
   return g && g.n >= 5 ? { avg: g.avg, matches: g.n } : null;
 }
 

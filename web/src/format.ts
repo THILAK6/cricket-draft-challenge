@@ -113,7 +113,7 @@ export function positionLine(p: Player, position: number, format: string): strin
 
 const FORMAT_NAME: Record<string, string> = { T20: "T20Is", ODI: "ODIs", TEST: "Tests" };
 /** "Par here: 301 in the first innings (15 ODIs)" from real results at the ground. */
-export function parLine(format: "T20" | "ODI" | "TEST", venue: string): string | null {
-  const par = venuePar(format, venue);
-  return par ? `Par here: ${par.avg} in the first innings (${par.matches} ${FORMAT_NAME[format]})` : null;
+export function parLine(format: "T20" | "ODI" | "TEST", venue: string, league?: "IPL"): string | null {
+  const par = venuePar(format, venue, league);
+  return par ? `Par here: ${par.avg} in the first innings (${par.matches} ${league === "IPL" ? "IPL matches" : FORMAT_NAME[format]})` : null;
 }

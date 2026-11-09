@@ -2,14 +2,18 @@ import { phaseMixFactors } from "./phase-stats";
 import type { MatchFormat, PlayerWithStats } from "./types";
 import { ERA_BASELINES, PLAYER_MID_YEAR, type EraBaseline } from "./era-data";
 import { DATA_NORMS } from "./data-norms.generated";
+import { IPL_NORMS } from "./data-norms-ipl.generated";
+import { iplMidYear } from "./splits";
 
 /**
  * League numbers by era: Full Member v Full Member matches from the Cricsheet ETL (src/etl/splits.ts)
  * when present; the older table counted Associate matches too, which since 2019 are most T20Is and
  * made the 2020s look low-scoring (marking 2010s batters down and 2020s batters up).
  */
-const ERA_TABLE = (format: MatchFormat): Record<string, EraBaseline> =>
-  ((DATA_NORMS as any)[format]?.era as Record<string, EraBaseline> | undefined) ?? ERA_BASELINES[format];
+const ERA_TABLE = (format: MatchFormat, ipl = false): Record<string, EraBaseline> =>
+  ipl
+    ? ((IPL_NORMS as any).era as Record<string, EraBaseline>)
+    : ((DATA_NORMS as any)[format]?.era as Record<string, EraBaseline> | undefined) ?? ERA_BASELINES[format];
 
 const bucketOf = (format: MatchFormat, year: number): string => String(format === "T20" ? Math.floor(year / 3) * 3 : Math.floor(year / 5) * 5);
 const clamp = (x: number) => Math.min(1.2, Math.max(0.85, x));
@@ -28,20 +32,22 @@ const NEUTRAL: EraFactors = { sr: 1, avg: 1, econ: 1, bavg: 1 };
  * (or synthetic test players) are left unchanged.
  */
 const factorCache = new Map<string, EraFactors>();
-export function eraFactors(p: { id: string }, format: MatchFormat): EraFactors {
-  const year = PLAYER_MID_YEAR[format]?.[p.id];
+export function eraFactors(p: { id: string; stats?: { league?: "IPL" } }, format: MatchFormat): EraFactors {
+  // An IPL player's numbers are all from the IPL: his season, and the IPL's own scoring by season
+  const ipl = p.stats?.league === "IPL" && !!IPL_NORMS;
+  const year = ipl ? iplMidYear(p.id) : PLAYER_MID_YEAR[format]?.[p.id];
   if (!year) return NEUTRAL;
   // Same (format, year) always gives the same factors: compute each once per isolate
-  const key = `${format}:${year}`;
+  const key = `${ipl ? "IPL" : format}:${year}`;
   const hit = factorCache.get(key);
   if (hit) return hit;
-  const f = computeFactors(format, year);
+  const f = computeFactors(format, year, ipl);
   factorCache.set(key, f);
   return f;
 }
 
-function computeFactors(format: MatchFormat, year: number): EraFactors {
-  const table = ERA_TABLE(format);
+function computeFactors(format: MatchFormat, year: number, ipl = false): EraFactors {
+  const table = ERA_TABLE(format, ipl);
   const all = table.all;
   let era = table[bucketOf(format, year)];
   if (!era) {

@@ -1,4 +1,5 @@
 import type { Challenge, Constraint, MatchFormat, PitchType } from "../core/types";
+import { IPL_GROUNDS } from "../core/ipl-grounds";
 
 /**
  * Builds a different match scenario every time: a ground, the conditions on the day and a set of
@@ -126,6 +127,30 @@ export function generateScenario(format: MatchFormat, rand: Rand = Math.random, 
     format,
     venue: { name: ground.name, country: ground.country, pitch_type: pitch },
     narrative_intro: `${condition.text} ${PITCH_FLAVOUR[pitch]} ${dayNote}`,
+    constraints,
+  };
+}
+
+/** The IPL's rule: a franchise fields at most four overseas players. */
+export const IPL_OVERSEAS_LIMIT = 4;
+
+/**
+ * A random IPL scenario: one of the league's grounds and the pitch it is known for, the day's
+ * conditions, the overseas limit, and (most of the time) one selection rule from the conditions.
+ */
+export function generateIplScenario(rand: Rand = Math.random): Omit<Challenge, "id"> {
+  const ground = pick(IPL_GROUNDS, rand);
+  const pitch = pick(ground.pitches, rand);
+  const options = CONDITIONS.filter((c) => c.pitches.includes(pitch) && (!c.formats || c.formats.includes("T20")));
+  const condition = pick(options.length ? options : CONDITIONS, rand);
+  const constraints: Constraint[] = [{ type: "max_overseas", value: IPL_OVERSEAS_LIMIT, home: "IND" }];
+  if (rand() < 0.75) constraints.push(...buildConstraints("T20", { name: ground.name, short: ground.short, country: ground.country, pitches: ground.pitches, formats: ["T20"] }, pitch, rand, false));
+  return {
+    title: `IPL, ${ground.short.replace(/^the /, "")}: ${condition.label}`,
+    format: "T20",
+    league: "IPL",
+    venue: { name: ground.name, country: ground.country, pitch_type: pitch },
+    narrative_intro: `${condition.text} ${PITCH_FLAVOUR[pitch]} Twenty overs a side, and no more than four overseas players in your XI.`,
     constraints,
   };
 }

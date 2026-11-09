@@ -107,3 +107,53 @@ it.skipIf(!out)("scores like the real ground", async () => {
   lines.push(...rows, ...inningsLines, "", "Mean engine/real by format: " + Object.entries(byFormat).map(([k, v]) => `${k} ${avg(v).toFixed(2)}`).join(", "), "", "Mean engine/real by pitch:", ...Object.entries(byPitch).map(([k, v]) => `  ${k}: ${avg(v).toFixed(2)} (n=${v.filter(Number.isFinite).length})`));
   writeFileSync(out!, lines.join("\n"));
 }, 3_000_000);
+
+// The IPL: AUDIT_IPL=<file> AUDIT_POOLS=<n> npx vitest run tests/scoring-audit.test.ts
+const outIpl = process.env.AUDIT_IPL;
+it.skipIf(!outIpl)("the IPL scores like the real league", async () => {
+  if (process.env.TUNE_IPL_RPB) TUNE.iplRpb = Number(process.env.TUNE_IPL_RPB);
+  if (process.env.TUNE_IPL_WKT) TUNE.iplWkt = Number(process.env.TUNE_IPL_WKT);
+  if (process.env.TUNE_IPL_CR) TUNE.iplChaseRuns = Number(process.env.TUNE_IPL_CR);
+  if (process.env.TUNE_IPL_CW) TUNE.iplChaseWkt = Number(process.env.TUNE_IPL_CW);
+  const { IPL_GROUNDS } = await import("../src/core/ipl-grounds");
+  const { IPL_NORMS } = await import("../src/core/data-norms-ipl.generated");
+  const norms = IPL_NORMS as any;
+  const lines: string[] = ["ground | pitch | real par (matches) | engine mean | ratio", "---|---|---|---|---"];
+  const first: number[] = [], second: number[] = [], allOut = [0, 0], n = [0, 0], balls = [0, 0];
+  let bfWins = 0, decisive = 0;
+  const byPitch: Record<string, number[]> = {};
+  const ratios: number[] = [];
+  for (const g of IPL_GROUNDS) {
+    const real = venuePar("T20", g.name, "IPL");
+    const per: number[] = [];
+    for (const pitch of g.pitches) {
+      const runs: number[] = [];
+      for (let k = 0; k < POOLS; k++) {
+        const { pool, challenge } = await buildRandomDraft(d1, "T20", lcg(900 + k * 11), "ipl-all", "IPL");
+        const ch: Challenge = { ...challenge, venue: { name: g.name, country: g.country, pitch_type: pitch } };
+        const [u, a] = draft(pool, ch, "T20");
+        for (let s = 0; s < 2; s++) {
+          const r = simulateCricketMatch(u, a, ch, 100 * k + s);
+          const userFirst = (r.toss.decision === "BAT") === (r.toss.winner === "USER");
+          const [f, c] = userFirst ? [r.userInnings, r.aiInnings] : [r.aiInnings, r.userInnings];
+          runs.push(f.totalRuns);
+          first.push(f.totalRuns); second.push(c.totalRuns);
+          [f, c].forEach((i, idx) => { n[idx]++; balls[idx] += i.totalBalls; if (i.totalWickets >= 10) allOut[idx]++; });
+          if (r.winner === "USER" || r.winner === "AI") { decisive++; if ((r.winner === "USER") === userFirst) bfWins++; }
+        }
+      }
+      const mean = runs.reduce((x, y) => x + y, 0) / runs.length;
+      per.push(mean);
+      (byPitch[pitch] ??= []).push(real ? mean / real.avg : NaN);
+      lines.push(`${g.short} | ${pitch} | ${real ? `${real.avg} (${real.matches})` : "-"} | ${mean.toFixed(0)} | ${real ? (mean / real.avg).toFixed(2) : "-"}`);
+    }
+    if (real) ratios.push(per.reduce((x, y) => x + y, 0) / per.length / real.avg);
+  }
+  const avg = (xs: number[]) => xs.filter(Number.isFinite).reduce((a, b) => a + b, 0) / Math.max(1, xs.filter(Number.isFinite).length);
+  const pct = (x: number, t: number) => ((x / Math.max(1, t)) * 100).toFixed(0);
+  lines.push("", `Mean engine/real par over grounds: ${avg(ratios).toFixed(2)}`, "By pitch: " + Object.entries(byPitch).map(([k, v]) => `${k} ${avg(v).toFixed(2)}`).join(", "));
+  lines.push(`First innings: engine ${(first.reduce((a, b) => a + b, 0) / first.length).toFixed(0)} in ${(balls[0] / n[0] / 6).toFixed(1)} ov, all out ${pct(allOut[0], n[0])}%  | real ${norms.innings[0].runs} in ${norms.innings[0].overs} ov, all out ${norms.innings[0].allOut.toFixed(0)}%`);
+  lines.push(`Chasing: engine ${(second.reduce((a, b) => a + b, 0) / second.length).toFixed(0)} in ${(balls[1] / n[1] / 6).toFixed(1)} ov, all out ${pct(allOut[1], n[1])}%  | real ${norms.innings[1].runs} in ${norms.innings[1].overs} ov, all out ${norms.innings[1].allOut.toFixed(0)}%`);
+  lines.push(`Batting first wins: engine ${pct(bfWins, decisive)}% | real ${((norms.results.batFirstWins / norms.results.decisive) * 100).toFixed(1)}%`);
+  writeFileSync(outIpl!, lines.join("\n"));
+}, 3_000_000);

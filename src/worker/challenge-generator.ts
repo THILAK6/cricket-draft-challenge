@@ -2,10 +2,11 @@ import { z } from "zod";
 import type { Challenge, MatchFormat, PhaseStatLines, PitchType, PlayerSplitData, PlayerWithStats } from "../core/types";
 import { ChallengeSchema } from "../core/types";
 import { checkDraftFeasibility } from "../core/validator";
-import { generateScenario } from "./scenario-generator";
+import { generateIplScenario, generateScenario } from "./scenario-generator";
 import { stature } from "../core/player-quality";
 import { correctRole } from "../core/roles";
-import { themeByKey, type PoolTheme, type ThemeKey } from "../core/themes";
+import { iplThemeByKey, themeByKey, type PoolTheme, type ThemeKey } from "../core/themes";
+import { iplMidYear } from "../core/splits";
 import { PLAYER_MID_YEAR } from "../core/era-data";
 
 
@@ -19,6 +20,8 @@ export const DRAFT_POOL_SIZE = 44;
 export const POOL_SOURCE_SIZE = 1000;
 /** Minimum caps to be eligible for a random pool (any player with a real record, not just the top-N). */
 export const POOL_MIN_MATCHES = 15;
+/** IPL matches before a player is in the IPL draft pool (about 330 players have this many). */
+export const IPL_MIN_MATCHES = 20;
 /** The highest-stature players (quality plus career length) count as "top players"; at least this share of every random pool comes from them. */
 export const TOP_PLAYER_COUNT = 50;
 export const TOP_PLAYER_SHARE = 0.6;
@@ -48,12 +51,13 @@ export async function getPlayerPool(
   db: D1Database,
   format: MatchFormat,
   limit = VERIFIED_POOL_SIZE,
-  minMatches = 5
+  minMatches = 5,
+  league?: "IPL"
 ): Promise<PlayerWithStats[]> {
-  const key = `${format}:${limit}:${minMatches}`;
+  const key = `${league ?? ""}${format}:${limit}:${minMatches}`;
   const hit = poolCache.get(key);
   if (hit && Date.now() - hit.at < POOL_CACHE_TTL_MS) return hit.pool;
-  const pool = await fetchPlayerPool(db, format, limit, minMatches);
+  const pool = await fetchPlayerPool(db, format, limit, minMatches, league);
   if (pool.length > 0) poolCache.set(key, { at: Date.now(), pool });
   return pool;
 }
@@ -268,8 +272,11 @@ export async function fetchPlayerPool(
   db: D1Database,
   format: MatchFormat = "T20",
   limit = 70,
-  minMatches = 5
+  minMatches = 5,
+  league?: "IPL"
 ): Promise<PlayerWithStats[]> {
+  // The IPL's numbers are stored under their own format; the engine plays them as T20
+  const statsFormat = league === "IPL" ? "IPL" : format;
   // Per-format roles override the player's general role (a keeper in ODIs who batted in Tests)
   const query = (withRoles: boolean, withPhases = false, withSplits = false) => `
     SELECT
@@ -297,7 +304,7 @@ export async function fetchPlayerPool(
   let results: any[] | undefined;
   for (let i = 0; i < attempts.length; i++) {
     try {
-      ({ results } = await db.prepare(attempts[i]).bind(format, minMatches, limit).all());
+      ({ results } = await db.prepare(attempts[i]).bind(statsFormat, minMatches, limit).all());
       break;
     } catch (e) {
       if (i === attempts.length - 1) throw e;
@@ -317,6 +324,7 @@ export async function fetchPlayerPool(
     stats: {
       player_id: row.id,
       format,
+      ...(league ? { league } : {}),
       matches: row.matches,
       bat_innings: row.bat_innings,
       bat_runs: row.bat_runs,
@@ -442,14 +450,14 @@ export function samplePool(
  * is the cheap constructive one (about 0.03 ms), so it fits the free-plan CPU budget. No AI call.
  */
 /** The players a theme allows, from the full-member source. */
-export function themedSource(source: PlayerWithStats[], format: MatchFormat, theme: PoolTheme): PlayerWithStats[] {
+export function themedSource(source: PlayerWithStats[], format: MatchFormat, theme: PoolTheme, league?: "IPL"): PlayerWithStats[] {
   let out = source;
   if (theme.countries) out = out.filter((p) => theme.countries!.includes(p.country));
   if (theme.era) {
     const [from, to] = theme.era;
     const years = PLAYER_MID_YEAR[format] ?? {};
     out = out.filter((p) => {
-      const y = years[p.id];
+      const y = league === "IPL" ? iplMidYear(p.id) : years[p.id];
       return y !== undefined && y >= from && y <= to;
     });
   }
@@ -470,29 +478,39 @@ export async function buildRandomDraft(
   db: D1Database,
   format: MatchFormat,
   rand: () => number = Math.random,
-  themeKey: ThemeKey | string = "mixed"
+  themeKey: ThemeKey | string = "mixed",
+  league?: "IPL"
 ): Promise<{ challenge: Challenge; pool: PlayerWithStats[]; theme: ThemeKey }> {
-  const all = fullMembers(await getPlayerPool(db, format, POOL_SOURCE_SIZE, POOL_MIN_MATCHES));
-  const templates = FALLBACK_SCENARIOS.filter((s) => s.format === format);
-  if (all.length < DRAFT_POOL_SIZE || templates.length === 0) {
-    throw new Error(`Not enough ${format} players in the database (found ${all.length}). Run database seeding.`);
+  const ipl = league === "IPL";
+  const sourcePool = await getPlayerPool(db, format, POOL_SOURCE_SIZE, ipl ? IPL_MIN_MATCHES : POOL_MIN_MATCHES, league);
+  // The IPL has no Full Member filter: every player of the league is in
+  const all = ipl ? sourcePool : fullMembers(sourcePool);
+  const templates = ipl ? [] : FALLBACK_SCENARIOS.filter((s) => s.format === format);
+  if (all.length < DRAFT_POOL_SIZE || (!ipl && templates.length === 0)) {
+    throw new Error(
+      ipl
+        ? `The IPL data is not loaded yet (found ${all.length} players). Apply data/ipl.sql to the database.`
+        : `Not enough ${format} players in the database (found ${all.length}). Run database seeding.`
+    );
   }
   const make = (t: Omit<Challenge, "id">): Challenge => ({
     id: `ch_${Date.now()}_${Math.floor(rand() * 1e9).toString(36)}`,
     ...t,
     format,
   });
+  const mixedKey: ThemeKey = ipl ? "ipl-all" : "mixed";
   const attempt = (theme: PoolTheme) => {
-    const source = theme.key === "mixed" ? all : themedSource(all, format, theme);
+    const source = theme.key === mixedKey ? all : themedSource(all, format, theme, league);
     if (source.length < DRAFT_POOL_SIZE) return null;
-    const perCountry = theme.countries ? DRAFT_POOL_SIZE : Math.ceil(DRAFT_POOL_SIZE / 5);
+    // No country cap in the IPL (the overseas limit is the rule); Indian players make up most of any pool
+    const perCountry = theme.countries || ipl ? DRAFT_POOL_SIZE : Math.ceil(DRAFT_POOL_SIZE / 5);
     // Small themed sources: the top-player share is the whole source anyway
     for (let i = 0; i < 8; i++) {
       const pool = samplePool(source, DRAFT_POOL_SIZE, rand, TOP_PLAYER_COUNT, TOP_PLAYER_SHARE, format, perCountry);
       if (pool.length < DRAFT_POOL_SIZE) return null;
       // A freshly generated ground, conditions and selection rule, checked against this very pool
       for (let tries = 0; tries < 12; tries++) {
-        const challenge = make(generateScenario(format, rand, { hosts: theme.countries }));
+        const challenge = make(ipl ? generateIplScenario(rand) : generateScenario(format, rand, { hosts: theme.countries }));
         if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: pool, theme: theme.key };
       }
       if (!theme.countries) {
@@ -505,9 +523,10 @@ export async function buildRandomDraft(
     }
     return null;
   };
-  const chosen = themeByKey(themeKey);
-  const result = (chosen.key !== "mixed" && attempt(chosen)) || attempt(themeByKey("mixed"));
+  const chosen = ipl ? iplThemeByKey(themeKey) : themeByKey(themeKey);
+  const result = (chosen.key !== mixedKey && attempt(chosen)) || attempt(ipl ? iplThemeByKey("ipl-all") : themeByKey("mixed"));
   if (result) return result;
+  if (ipl) throw new Error("Could not build an IPL draft from the data loaded. Check data/ipl.sql was applied.");
   // Extremely unlikely: fall back to the fixed pool every template is verified against.
   const pool = await getPlayerPool(db, format, VERIFIED_POOL_SIZE);
   return { challenge: make(templates[Math.floor(rand() * templates.length)]), pool: pool, theme: "mixed" };

@@ -36,6 +36,8 @@ export interface PlayerSplitData {
 export interface PlayerStats {
   player_id: string;
   format: MatchFormat;
+  /** "IPL": these are his IPL numbers (the match engine plays them as T20, against the IPL's norms) */
+  league?: "IPL";
   matches: number;
   bat_innings: number;
   bat_runs: number;

@@ -27,7 +27,7 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
         </div>
         <p>{challenge.narrative_intro}</p>
         <p class="muted" style="font-size:14px">{PITCH_TIP[challenge.venue.pitch_type]}</p>
-        {parLine(challenge.format, challenge.venue.name) && <p class="muted" style="font-size:14px">{parLine(challenge.format, challenge.venue.name)}.</p>}
+        {parLine(challenge.format, challenge.venue.name, challenge.league) && <p class="muted" style="font-size:14px">{parLine(challenge.format, challenge.venue.name, challenge.league)}.</p>}
       </div>
 
       <div class="card">

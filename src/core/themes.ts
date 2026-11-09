@@ -3,7 +3,7 @@
  * default; the others narrow the pool the way friends set a theme before a school draft.
  * Pure data, shared by the Worker and the UI.
  */
-export type ThemeKey = "mixed" | "legends" | "noughties" | "modern" | "ind-aus" | "ashes" | "ind-pak";
+export type ThemeKey = "mixed" | "legends" | "noughties" | "modern" | "ind-aus" | "ashes" | "ind-pak" | "ipl-all" | "ipl-modern" | "ipl-classic" | "ipl-legends";
 
 export interface PoolTheme {
   key: ThemeKey;
@@ -27,4 +27,14 @@ export const POOL_THEMES: PoolTheme[] = [
   { key: "ind-pak", label: "India v Pakistan", description: "Only Indian and Pakistani players.", countries: ["IND", "PAK"] },
 ];
 
+/** The IPL's themes: era is the middle season of a player's IPL career. */
+export const IPL_THEMES: PoolTheme[] = [
+  { key: "ipl-all", label: "All seasons", description: "Every IPL season, 2008 to now. Stars and squad players." },
+  { key: "ipl-legends", label: "IPL legends", description: "Only the league's biggest names. Every pick is a star.", legendsOnly: 80 },
+  { key: "ipl-modern", label: "Recent seasons", description: "Players whose IPL careers peaked from 2019 on.", era: [2019, 2100] },
+  { key: "ipl-classic", label: "The early years", description: "Players whose IPL careers peaked up to 2015.", era: [2007, 2015] },
+];
+
 export const themeByKey = (key: string | undefined): PoolTheme => POOL_THEMES.find((t) => t.key === key) ?? POOL_THEMES[0];
+export const iplThemeByKey = (key: string | undefined): PoolTheme => IPL_THEMES.find((t) => t.key === key) ?? IPL_THEMES[0];
+export const themesFor = (league?: "IPL"): PoolTheme[] => (league === "IPL" ? IPL_THEMES : POOL_THEMES);

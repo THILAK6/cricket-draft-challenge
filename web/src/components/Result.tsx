@@ -168,7 +168,7 @@ export function Result(props: ResultProps) {
           <p>
             {props.state.challenge.venue.name} · <span class="pitch">{PITCH_LABEL[props.state.challenge.venue.pitch_type]}</span>
           </p>
-          {parLine(sim.format, props.state.challenge.venue.name) && <p class="muted">{parLine(sim.format, props.state.challenge.venue.name)}.</p>}
+          {parLine(sim.format, props.state.challenge.venue.name, props.state.challenge.league) && <p class="muted">{parLine(sim.format, props.state.challenge.venue.name, props.state.challenge.league)}.</p>}
           {sim.groundConditionsAnalysis && <p class="muted">{sim.groundConditionsAnalysis}</p>}
           {results?.refereeReport && <p class="muted">{results.refereeReport}</p>}
         </div>

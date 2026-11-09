@@ -76,10 +76,11 @@ export class DraftRoom implements DurableObject {
     // Internal: build a fresh draft (pool + scenario) here, where the CPU budget is 30 s, then start it
     if (url.pathname.endsWith("/create") && request.method === "POST") {
       if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
-      const body = await readJson<{ roomId?: string; format?: MatchFormat; difficulty?: DraftState["difficulty"]; theme?: string; deviceId?: string }>(request);
+      const body = await readJson<{ roomId?: string; format?: MatchFormat; league?: string; difficulty?: DraftState["difficulty"]; theme?: string; deviceId?: string }>(request);
       if (!body?.roomId || !this.env?.DB) return Response.json({ error: "Invalid create payload" }, { status: 400 });
-      const format: MatchFormat = body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
-      const { challenge, pool, theme } = await buildRandomDraft(this.env.DB, format, Math.random, body.theme);
+      const league = body.league === "IPL" ? "IPL" : undefined;
+      const format: MatchFormat = league ? "T20" : body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
+      const { challenge, pool, theme } = await buildRandomDraft(this.env.DB, format, Math.random, body.theme, league);
       // Keeping a record of the scenario is optional: never fail the draft over it
       await saveChallenge(this.env.DB, challenge).catch(() => {});
       return this.initialise({
