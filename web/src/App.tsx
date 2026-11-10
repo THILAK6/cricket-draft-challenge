@@ -6,6 +6,7 @@ import { api, savedRoom, type Difficulty } from "./api";
 import { Setup } from "./components/Setup";
 import { Briefing } from "./components/Briefing";
 import { Draft } from "./components/Draft";
+import { Auction } from "./components/Auction";
 import { Lineup } from "./components/Lineup";
 import { Result } from "./components/Result";
 import { Toast, useToast } from "./components/Toast";
@@ -41,6 +42,9 @@ export function App() {
   const [state, setState] = useState<DraftState | null>(null);
   // What to play: a format, or the IPL (T20 with the league's players and rules)
   const [format, setFormat] = useState<Mode>("T20");
+  // IPL only: a snake draft or an auction, and how the AI bids in one
+  const [auction, setAuction] = useState(false);
+  const [bidStyle, setBidStyle] = useState<"calculated" | "impulsive">("calculated");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [theme, setTheme] = useState<ThemeKey>("mixed");
   const [busy, setBusy] = useState(false);
@@ -110,7 +114,7 @@ export function App() {
   const newRoom = async () => {
     setBusy(true);
     try {
-      const { roomId, theme: used } = await api.start(format === "IPL" ? "T20" : format, difficulty, theme, format === "IPL" ? "IPL" : undefined);
+      const { roomId, theme: used } = await api.start(format === "IPL" ? "T20" : format, difficulty, theme, format === "IPL" ? "IPL" : undefined, format === "IPL" && auction ? bidStyle : undefined);
       if (used !== theme) toast.show(`Not enough ${themesFor(format === "IPL" ? "IPL" : undefined).find((t) => t.key === theme)?.label ?? ""} players for that draft, so this one uses the full pool.`);
       const { state } = await api.state(roomId);
       setRoomId(roomId);
@@ -135,7 +139,7 @@ export function App() {
   if (screen === "loading") body = <div class="loading">Loading…</div>;
   else if (screen === "setup")
     body = (
-      <Setup format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={(m) => { setFormat(m); setTheme(m === "IPL" ? "ipl-all" : "mixed"); }} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} onOpenMatch={(id) => openMatch(id)} />
+      <Setup auction={auction} bidStyle={bidStyle} onAuction={setAuction} onBidStyle={setBidStyle} format={format} difficulty={difficulty} theme={theme} busy={busy} onFormat={(m) => { setFormat(m); setTheme(m === "IPL" ? "ipl-all" : "mixed"); }} onDifficulty={setDifficulty} onTheme={setTheme} onNext={newRoom} onOpenMatch={(id) => openMatch(id)} />
     );
   else if (screen === "match" && saved)
     body = <Result state={savedAsState(saved)} toast={toast.show} onNewGame={() => closeMatch()} savedAt={saved.playedAt} />;
@@ -143,7 +147,8 @@ export function App() {
     body = <Briefing state={state} busy={busy} onBack={() => setScreen("setup")} onReroll={newRoom} onStart={() => setScreen("room")} />;
   else if (state && roomId) {
     const props = { state, roomId, onState: setState, toast: toast.show, onNewGame: restart };
-    body = state.status === "COMPLETED" ? <Result {...props} /> : state.status === "READY_TO_PLAY" ? <Lineup {...props} /> : <Draft {...props} />;
+    body =
+      state.status === "COMPLETED" ? <Result {...props} /> : state.status === "READY_TO_PLAY" ? <Lineup {...props} /> : state.draftMode === "auction" ? <Auction {...props} /> : <Draft {...props} />;
   }
 
   return (

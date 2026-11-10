@@ -28,6 +28,11 @@ export function Setup(props: {
   onTheme: (t: ThemeKey) => void;
   onNext: () => void;
   onOpenMatch: (id: string) => void;
+  /** IPL: an auction instead of a snake draft, and how the AI bids in one */
+  auction: boolean;
+  bidStyle: "calculated" | "impulsive";
+  onAuction: (on: boolean) => void;
+  onBidStyle: (s: "calculated" | "impulsive") => void;
 }) {
   return (
     <div class="wizard">
@@ -49,6 +54,42 @@ export function Setup(props: {
           </button>
         ))}
       </div>
+      {props.format === "IPL" && (
+        <div class="stack" style="gap:8px">
+          <div class="label">How to draft</div>
+          <div class="seg" style="grid-template-columns:1fr 1fr">
+            <button type="button" class={!props.auction ? "on" : ""} onClick={() => props.onAuction(false)} aria-pressed={!props.auction}>
+              <span style="display:block">Snake draft</span>
+              <span class="faint" style="display:block;font-size:11px;font-weight:600">take turns</span>
+            </button>
+            <button type="button" class={props.auction ? "on" : ""} onClick={() => props.onAuction(true)} aria-pressed={props.auction}>
+              <span style="display:block">Auction</span>
+              <span class="faint" style="display:block;font-size:11px;font-weight:600">bid with a purse</span>
+            </button>
+          </div>
+          {props.auction ? (
+            <>
+              <p class="muted" style="font-size:13px">60 crore each. Players come up one at a time: the six best first, then batters, keepers, all-rounders, fast bowlers and spinners. Bid a step up or pass; the last bid wins.</p>
+              <div class="label" style="margin-top:4px">The rival bids</div>
+              <div class="seg" style="grid-template-columns:1fr 1fr">
+                <button type="button" class={props.bidStyle === "calculated" ? "on" : ""} onClick={() => props.onBidStyle("calculated")} aria-pressed={props.bidStyle === "calculated"}>
+                  <span style="display:block">Calculated</span>
+                  <span class="faint" style="display:block;font-size:11px;font-weight:600">to its valuation</span>
+                </button>
+                <button type="button" class={props.bidStyle === "impulsive" ? "on" : ""} onClick={() => props.onBidStyle("impulsive")} aria-pressed={props.bidStyle === "impulsive"}>
+                  <span style="display:block">Impulsive</span>
+                  <span class="faint" style="display:block;font-size:11px;font-weight:600">gets carried away</span>
+                </button>
+              </div>
+              <p class="muted" style="font-size:13px">
+                {props.bidStyle === "calculated"
+                  ? "It never pays more than a player is worth to its XI. Predictable: win the auction by valuing players better than it does."
+                  : "It bids like a person: a bad day or a good one, a premium for famous names, and it gets carried away in a bidding war. It can blow its purse early, and sometimes lets a bargain go."}
+              </p>
+            </>
+          ) : null}
+        </div>
+      )}
       <div class="stack" style="gap:8px">
         <div class="label">Player pool</div>
         <div class="themes">

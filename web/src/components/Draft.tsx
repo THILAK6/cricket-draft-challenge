@@ -310,7 +310,7 @@ export function Draft(props: RoomProps) {
   );
 }
 
-function NeedChips({ needs, mine }: { needs: ReturnType<typeof rulesFor>; mine: Player[] }) {
+export function NeedChips({ needs, mine }: { needs: ReturnType<typeof rulesFor>; mine: Player[] }) {
   return (
     <div class="needs" aria-label="Your XI needs">
       {needs.map((n) => {
@@ -329,7 +329,9 @@ function NeedChips({ needs, mine }: { needs: ReturnType<typeof rulesFor>; mine: 
   );
 }
 
-export function XIList({ squad, format, onOpen, onMove }: { squad: Squad; format: DraftState["challenge"]["format"]; onOpen?: (p: Player) => void; onMove?: (from: number, to: number) => void }) {
+export function XIList({ squad, format, onOpen, onMove, priceOf }: { squad: Squad; format: DraftState["challenge"]["format"]; onOpen?: (p: Player) => void; onMove?: (from: number, to: number) => void; priceOf?: (p: Player) => number | undefined }) {
+  /** An auction buy shows what he cost */
+  const tag = (p: Player) => { const x = priceOf?.(p); return x === undefined ? "" : ` · ₹${Number(x.toFixed(2))} cr`; };
   // With onMove, each player has a handle to drag him to another batting spot (empty spots too)
   const order = useDragOrder(onMove ?? (() => {}), !!onMove);
   const { drag } = order;
@@ -342,7 +344,7 @@ export function XIList({ squad, format, onOpen, onMove }: { squad: Squad; format
             <button type="button" class="who" style="background:none;border:0;padding:0;text-align:left" onClick={() => onOpen?.(p)}>
               <b class="ellipsis" style="display:block">{shortName(p, 26)}</b>
               <span class="sub">
-                <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {p.country} · {keyStats(p, format)}
+                <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {p.country} · {keyStats(p, format)}{tag(p)}
               </span>
               {positionLine(p, order.landing(i) + 1, format) && <span class="posrec">{positionLine(p, order.landing(i) + 1, format)}</span>}
             </button>
@@ -356,7 +358,7 @@ export function XIList({ squad, format, onOpen, onMove }: { squad: Squad; format
             <span class="who">
               <b class="ellipsis" style="display:block">{shortName(p, 26)}</b>
               <span class="sub">
-                <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {p.country} · {keyStats(p, format)}
+                <span class={`role role-${roleKey(p)}`}>{ROLE_SHORT[roleKey(p)]}</span> {p.country} · {keyStats(p, format)}{tag(p)}
               </span>
             </span>
           </button>

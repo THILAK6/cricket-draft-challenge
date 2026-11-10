@@ -239,4 +239,58 @@ describe.skipIf(!playwright)("phone playthrough", () => {
       }
     }, 120_000);
   }
+
+  for (const bidder of ["Calculated", "Impulsive"] as const) {
+    it(`IPL auction (${bidder} rival): bid through the lots, fill the XI, play the match`, async () => {
+      const browser = await playwright.chromium.launch();
+      const ctx = await browser.newContext({ ...playwright.devices["iPhone 13"] });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (e: Error) => errors.push(e.message));
+      const overflow = () => page.evaluate("document.documentElement.scrollWidth - window.innerWidth");
+      try {
+        await page.goto(base);
+        await page.click("button.choice:has-text('IPL')");
+        await page.click(".seg button:has-text('Auction')");
+        await page.click(`.seg button:has-text('${bidder}')`);
+        expect(await page.locator("text=/carried away|never pays more/").count()).toBeGreaterThan(0);
+        if (process.env.SHOTS) await page.screenshot({ path: join(process.env.SHOTS, `auction-setup-${bidder}.png`), fullPage: true });
+        await page.click("text=Next: the ground and the toss");
+        await page.waitForSelector("text=Start the auction");
+        expect(await page.locator("text=/crore/").count()).toBeGreaterThan(0);
+        expect(await overflow()).toBe(0);
+        await page.click("text=Start the auction");
+        await page.waitForSelector(".lot");
+        expect(await overflow()).toBe(0);
+        let shot = false;
+        for (let guard = 0; guard < 160 && !(await page.$("text=Play the match")); guard++) {
+          await page.waitForSelector(".bid-bar, :text('Play the match')", { timeout: 15_000 });
+          if (await page.$("text=Play the match")) break;
+          if (process.env.SHOTS && !shot && guard === 3) {
+            await page.screenshot({ path: join(process.env.SHOTS, `auction-${bidder}.png`) });
+            shot = true;
+          }
+          // Bid whenever it is allowed (the room refuses when you cannot afford it), otherwise pass
+          const bid = page.locator(".bid-bar .btn-primary");
+          const respond = page.waitForResponse((r: any) => r.url().includes("/bid"));
+          if (await bid.isEnabled()) await bid.click();
+          else await page.click(".bid-bar .btn:not(.btn-primary)");
+          await respond;
+          expect(await page.$(".toast.error"), "a bid was refused").toBeNull();
+        }
+        await page.waitForSelector("text=Play the match");
+        expect(await overflow()).toBe(0);
+        await page.click("text=Play the match");
+        await page.waitForSelector(".scorehead", { timeout: 30_000 });
+        await page.waitForSelector("text=Head to head");
+        // The auction's awards are about money
+        expect(await page.locator(".draft-card").count()).toBe(1);
+        expect(await page.locator("text=/crore/").count()).toBeGreaterThan(0);
+        expect(await overflow()).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await browser.close();
+      }
+    }, 180_000);
+  }
 });

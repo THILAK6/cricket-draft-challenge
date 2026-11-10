@@ -1,6 +1,6 @@
 import type { DraftState } from "../../../src/core/types";
 import { BASE_RULES, matchLabel, parLine, PITCH_LABEL, PITCH_TIP, scenarioRules, shortName } from "../format";
-import { themeByKey } from "../../../src/core/themes";
+import { themesFor } from "../../../src/core/themes";
 
 export function Briefing(props: { state: DraftState; busy: boolean; onBack: () => void; onReroll: () => void; onStart: () => void }) {
   const { challenge, firstPick, lastAiPicks, pool } = props.state;
@@ -41,10 +41,22 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
           ))}
         </ul>
         <p class="muted" style="font-size:13px;margin-top:8px">
-          {pool.length + (lastAiPicks?.length ?? 0)} players in the pool ({themeByKey(props.state.theme).label.toLowerCase()}). Picks go 1-2-2-2…: after the first pick, each side picks twice in a row.
+          {pool.length + (lastAiPicks?.length ?? 0)} players in the pool ({(themesFor(challenge.league).find((t) => t.key === props.state.theme) ?? themesFor(challenge.league)[0]).label.toLowerCase()}).{" "}
+          {props.state.draftMode === "auction" ? "It is an auction: players come up one at a time and you bid with a purse." : "Picks go 1-2-2-2…: after the first pick, each side"} picks twice in a row.
         </p>
       </div>
 
+      {props.state.draftMode === "auction" && props.state.auction ? (
+        <div class="card">
+          <div class="label">The auction</div>
+          <p style="margin-top:6px">
+            You each have <b>{Number(props.state.auction.purse.USER.toFixed(2))} crore</b> to fill an XI, with the overseas limit. The six best players go first, then batters, keepers, all-rounders, fast bowlers and spinners. A bid goes up a step at a time; the last bid wins.
+          </p>
+          <p class="muted" style="font-size:13px;margin-top:6px">
+            {props.state.auction.style === "calculated" ? "The rival bids to exactly what a player is worth to its XI." : "The rival bids like a person: it can get carried away, and let a bargain go."}
+          </p>
+        </div>
+      ) : (
       <div class="card toss">
         <span class="coin" aria-hidden="true">🪙</span>
         <div>
@@ -58,13 +70,14 @@ export function Briefing(props: { state: DraftState; busy: boolean; onBack: () =
           {!aiFirst && <p class="muted" style="margin-top:2px">Then the AI picks twice, and so on.</p>}
         </div>
       </div>
+      )}
 
       <div class="actions">
         <button type="button" class="btn" disabled={props.busy} onClick={props.onReroll}>
           New ground
         </button>
         <button type="button" class="btn btn-primary" disabled={props.busy} onClick={props.onStart}>
-          Start drafting
+          {props.state.draftMode === "auction" ? "Start the auction" : "Start drafting"}
         </button>
       </div>
     </div>

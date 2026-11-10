@@ -115,7 +115,7 @@ app.post("/api/challenges/generate", async (c) => {
 // under the Workers Free plan's 10 ms CPU limit even in a cold isolate.
 app.post("/api/draft/start", async (c) => {
   try {
-    const body = await c.req.json<{ format?: MatchFormat; difficulty?: string; theme?: string; deviceId?: string; league?: string }>().catch(() => ({}) as any);
+    const body = await c.req.json<{ format?: MatchFormat; difficulty?: string; theme?: string; deviceId?: string; league?: string; draftMode?: string; auctionStyle?: string }>().catch(() => ({}) as any);
     const difficulty = body.difficulty === "easy" || body.difficulty === "hard" ? body.difficulty : "normal";
     // The IPL is T20 cricket with the league's players and rules
     const league = body.league === "IPL" ? "IPL" : undefined;
@@ -126,7 +126,7 @@ app.post("/api/draft/start", async (c) => {
       new Request("http://internal/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId, format, league, difficulty, theme: body.theme, deviceId: isDeviceId(body.deviceId) ? body.deviceId : undefined }),
+        body: JSON.stringify({ roomId, format, league, draftMode: body.draftMode === "auction" ? "auction" : undefined, auctionStyle: body.auctionStyle, difficulty, theme: body.theme, deviceId: isDeviceId(body.deviceId) ? body.deviceId : undefined }),
       })
     );
     const data = (await res.json()) as any;
