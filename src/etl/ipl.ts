@@ -184,6 +184,13 @@ for (const [g, v] of Object.entries(norms.par.ground)) md.push(`| ${g} | ${v.avg
 md.push("", "| Season bucket | Strike rate | Average | Economy |", "|---|---|---|---|");
 for (const [k, v] of Object.entries(norms.era)) md.push(`| ${k} | ${v.sr} | ${v.avg} | ${v.econ} |`);
 const top = (f: (p: PlayerAgg) => number, n = 12) => [...eligible].sort((a, b) => f(b) - f(a)).slice(0, n);
+const perClub: Record<string, number> = {};
+const perClub20: Record<string, number> = {};
+for (const p of eligible) for (const c of norms.franchises[`crick_${p.id}`] ?? []) {
+  perClub[c] = (perClub[c] ?? 0) + 1;
+  if (p.matches >= 20) perClub20[c] = (perClub20[c] ?? 0) + 1;
+}
+md.push("", "## Players by franchise (5+ matches for the club; the second number also has 20+ IPL matches, the draft pool's bar)", "", ...Object.keys(perClub).sort().map((c) => `- ${c}: ${perClub[c]} (${perClub20[c] ?? 0})`));
 md.push("", "## Most runs", "", ...top((p) => p.batRuns).map((p) => `- ${p.name} (${p.id}): ${p.batRuns} runs, avg ${statsOf(p).bat_average}, SR ${statsOf(p).bat_strike_rate}, ${p.matches} matches`));
 md.push("", "## Most wickets", "", ...top((p) => p.bowlWkts).map((p) => `- ${p.name} (${p.id}): ${p.bowlWkts} wickets, econ ${statsOf(p).bowl_economy}, ${p.matches} matches`));
 

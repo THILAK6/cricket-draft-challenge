@@ -22,11 +22,33 @@ export const posOf = (n: number): PosKey => (n <= 2 ? "open" : n === 3 ? "three"
 /** Three-year season buckets, as core/era.ts uses for T20. */
 export const eraBucket = (year: number) => Math.floor(year / 3) * 3;
 
+/**
+ * Cricsheet's team names to the franchise codes the game uses. Clubs that renamed (Delhi Daredevils,
+ * Kings XI Punjab, Royal Challengers Bangalore) are the same franchise; defunct ones are left out.
+ */
+export const FRANCHISES: Record<string, string> = {
+  "Chennai Super Kings": "CSK",
+  "Mumbai Indians": "MI",
+  "Royal Challengers Bangalore": "RCB",
+  "Royal Challengers Bengaluru": "RCB",
+  "Kolkata Knight Riders": "KKR",
+  "Delhi Daredevils": "DC",
+  "Delhi Capitals": "DC",
+  "Kings XI Punjab": "PBKS",
+  "Punjab Kings": "PBKS",
+  "Rajasthan Royals": "RR",
+  "Sunrisers Hyderabad": "SRH",
+  "Gujarat Titans": "GT",
+  "Lucknow Super Giants": "LSG",
+};
+
 export interface PlayerAgg {
   id: string;
   name: string;
   matches: number;
   years: number[];
+  /** Matches for each franchise (by code) */
+  clubs: Record<string, number>;
   batInnings: number;
   batRuns: number;
   batBalls: number;
@@ -78,7 +100,7 @@ export class LeagueAccumulator {
     let p = this.players.get(id);
     if (!p) {
       p = {
-        id, name, matches: 0, years: [], batInnings: 0, batRuns: 0, batBalls: 0, batOuts: 0, top: 0, mid: 0, fin: 0,
+        id, name, matches: 0, years: [], clubs: {}, batInnings: 0, batRuns: 0, batBalls: 0, batOuts: 0, top: 0, mid: 0, fin: 0,
         bowlInnings: 0, bowlBalls: 0, bowlRuns: 0, bowlWkts: 0, stumpings: 0, stumpedWkts: 0,
         phase: { pp: Array(6).fill(0), mid: Array(6).fill(0), death: Array(6).fill(0) },
         pos: { open: [0, 0, 0, 0], three: [0, 0, 0, 0], four5: [0, 0, 0, 0], six7: [0, 0, 0, 0], tail: [0, 0, 0, 0] },
@@ -106,13 +128,15 @@ export class LeagueAccumulator {
     const era = (this.norms.era[eraBucket(year)] ??= { bat: z3(), bowl: z3() });
     this.matches++;
 
-    for (const names of Object.values(info.players ?? {}) as string[][])
+    for (const [team, names] of Object.entries(info.players ?? {}) as [string, string[]][])
       for (const n of names) {
         const id = people[n];
         if (!id) continue;
         const p = this.get(id, n);
         p.matches++;
         p.years.push(year);
+        const club = FRANCHISES[team];
+        if (club) p.clubs[club] = (p.clubs[club] ?? 0) + 1;
       }
 
     const innings = (match.innings ?? []).filter((i: any) => !i.super_over).slice(0, 2);
@@ -242,10 +266,17 @@ const median = (xs: number[]) => {
 };
 
 /** The league's norms in the shape core/splits.ts and core/era.ts read, plus par scores and who played when. */
-export function normsOf(acc: LeagueAccumulator, minMatches = 10) {
+export function normsOf(acc: LeagueAccumulator, minMatches = 10, minForClub = 5) {
   const n = acc.norms;
   const midYear: Record<string, number> = {};
-  for (const p of acc.players.values()) if (p.matches >= minMatches) midYear[`crick_${p.id}`] = median(p.years);
+  /** The franchises a player turned out for (at least a few matches each), by player id */
+  const franchises: Record<string, string[]> = {};
+  for (const p of acc.players.values()) {
+    if (p.matches < minMatches) continue;
+    midYear[`crick_${p.id}`] = median(p.years);
+    const clubs = Object.entries(p.clubs).filter(([, c]) => c >= minForClub).sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    if (clubs.length) franchises[`crick_${p.id}`] = clubs;
+  }
   return {
     all: both(n.all),
     phase: Object.fromEntries(PHASES.map((k) => [k, both(n.phase[k])])),
@@ -267,6 +298,7 @@ export function normsOf(acc: LeagueAccumulator, minMatches = 10) {
       ground: Object.fromEntries(Object.entries(acc.par.ground).sort().map(([g, xs]) => [g, { avg: Math.round(mean(xs)), n: xs.length }])),
     },
     midYear,
+    franchises,
   };
 }
 

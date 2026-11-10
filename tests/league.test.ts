@@ -76,8 +76,30 @@ describe("league accumulator", () => {
   });
 });
 
+describe("franchises", () => {
+  it("counts each player's matches for a club, folding renamed clubs into one franchise", () => {
+    const acc = new LeagueAccumulator();
+    const m = (team: string, year: number) => match({ dates: [`${year}-04-01`], teams: [team, "Mumbai Indians"], players: { [team]: ["Bat1", "Bat2"], "Mumbai Indians": ["Bat3", "Bowl1"] } });
+    for (let i = 0; i < 6; i++) acc.addMatch(m("Delhi Daredevils", 2012));
+    for (let i = 0; i < 7; i++) acc.addMatch(m("Delhi Capitals", 2020));
+    acc.addMatch(m("Deccan Chargers", 2009)); // a defunct club is not a franchise
+    const b1 = acc.players.get("b1")!;
+    expect(b1.clubs).toEqual({ DC: 13 });
+    expect(acc.players.get("b3")!.clubs).toEqual({ MI: 14 });
+    const n = normsOf(acc, 10, 5);
+    expect(n.franchises["crick_b1"]).toEqual(["DC"]);
+    expect(n.franchises["crick_b3"]).toEqual(["MI"]);
+  });
+  it("leaves out a club he only turned out for a few times", () => {
+    const acc = new LeagueAccumulator();
+    for (let i = 0; i < 12; i++) acc.addMatch(match({ teams: ["Chennai Super Kings", "Mumbai Indians"], players: { "Chennai Super Kings": ["Bat1"], "Mumbai Indians": ["Bat2"] } }));
+    for (let i = 0; i < 3; i++) acc.addMatch(match({ teams: ["Rajasthan Royals", "Mumbai Indians"], players: { "Rajasthan Royals": ["Bat1"], "Mumbai Indians": ["Bat2"] } }));
+    expect(normsOf(acc, 10, 5).franchises["crick_b1"]).toEqual(["CSK"]);
+  });
+});
+
 describe("roles and bowling type from usage", () => {
-  const base = { id: "x", name: "X", matches: 100, years: [], batInnings: 80, batRuns: 1500, batBalls: 1100, batOuts: 60, top: 0, mid: 0, fin: 0, bowlInnings: 0, bowlBalls: 0, bowlRuns: 0, bowlWkts: 0, stumpings: 0, stumpedWkts: 0,
+  const base = { id: "x", name: "X", matches: 100, years: [], clubs: {}, batInnings: 80, batRuns: 1500, batBalls: 1100, batOuts: 60, top: 0, mid: 0, fin: 0, bowlInnings: 0, bowlBalls: 0, bowlRuns: 0, bowlWkts: 0, stumpings: 0, stumpedWkts: 0,
     phase: { pp: Array(6).fill(0), mid: Array(6).fill(0), death: Array(6).fill(0) }, pos: {} as any, chase: {} as any };
   it("a keeper keeps and bowls little; a regular batter is a batter", () => {
     expect(roleOf({ ...base, stumpings: 12 })).toBe("WK");
