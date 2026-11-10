@@ -5,6 +5,8 @@ import { generateRefereeReport } from "../core/gemini-referee";
 import { simulateCricketMatch } from "../core/simulator";
 import { buildMatchReview } from "../core/match-review";
 import { chooseAiPick } from "../core/ai-draft";
+import { affordable, AUCTION, aiBids, bidOn, fairPrice, lotOrder, MIN_PRICE, nextBid, passOn, startLot } from "../core/auction";
+import { playerQuality } from "../core/player-quality";
 import { askVoice, type VoiceUsage } from "../core/ai-voice";
 import { arrangeSquad } from "../core/batting-order";
 import { buildRandomDraft, saveChallenge } from "../worker/challenge-generator";
@@ -12,6 +14,12 @@ import { buildSnapshot, isDeviceId, newMatchId, saveMatch } from "../worker/matc
 
 /** Rooms delete themselves this long after they were created, so storage never fills up (5 GB on the Free plan). */
 export const ROOM_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A small seeded random number generator. */
+function lcg(seed: number) {
+  let s = seed >>> 0;
+  return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+}
 
 /** Stable per-room number: Easy's misjudgements differ from match to match but replay identically. */
 function roomSeed(roomId: string): number {
@@ -76,7 +84,7 @@ export class DraftRoom implements DurableObject {
     // Internal: build a fresh draft (pool + scenario) here, where the CPU budget is 30 s, then start it
     if (url.pathname.endsWith("/create") && request.method === "POST") {
       if (this.draftState) return Response.json({ error: "Draft room already initialized" }, { status: 409 });
-      const body = await readJson<{ roomId?: string; format?: MatchFormat; league?: string; difficulty?: DraftState["difficulty"]; theme?: string; deviceId?: string }>(request);
+      const body = await readJson<{ roomId?: string; format?: MatchFormat; league?: string; difficulty?: DraftState["difficulty"]; theme?: string; deviceId?: string; draftMode?: string; auctionStyle?: string }>(request);
       if (!body?.roomId || !this.env?.DB) return Response.json({ error: "Invalid create payload" }, { status: 400 });
       const league = body.league === "IPL" ? "IPL" : undefined;
       const format: MatchFormat = league ? "T20" : body.format === "ODI" || body.format === "TEST" ? body.format : "T20";
@@ -97,6 +105,10 @@ export class DraftRoom implements DurableObject {
         difficulty: body.difficulty ?? "normal",
         theme,
         deviceId: isDeviceId(body.deviceId) ? body.deviceId : undefined,
+        // The auction is an IPL option
+        ...(league === "IPL" && body.draftMode === "auction"
+          ? { draftMode: "auction" as const, auction: { purse: { USER: AUCTION.purse, AI: AUCTION.purse }, queue: [], log: [], style: body.auctionStyle === "impulsive" ? ("impulsive" as const) : ("calculated" as const) } }
+          : {}),
       });
     }
 
@@ -122,6 +134,15 @@ export class DraftRoom implements DurableObject {
       if (!result.success) return Response.json({ error: result.error }, { status: result.status });
       await this.persistAndBroadcast();
       return Response.json({ success: true, state: this.draftState, aiPicks: this.draftState!.lastAiPicks });
+    }
+
+    if (url.pathname.endsWith("/bid") && request.method === "POST") {
+      const body = await readJson<{ action?: unknown }>(request);
+      if (!body) return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+      const result = await this.applyBid(body.action);
+      if (!result.success) return Response.json({ error: result.error }, { status: result.status });
+      await this.persistAndBroadcast();
+      return Response.json({ success: true, state: this.draftState });
     }
 
     // "/referee" is kept as a legacy alias of "/start-match" with identical guards.
@@ -160,6 +181,17 @@ export class DraftRoom implements DurableObject {
     body.status = "DRAFTING";
     this.draftState = body;
     this.normalize(body);
+    if (body.draftMode === "auction" && body.auction) {
+      // The auction: lots in order (marquee, then sets), and the first lot goes up
+      body.firstPick = "USER";
+      body.currentTurn = "USER";
+      const rand = lcg(roomSeed(body.roomId));
+      body.auction.queue = lotOrder(body.pool, (p) => playerQuality(p, this.format()), rand);
+      await this.runAuction();
+      await this.persistAndBroadcast("INIT");
+      await this.state.storage.setAlarm?.(Date.now() + ROOM_TTL_MS);
+      return Response.json({ success: true, state: this.draftState });
+    }
     body.currentTurn = body.pickOrder[0];
     await this.runAiTurns();
     await this.persistAndBroadcast("INIT");
@@ -178,10 +210,180 @@ export class DraftRoom implements DurableObject {
     return (this.draftState?.challenge.format || "T20") as MatchFormat;
   }
 
+  // ---- The auction ---------------------------------------------------------------------------
+
+  private slotsLeft(side: "USER" | "AI") {
+    const ds = this.draftState!;
+    return (side === "USER" ? ds.userPicks : ds.aiPicks).filter((p) => !p).length;
+  }
+
+  /** May this side take the player on the block? The squad rules, with the draft's safety valve when nobody legal is left. */
+  private legalToHold(side: "USER" | "AI", player: PlayerWithStats): { ok: boolean; reason?: string } {
+    const ds = this.draftState!;
+    const squad = side === "USER" ? ds.userPicks : ds.aiPicks;
+    const ctx: PickContext = { pool: ds.pool, opponentSquad: side === "USER" ? ds.aiPicks : ds.userPicks };
+    const check = canPickPlayer(player, squad, ds.challenge, undefined, ctx);
+    if (check.allowed || this.noLegalPick(squad, ctx)) return { ok: true };
+    return { ok: false, reason: check.reason };
+  }
+
+  /** What the player is worth to the AI's XI in crore, from the same valuation its draft uses (0 when it may not take him). */
+  private aiValuation(player: PlayerWithStats): number {
+    const ds = this.draftState!;
+    const priced = chooseAiPick({
+      pool: ds.pool, squad: ds.aiPicks, opponentSquad: ds.userPicks, challenge: ds.challenge, difficulty: ds.difficulty ?? "normal",
+      noiseSeed: roomSeed(ds.roomId), round: ds.auction!.log.length, candidates: [player],
+    });
+    if (!priced) return this.legalToHold("AI", player).ok ? fairPrice(playerQuality(player, this.format())) : 0;
+    // A need can lift what he is worth, but only so far
+    return fairPrice(Math.min(priced.total ?? 0, playerQuality(player, this.format()) + 25));
+  }
+
+  /** Can the user take part in this lot? (He still has a slot, can afford the next bid, and may legally hold the player.) */
+  private userMayBid(): { ok: boolean; reason?: string } {
+    const ds = this.draftState!;
+    const a = ds.auction!;
+    const lot = a.lot;
+    const player = lot && ds.pool.find((p) => p.id === lot.playerId);
+    if (!lot || !player) return { ok: false };
+    const slots = this.slotsLeft("USER");
+    if (slots === 0) return { ok: false, reason: "Your XI is full" };
+    const price = nextBid(lot);
+    const cap = affordable(a.purse.USER, slots);
+    if (price > cap) return { ok: false, reason: cap < price ? `You can spend at most ${cap} crore here and still fill your XI` : undefined };
+    return this.legalToHold("USER", player);
+  }
+
+  /** The sale goes into the squad like a pick: out of the pool, price off the purse, onto the log. */
+  private placeSale(by: "USER" | "AI", player: PlayerWithStats, price: number) {
+    const ds = this.draftState!;
+    ds.pool = ds.pool.filter((p) => p.id !== player.id);
+    const key = by === "USER" ? "userPicks" : "aiPicks";
+    const squad = ds[key].slice();
+    squad[squad.indexOf(null)] = player;
+    ds[key] = by === "USER" && ds.userOrderManual ? squad : arrangeSquad(squad, this.format());
+    ds.auction!.purse[by] = Math.round((ds.auction!.purse[by] - price) * 100) / 100;
+    ds.pickIndex = (ds.pickIndex ?? 0) + 1;
+    ds.pickLog = [...(ds.pickLog ?? []), { n: ds.pickIndex, by, playerId: player.id, name: player.name, country: player.country, role: player.primary_role, price }];
+    ds.lastActionTimestamp = Date.now();
+  }
+
+  /** The next player comes up. False when the auction is over (both XIs full, or nobody left to sell). */
+  private openNextLot(): boolean {
+    const ds = this.draftState!;
+    const a = ds.auction!;
+    const full = this.slotsLeft("USER") === 0 && this.slotsLeft("AI") === 0;
+    if (full || ds.pool.length === 0) return false;
+    let next = a.queue.shift();
+    // Planned lots done: whoever has not been sold goes back up at the minimum price, best first, until the XIs are full
+    if (!next && !a.accelerated) {
+      a.accelerated = true;
+      const sold = new Set((ds.pickLog ?? []).map((e) => e.playerId));
+      a.queue = [...ds.pool].filter((p) => !sold.has(p.id)).sort((x, y) => playerQuality(y, this.format()) - playerQuality(x, this.format())).map((p) => ({ id: p.id, set: "Accelerated" }));
+      next = a.queue.shift();
+    }
+    if (!next) {
+      // Nobody left to offer and an XI still short (rules the pool cannot meet): fill the slots with the best left, at the minimum
+      this.fillRemaining();
+      return false;
+    }
+    const player = ds.pool.find((p) => p.id === next!.id);
+    if (!player) return this.openNextLot();
+    a.lot = startLot(a, player, next.set, a.accelerated ? 0 : playerQuality(player, this.format()));
+    return true;
+  }
+
+  private fillRemaining() {
+    const ds = this.draftState!;
+    for (const side of ["USER", "AI"] as const) {
+      while (this.slotsLeft(side) > 0 && ds.pool.length > 0) {
+        const best = [...ds.pool].sort((x, y) => playerQuality(y, this.format()) - playerQuality(x, this.format()))[0];
+        this.placeSale(side, best, MIN_PRICE);
+      }
+    }
+  }
+
+  private closeLot(outcome: NonNullable<ReturnType<typeof passOn>["outcome"]>) {
+    const ds = this.draftState!;
+    const a = ds.auction!;
+    const lot = a.lot!;
+    const player = ds.pool.find((p) => p.id === lot.playerId)!;
+    if ("sold" in outcome) {
+      this.placeSale(outcome.sold.to, player, outcome.sold.price);
+      a.log.push({ playerId: player.id, name: player.name, set: lot.set, price: outcome.sold.price, to: outcome.sold.to });
+    } else {
+      a.log.push({ playerId: player.id, name: player.name, set: lot.set, price: null, to: null });
+    }
+    a.lot = undefined;
+  }
+
+  /**
+   * Plays the auction forward until the user has something to decide: the AI bids or passes in its
+   * turn, a side that cannot take the player passes for itself, lots close and the next goes up.
+   * Ends the draft when both XIs are full.
+   */
+  private async runAuction() {
+    const ds = this.draftState!;
+    const a = ds.auction!;
+    ds.lastAiPicks = [];
+    for (let guard = 0; ds.status === "DRAFTING" && guard < 600; guard++) {
+      if (!a.lot && !this.openNextLot()) {
+        ds.status = "READY_TO_PLAY";
+        ds.currentTurn = "USER";
+        return;
+      }
+      const lot = a.lot!;
+      const player = ds.pool.find((p) => p.id === lot.playerId)!;
+      let action: "bid" | "pass";
+      if (lot.turn === "USER") {
+        // Waits for the user, unless he cannot take part (then he passes for himself)
+        if (this.userMayBid().ok) {
+          ds.currentTurn = "USER";
+          return;
+        }
+        action = "pass";
+      } else {
+        const price = nextBid(lot);
+        const slots = this.slotsLeft("AI");
+        const valuation = slots > 0 && this.legalToHold("AI", player).ok ? this.aiValuation(player) : 0;
+        action = aiBids({ style: a.style, valuation, seed: ds.roomId, playerId: player.id, matches: player.stats.matches, heat: lot.raises }, price, affordable(a.purse.AI, slots)) ? "bid" : "pass";
+      }
+      this.applyLot(lot.turn, action);
+    }
+  }
+
+  private applyLot(side: "USER" | "AI", action: "bid" | "pass") {
+    const a = this.draftState!.auction!;
+    if (action === "bid") {
+      a.lot = bidOn(a.lot!, side);
+      return;
+    }
+    const { lot, outcome } = passOn(a.lot!, side);
+    a.lot = lot;
+    if (outcome) this.closeLot(outcome);
+  }
+
+  /** The user bids the next step or passes on the player on the block. */
+  private async applyBid(action: unknown): Promise<Result> {
+    const ds = this.draftState;
+    if (!ds || ds.status !== "DRAFTING") return { success: false, error: "The auction is over", status: 400 };
+    if (ds.draftMode !== "auction" || !ds.auction?.lot) return { success: false, error: "There is no auction running", status: 400 };
+    if (ds.auction.lot.turn !== "USER") return { success: false, error: "Not your turn to bid", status: 403 };
+    if (action !== "bid" && action !== "pass") return { success: false, error: "action must be bid or pass", status: 400 };
+    if (action === "bid") {
+      const may = this.userMayBid();
+      if (!may.ok) return { success: false, error: may.reason || "You can't bid on this player", status: 400 };
+    }
+    this.applyLot("USER", action);
+    await this.runAuction();
+    return { success: true };
+  }
+
   /** Validates and applies a user pick, then lets the AI make its pick(s). Shared by HTTP and WebSocket. */
   private async applyUserPick(playerId: unknown): Promise<Result> {
     const ds = this.draftState;
     if (!ds || ds.status !== "DRAFTING") return { success: false, error: "The draft is over", status: 400 };
+    if (ds.draftMode === "auction") return { success: false, error: "This is an auction: bid for the player on the block", status: 400 };
     if (ds.currentTurn !== "USER") return { success: false, error: "Not your pick yet", status: 403 };
     if (typeof playerId !== "string") return { success: false, error: "playerId is required", status: 400 };
     if (ds.userPicks.every(Boolean)) return { success: false, error: "Your XI is already full", status: 400 };
@@ -434,7 +636,10 @@ export class DraftRoom implements DurableObject {
       simulation,
       pickLog: ds.pickLog,
       // Everyone who was on the board at the start: what is left of the pool, and both squads
-      draftPool: [...ds.pool, ...ds.userPicks.filter((p): p is PlayerWithStats => !!p), ...ds.aiPicks.filter((p): p is PlayerWithStats => !!p)],
+      // (not for an auction: players did not come up as a board to choose from)
+      ...(ds.draftMode === "auction"
+        ? { auction: true }
+        : { draftPool: [...ds.pool, ...ds.userPicks.filter((p): p is PlayerWithStats => !!p), ...ds.aiPicks.filter((p): p is PlayerWithStats => !!p)] }),
       seed,
       replay: (s) => simulateCricketMatch(ds.userPicks, ds.aiPicks, ds.challenge, s, { userPlan: plan }),
     });

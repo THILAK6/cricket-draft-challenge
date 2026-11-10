@@ -146,6 +146,39 @@ export interface PickLogEntry {
   name: string;
   country: string;
   role: PlayerRole;
+  /** Auction: what he was bought for, in crore. */
+  price?: number;
+}
+
+/** One lot on the block: a player, the bidding so far, and whose turn it is. */
+export interface AuctionLot {
+  playerId: string;
+  /** "Marquee", "Batters", "Wicketkeepers", "All-rounders", "Fast bowlers", "Spinners", "Accelerated" */
+  set: string;
+  base: number;
+  /** The highest bid so far (null before the first) and who made it */
+  bid: number | null;
+  holder: "USER" | "AI" | null;
+  turn: "USER" | "AI";
+  /** Passes in a row with nobody holding the bid: two end the lot unsold */
+  passes: number;
+  /** Bids so far: the heat of the bidding war */
+  raises: number;
+}
+
+/** The auction draft: purses, the order players come up in, the lot on the block, and what has sold. */
+export interface AuctionState {
+  /** Crore left to spend */
+  purse: { USER: number; AI: number };
+  /** Lots still to come (player ids), in order, and the set each belongs to */
+  queue: { id: string; set: string }[];
+  lot?: AuctionLot;
+  /** How the rival bids: exactly to its valuation, or like a person (overpays, gets carried away) */
+  style: "calculated" | "impulsive";
+  /** Sold and unsold lots in order */
+  log: { playerId: string; name: string; set: string; price: number | null; to: "USER" | "AI" | null }[];
+  /** True once the planned lots are done and unsold players come back at the base price to fill the XIs */
+  accelerated?: boolean;
 }
 
 export interface DraftState {
@@ -189,6 +222,9 @@ export interface DraftState {
   deviceId?: string;
   /** The saved match (worker/match-store.ts), once played: its share link is /?match=<id>. */
   matchId?: string;
+  /** How the draft runs: the usual snake draft, or an auction (IPL). */
+  draftMode?: "snake" | "auction";
+  auction?: AuctionState;
   /** The user has set his own batting order: later picks no longer re-sort his squad. */
   userOrderManual?: boolean;
 }

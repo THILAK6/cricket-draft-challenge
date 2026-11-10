@@ -510,6 +510,35 @@ export function buildDraftDecisions(
   return [...top("smart", 3), ...top("costly", 2)].map(({ score: _s, ...d }) => d);
 }
 
+const crore = (x: number) => `${Math.round(x * 100) / 100} crore`;
+
+/**
+ * The auction's awards are about money: the steal (a cheap buy who delivered), your best buy, and your
+ * splurge (an expensive buy who did not).
+ */
+export function buildAuctionAwards(pickLog: PickLogEntry[] | undefined, contributions: Contribution[] | undefined): DraftAward[] {
+  if (!pickLog?.length || !contributions?.length) return [];
+  const rows = pickLog
+    .filter((e) => e.price !== undefined)
+    .map((e) => ({ e, c: contributions.find((c) => c.team === e.by && c.playerId === e.playerId) }))
+    .filter((r): r is { e: PickLogEntry; c: Contribution } => !!r.c);
+  const used = new Set<string>();
+  const out: DraftAward[] = [];
+  const take = (kind: DraftAward["kind"], title: string, r: { e: PickLogEntry; c: Contribution }, text: string) => {
+    used.add(r.e.playerId);
+    out.push({ kind, title, name: r.e.name, team: r.e.by, pick: r.e.n, text });
+  };
+  // Value for money: a cheap buy (under 1.5 crore) who made a difference
+  const steal = rows.filter((r) => (r.e.price ?? 0) <= 1.5 && r.c.impact >= AWARD_MIN).sort((a, b) => b.c.impact - a.c.impact)[0];
+  if (steal) take("steal", "Steal of the auction", steal, `${steal.e.by === "USER" ? "You" : "The AI"} got him for ${crore(steal.e.price!)}: ${line(steal.c)}.`);
+  const best = rows.filter((r) => r.e.by === "USER" && !used.has(r.e.playerId) && r.c.impact > 0).sort((a, b) => b.c.impact - a.c.impact)[0];
+  if (best) take("best", "Your best buy", best, `${crore(best.e.price!)}: ${line(best.c)}.`);
+  // The splurge: your dearest buys (5 crore and up) that delivered the least
+  const splurge = rows.filter((r) => r.e.by === "USER" && !used.has(r.e.playerId) && (r.e.price ?? 0) >= 5).sort((a, b) => a.c.impact - b.c.impact)[0];
+  if (splurge && splurge.c.impact < 8) take("regret", "Biggest splurge", splurge, `${crore(splurge.e.price!)}, and on the day: ${line(splurge.c)}.`);
+  return out;
+}
+
 /** Replays per format: enough for a steady percentage, well inside the free plan's CPU limit. */
 export const REPLAYS = 200;
 
@@ -617,6 +646,8 @@ export interface ReviewInput {
   pickLog?: PickLogEntry[];
   /** Everyone who was available when the draft began (needed for the key decisions). */
   draftPool?: PlayerWithStats[];
+  /** The draft was an auction: awards are about prices, and "who was still on the board" does not apply. */
+  auction?: boolean;
   /** Replays the match with another seed (left out, no win chance is given). */
   replay?: (seed: number) => Pick<MatchSimulationResult, "winner"> & Partial<MatchSimulationResult>;
   seed?: number;
@@ -627,7 +658,7 @@ export function buildMatchReview(input: ReviewInput): MatchReview {
   const replayed = input.replay ? replayMatch(input.replay, input.seed ?? 1, REPLAYS, { user: input.userSquad, ai: input.aiSquad }) : undefined;
   return {
     headToHead: buildHeadToHead(input.userSquad, input.aiSquad, input.challenge),
-    awards: buildDraftAwards(input.pickLog, input.simulation.matchFacts?.contributions),
+    awards: (input.auction ? buildAuctionAwards : buildDraftAwards)(input.pickLog, input.simulation.matchFacts?.contributions),
     ...(input.draftPool ? { decisions: buildDraftDecisions(input.pickLog, input.draftPool, (p) => playerQuality(p, input.challenge.format || "T20")) } : {}),
     winChance: replayed?.winChance,
     ...(replayed?.typical ? { typical: replayed.typical } : {}),

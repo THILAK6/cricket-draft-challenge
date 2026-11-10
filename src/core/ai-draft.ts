@@ -55,6 +55,8 @@ export interface AiPickInput {
   noiseSeed: number;
   /** Pick number within the match, so noise changes pick to pick. */
   round: number;
+  /** Only these players may be chosen (an auction lot); the pool still decides what is scarce and what the XI needs. */
+  candidates?: PlayerWithStats[];
 }
 
 export interface AiPickResult {
@@ -65,6 +67,8 @@ export interface AiPickResult {
   fallback: boolean;
   /** The pick's own value to the AI's XI (rating points). */
   ownGain: number;
+  /** Everything the AI counts for the player, in rating points: quality plus pitch, balance, need and denial. An auction prices this. */
+  total?: number;
   /** Rating points the pick earned for keeping a scarce player from the human. */
   denial: number;
   /**
@@ -156,7 +160,9 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
   const left = 11 - mine.length;
   const stage = mine.length / 11; // 0 at the first pick, ~0.9 at the last
 
-  const legal = pool.filter((p) => canPickPlayer(p, squad, challenge, undefined, ctx).allowed);
+  const legal = (input.candidates ?? pool).filter((p) => canPickPlayer(p, squad, challenge, undefined, ctx).allowed);
+  // An auction lot nobody may legally take is not valued at all
+  if (legal.length === 0 && input.candidates) return null;
   if (legal.length === 0) {
     // No legal pick at all (the draft room allows any player then): take the best one left
     const best = [...pool].sort((a, b) => playerQuality(b, format) - playerQuality(a, format))[0];
@@ -289,6 +295,7 @@ export function chooseAiPick(input: AiPickInput): AiPickResult | null {
     reason,
     fallback: false,
     ownGain: best.total - best.denial,
+    total: best.total,
     denial: best.denial,
     shortlist,
   };
