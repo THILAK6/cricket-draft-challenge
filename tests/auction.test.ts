@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { d1, lcg } from "./support/db";
 import { affordable, AUCTION, aiBids, aiCeiling, basePrice, bidOn, fairPrice, increment, lotOrder, MARQUEE, MIN_PRICE, nextBid, passOn, startLot } from "../src/core/auction";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
+import { getMatch } from "../src/worker/match-store";
 import { playerQuality } from "../src/core/player-quality";
 import type { AuctionLot, DraftState, PlayerWithStats } from "../src/core/types";
 
@@ -143,6 +144,15 @@ describe.skipIf(!ready)("a whole auction through the draft room", () => {
       const done = (await call("/start-match")).state as DraftState;
       expect(done.status).toBe("COMPLETED");
       expect(done.results.review.decisions).toBeUndefined(); // "who was still on the board" does not apply
+      // Saved for analysis: that it was an auction, the rival's style, purses, every lot in order, and the pool
+      const saved = (await getMatch(d1, done.matchId!))!;
+      expect(saved.draftMode).toBe("auction");
+      expect(saved.auction!.style).toBe(style);
+      expect(saved.auction!.purseLeft.USER).toBeCloseTo(s.auction!.purse.USER, 2);
+      expect(saved.auction!.log.length).toBeGreaterThanOrEqual(22);
+      expect(saved.auction!.log.filter((l) => l.price !== null)).toHaveLength(22);
+      expect(saved.poolIds!).toHaveLength(44);
+      expect(saved.pickLog!.every((e) => e.price !== undefined)).toBe(true);
       expect(done.results.review.winChance.played).toBe(200);
     }, 180_000);
   }

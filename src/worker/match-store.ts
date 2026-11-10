@@ -41,6 +41,10 @@ export function buildSnapshot(ds: DraftState, id: string, playedAt = Date.now())
     challenge: ds.challenge,
     difficulty: ds.difficulty,
     theme: ds.theme,
+    draftMode: ds.draftMode ?? "snake",
+    ...(ds.auction ? { auction: { style: ds.auction.style, purseLeft: ds.auction.purse, accelerated: !!ds.auction.accelerated, log: ds.auction.log } } : {}),
+    // What was left in the pool plus both squads is the pool the draft began with
+    poolIds: [...ds.pool.map((p) => p.id), ...ds.userPicks.flatMap(pick).map((p) => p.id), ...ds.aiPicks.flatMap(pick).map((p) => p.id)],
     userXI: ds.userPicks.flatMap(pick),
     aiXI: ds.aiPicks.flatMap(pick),
     pickLog: ds.pickLog,
