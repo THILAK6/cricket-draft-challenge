@@ -42,6 +42,8 @@ type Norms = (typeof NORMS)[MatchFormat];
 const IPL = (IPL_NORMS as unknown as (Norms & { midYear: Record<string, number> }) | null) ?? null;
 export const iplNormsLoaded = () => !!IPL;
 export const iplMidYear = (id: string): number | undefined => IPL?.midYear?.[id];
+/** The franchises (codes) a player turned out for, most matches first; none until the data job has run. */
+export const iplFranchisesOf = (id: string): string[] => ((IPL as unknown as { franchises?: Record<string, string[]> } | null)?.franchises?.[id]) ?? [];
 /** The norms for a format; a league's players are judged against that league's own. */
 export const formatNorms = (f: MatchFormat, league?: "IPL"): Norms => (league === "IPL" && IPL ? IPL : NORMS[f]);
 

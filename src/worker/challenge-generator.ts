@@ -6,7 +6,7 @@ import { generateIplScenario, generateScenario } from "./scenario-generator";
 import { stature } from "../core/player-quality";
 import { correctRole } from "../core/roles";
 import { iplThemeByKey, themeByKey, type PoolTheme, type ThemeKey } from "../core/themes";
-import { iplMidYear } from "../core/splits";
+import { iplFranchisesOf, iplMidYear } from "../core/splits";
 import { PLAYER_MID_YEAR } from "../core/era-data";
 
 
@@ -453,6 +453,7 @@ export function samplePool(
 export function themedSource(source: PlayerWithStats[], format: MatchFormat, theme: PoolTheme, league?: "IPL"): PlayerWithStats[] {
   let out = source;
   if (theme.countries) out = out.filter((p) => theme.countries!.includes(p.country));
+  if (theme.franchises) out = out.filter((p) => iplFranchisesOf(p.id).some((c) => theme.franchises!.includes(c)));
   if (theme.era) {
     const [from, to] = theme.era;
     const years = PLAYER_MID_YEAR[format] ?? {};
@@ -510,7 +511,7 @@ export async function buildRandomDraft(
       if (pool.length < DRAFT_POOL_SIZE) return null;
       // A freshly generated ground, conditions and selection rule, checked against this very pool
       for (let tries = 0; tries < 12; tries++) {
-        const challenge = make(ipl ? generateIplScenario(rand) : generateScenario(format, rand, { hosts: theme.countries }));
+        const challenge = make(ipl ? generateIplScenario(rand, { hosts: theme.franchises }) : generateScenario(format, rand, { hosts: theme.countries }));
         if (checkDraftFeasibility(pool, challenge, 1).isFeasible) return { challenge, pool: pool, theme: theme.key };
       }
       if (!theme.countries) {

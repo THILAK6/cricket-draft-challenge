@@ -9,6 +9,8 @@ import { eraAdjusted } from "../src/core/era";
 import { overseasLimit, validateSquad } from "../src/core/validator";
 import { DraftRoom } from "../src/durable-objects/DraftRoom";
 import { IPL_GROUNDS } from "../src/core/ipl-grounds";
+import { IPL_THEMES } from "../src/core/themes";
+import { iplFranchisesOf } from "../src/core/splits";
 import { snakeOrder, type Challenge, type DraftState, type PlayerWithStats } from "../src/core/types";
 
 // The IPL mode needs the data job's output (data/ipl.sql); without it these are skipped
@@ -111,6 +113,21 @@ describe.skipIf(!ready)("IPL mode", () => {
     // The league's real first innings is about 169: a generous band here (calibration is checked by the scoring audit)
     expect(mean).toBeGreaterThan(130);
     expect(mean).toBeLessThan(230);
+  }, 120_000);
+
+  it("builds every franchise theme from that club's players, at its home ground, without falling back", async () => {
+    const clubs = IPL_THEMES.filter((t) => t.franchises);
+    expect(clubs.length).toBeGreaterThanOrEqual(8);
+    for (const theme of clubs) {
+      for (let k = 0; k < 3; k++) {
+        const { challenge, pool, theme: used } = await buildRandomDraft(d1, "T20", lcg(500 + k), theme.key, "IPL");
+        expect(used, theme.key).toBe(theme.key);
+        expect(pool.every((p) => iplFranchisesOf(p.id).some((c) => theme.franchises!.includes(c))), theme.key).toBe(true);
+        const home = IPL_GROUNDS.find((g) => g.name === challenge.venue.name)!;
+        expect(theme.franchises!, `${theme.key} at ${home.name}`).toContain(home.home);
+        expect(pool.filter((p) => p.country === "IND").length).toBeGreaterThanOrEqual(14);
+      }
+    }
   }, 120_000);
 
   it("rewards the better draft: the XI drafted first wins most of the replays", async () => {

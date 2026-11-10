@@ -138,8 +138,10 @@ export const IPL_OVERSEAS_LIMIT = 4;
  * A random IPL scenario: one of the league's grounds and the pitch it is known for, the day's
  * conditions, the overseas limit, and (most of the time) one selection rule from the conditions.
  */
-export function generateIplScenario(rand: Rand = Math.random): Omit<Challenge, "id"> {
-  const ground = pick(IPL_GROUNDS, rand);
+export function generateIplScenario(rand: Rand = Math.random, opts: { hosts?: string[] } = {}): Omit<Challenge, "id"> {
+  // A franchise theme plays at one of those clubs' home grounds
+  const home = opts.hosts ? IPL_GROUNDS.filter((g) => g.home && opts.hosts!.includes(g.home)) : [];
+  const ground = pick(home.length ? home : IPL_GROUNDS, rand);
   const pitch = pick(ground.pitches, rand);
   const options = CONDITIONS.filter((c) => c.pitches.includes(pitch) && (!c.formats || c.formats.includes("T20")));
   const condition = pick(options.length ? options : CONDITIONS, rand);

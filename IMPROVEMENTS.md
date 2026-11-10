@@ -257,7 +257,8 @@ normal for small samples (`src/core/splits.ts`).
 - [x] 14.3 Rules: `max_overseas` (at most 4 from outside India) in pick legality, the endgame lookahead, squad check and both feasibility searches. IPL grounds, IPL themes (all seasons, legends, recent, early years), IPL scenarios.
 - [x] 14.4 Calibration to the real league (`tests/scoring-audit.test.ts`, AUDIT_IPL): runs x0.94, wickets x1.3, no catch-up boost for chasers. First innings 182 (real par 169, stronger XIs), all out 8% (7%), batting first wins 44% (45.5%). Better XI wins 58%+ of replays.
 - [ ] 14.5 Still off: chasers are all out 20% of the time (real 12%); flat pitches run 20% above par; players with no international record are assumed Indian (a few IPL-only overseas players may be missing from the list in `KNOWN_ABROAD`); batting hand is RHB for players new to the game.
-- [ ] 14.6 Next: franchise themes (one club's players), the auction as a draft format.
+- [x] 14.6 Franchise themes: the data job records which clubs each player turned out for (5+ matches; renamed clubs are one franchise). Themes CSK v MI, RCB v KKR, DC v PBKS, RR v SRH and CSK, MI, RCB, KKR alone (64-105 players with 20+ IPL matches each) draw the pool from those clubs and play at their home grounds. GT and LSG are too new for a 44-player pool.
+- [ ] 14.7 Next: the auction as a draft format.
 
 ## Phase 7 — School rules: names, not numbers (proposed)
 
