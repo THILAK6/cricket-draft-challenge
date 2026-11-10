@@ -37,6 +37,19 @@ League: first innings 169 in 19.88 overs, chasing 157; batting first wins 45.5% 
 | 2025 | 154.6 | 29.58 | 9.65 |
 | all | 133.29 | 26.01 | 8.31 |
 
+## Players by franchise (5+ matches for the club; the second number also has 20+ IPL matches, the draft pool's bar)
+
+- CSK: 78 (64)
+- DC: 117 (105)
+- GT: 33 (28)
+- KKR: 85 (79)
+- LSG: 34 (27)
+- MI: 97 (78)
+- PBKS: 117 (90)
+- RCB: 119 (95)
+- RR: 96 (79)
+- SRH: 87 (77)
+
 ## Most runs
 
 - V Kohli (ba607b88): 9029 runs, avg 40.49, SR 133.35, 271 matches

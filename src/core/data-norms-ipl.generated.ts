@@ -676,5 +676,1794 @@ export const IPL_NORMS = {
     "crick_c03c6200": 2014,
     "crick_6aed7e79": 2015,
     "crick_9170ff49": 2015
+  },
+  "franchises": {
+    "crick_db584dad": [
+      "RCB",
+      "PBKS",
+      "KKR"
+    ],
+    "crick_c3a96caf": [
+      "PBKS",
+      "RCB",
+      "KKR"
+    ],
+    "crick_12b610c2": [
+      "SRH",
+      "RCB"
+    ],
+    "crick_99d63244": [
+      "DC",
+      "CSK",
+      "RCB",
+      "SRH"
+    ],
+    "crick_4329fbb5": [
+      "RR",
+      "CSK",
+      "RCB"
+    ],
+    "crick_dc9dd038": [
+      "RCB"
+    ],
+    "crick_bd17b45f": [
+      "RR",
+      "RCB"
+    ],
+    "crick_957532de": [
+      "RCB"
+    ],
+    "crick_245c97cb": [
+      "RCB",
+      "MI"
+    ],
+    "crick_57ee1fde": [
+      "RCB",
+      "RR",
+      "PBKS"
+    ],
+    "crick_dcce6f09": [
+      "SRH",
+      "DC"
+    ],
+    "crick_0a476045": [
+      "SRH",
+      "DC",
+      "PBKS",
+      "MI"
+    ],
+    "crick_32198ae0": [
+      "SRH",
+      "RCB",
+      "PBKS"
+    ],
+    "crick_1c914163": [
+      "PBKS",
+      "SRH",
+      "RCB",
+      "DC"
+    ],
+    "crick_73ad96ed": [
+      "SRH",
+      "LSG",
+      "PBKS",
+      "RR",
+      "CSK"
+    ],
+    "crick_2e11c706": [
+      "MI",
+      "SRH"
+    ],
+    "crick_890946a0": [
+      "SRH",
+      "DC",
+      "RR"
+    ],
+    "crick_c18496e1": [
+      "PBKS",
+      "SRH"
+    ],
+    "crick_2e81a32d": [
+      "SRH",
+      "RCB"
+    ],
+    "crick_96fd40ae": [
+      "DC",
+      "CSK",
+      "SRH",
+      "MI"
+    ],
+    "crick_5f547c8b": [
+      "SRH",
+      "GT"
+    ],
+    "crick_b5da6c24": [
+      "MI",
+      "RCB",
+      "CSK",
+      "SRH"
+    ],
+    "crick_99b75528": [
+      "RR",
+      "GT",
+      "MI"
+    ],
+    "crick_740742ef": [
+      "MI"
+    ],
+    "crick_fb2d1dda": [
+      "KKR",
+      "MI",
+      "RR",
+      "DC"
+    ],
+    "crick_70d205c9": [
+      "MI",
+      "CSK"
+    ],
+    "crick_5b8c830e": [
+      "MI",
+      "LSG",
+      "RCB"
+    ],
+    "crick_a757b0d8": [
+      "MI"
+    ],
+    "crick_dbe50b21": [
+      "MI",
+      "GT"
+    ],
+    "crick_13c35c9e": [
+      "MI",
+      "KKR",
+      "RCB",
+      "RR"
+    ],
+    "crick_51a3c5ef": [
+      "MI"
+    ],
+    "crick_462411b3": [
+      "MI"
+    ],
+    "crick_29e95537": [
+      "RR",
+      "KKR",
+      "CSK",
+      "DC",
+      "MI"
+    ],
+    "crick_00ea847a": [
+      "PBKS",
+      "RCB",
+      "DC",
+      "SRH"
+    ],
+    "crick_30a45b23": [
+      "RR",
+      "DC"
+    ],
+    "crick_e087956b": [
+      "RR"
+    ],
+    "crick_4a8a2e3b": [
+      "CSK"
+    ],
+    "crick_26e5cabf": [
+      "KKR",
+      "DC",
+      "PBKS"
+    ],
+    "crick_33a364a6": [
+      "KKR",
+      "DC",
+      "RR"
+    ],
+    "crick_23eeb873": [
+      "CSK",
+      "MI"
+    ],
+    "crick_14f96089": [
+      "RR"
+    ],
+    "crick_66b30f71": [
+      "KKR",
+      "RCB",
+      "DC"
+    ],
+    "crick_acee4cc4": [
+      "CSK",
+      "DC"
+    ],
+    "crick_d1c36f5c": [
+      "KKR",
+      "DC",
+      "SRH"
+    ],
+    "crick_b8a55852": [
+      "KKR",
+      "CSK",
+      "RCB"
+    ],
+    "crick_1dc12ab9": [
+      "CSK"
+    ],
+    "crick_b8d490fd": [
+      "RCB",
+      "SRH",
+      "PBKS",
+      "DC",
+      "KKR"
+    ],
+    "crick_c03f1114": [
+      "KKR",
+      "RCB",
+      "DC",
+      "MI",
+      "PBKS"
+    ],
+    "crick_35205dfc": [
+      "CSK",
+      "MI"
+    ],
+    "crick_ae78bc32": [
+      "CSK",
+      "PBKS"
+    ],
+    "crick_e938e1bc": [
+      "PBKS",
+      "RCB",
+      "SRH"
+    ],
+    "crick_c8179c68": [
+      "CSK"
+    ],
+    "crick_d2a989fc": [
+      "RR",
+      "MI"
+    ],
+    "crick_bb345e0b": [
+      "KKR",
+      "DC"
+    ],
+    "crick_45eda7c8": [
+      "KKR"
+    ],
+    "crick_1c17e270": [
+      "KKR",
+      "RCB",
+      "CSK",
+      "MI",
+      "RR"
+    ],
+    "crick_93b4fc78": [
+      "KKR",
+      "SRH",
+      "RCB",
+      "DC",
+      "LSG"
+    ],
+    "crick_3c6ffae8": [
+      "KKR",
+      "RR",
+      "SRH"
+    ],
+    "crick_271f83cd": [
+      "MI",
+      "KKR"
+    ],
+    "crick_4c5d73db": [
+      "KKR",
+      "RCB"
+    ],
+    "crick_98ae73b1": [
+      "PBKS",
+      "KKR",
+      "MI",
+      "CSK"
+    ],
+    "crick_8d2c70ad": [
+      "DC",
+      "KKR"
+    ],
+    "crick_9d430b40": [
+      "KKR"
+    ],
+    "crick_a818c1be": [
+      "MI",
+      "RR",
+      "DC",
+      "SRH",
+      "KKR"
+    ],
+    "crick_e798611a": [
+      "PBKS"
+    ],
+    "crick_c03e2850": [
+      "PBKS"
+    ],
+    "crick_fe11caa6": [
+      "PBKS",
+      "GT",
+      "KKR",
+      "SRH",
+      "CSK"
+    ],
+    "crick_2e171977": [
+      "DC",
+      "PBKS"
+    ],
+    "crick_b681e71e": [
+      "PBKS",
+      "RCB",
+      "DC"
+    ],
+    "crick_d67d5f00": [
+      "PBKS",
+      "GT",
+      "LSG",
+      "DC",
+      "RR"
+    ],
+    "crick_d9273ee7": [
+      "PBKS",
+      "LSG",
+      "DC",
+      "RCB"
+    ],
+    "crick_983f2f61": [
+      "RCB",
+      "PBKS"
+    ],
+    "crick_759ac88f": [
+      "CSK",
+      "PBKS",
+      "GT",
+      "DC"
+    ],
+    "crick_ce820073": [
+      "PBKS",
+      "SRH",
+      "RR"
+    ],
+    "crick_ce794613": [
+      "SRH",
+      "DC",
+      "PBKS"
+    ],
+    "crick_2a2e6343": [
+      "RCB"
+    ],
+    "crick_2ed569a0": [
+      "MI",
+      "PBKS"
+    ],
+    "crick_f62772e5": [
+      "RCB",
+      "DC",
+      "CSK"
+    ],
+    "crick_85aae393": [
+      "KKR",
+      "RCB"
+    ],
+    "crick_855a210c": [
+      "MI"
+    ],
+    "crick_c16d4035": [
+      "DC",
+      "CSK",
+      "KKR"
+    ],
+    "crick_944533a5": [
+      "DC",
+      "RR",
+      "PBKS"
+    ],
+    "crick_a4cc73aa": [
+      "RR",
+      "DC",
+      "CSK"
+    ],
+    "crick_919a3be2": [
+      "DC",
+      "LSG"
+    ],
+    "crick_fb66ce1f": [
+      "DC",
+      "RR",
+      "CSK",
+      "RCB"
+    ],
+    "crick_e342e5fb": [
+      "DC"
+    ],
+    "crick_ded9240e": [
+      "SRH",
+      "KKR",
+      "DC"
+    ],
+    "crick_6b19d823": [
+      "DC",
+      "SRH",
+      "LSG"
+    ],
+    "crick_9d80c5e1": [
+      "DC",
+      "SRH"
+    ],
+    "crick_91a4a398": [
+      "RCB",
+      "DC",
+      "MI"
+    ],
+    "crick_871e9faf": [
+      "SRH",
+      "MI"
+    ],
+    "crick_db31895a": [
+      "PBKS",
+      "KKR",
+      "RR"
+    ],
+    "crick_8b5b6769": [
+      "MI",
+      "CSK"
+    ],
+    "crick_a12e1d51": [
+      "MI"
+    ],
+    "crick_0a3d54b9": [
+      "RCB",
+      "DC",
+      "RR",
+      "PBKS"
+    ],
+    "crick_c4487b84": [
+      "RCB",
+      "DC"
+    ],
+    "crick_8abdf100": [
+      "MI",
+      "DC"
+    ],
+    "crick_3355b542": [
+      "CSK",
+      "RCB",
+      "DC"
+    ],
+    "crick_77255a9e": [
+      "SRH",
+      "KKR",
+      "RR",
+      "CSK"
+    ],
+    "crick_0994d0ae": [
+      "SRH",
+      "GT",
+      "DC",
+      "CSK"
+    ],
+    "crick_0a8fce53": [
+      "SRH",
+      "RR",
+      "DC",
+      "CSK",
+      "MI"
+    ],
+    "crick_5bb1a1c4": [
+      "DC",
+      "KKR",
+      "SRH",
+      "GT",
+      "PBKS"
+    ],
+    "crick_94d7f855": [
+      "RCB",
+      "KKR"
+    ],
+    "crick_cc1e8c68": [
+      "KKR",
+      "DC",
+      "RCB",
+      "GT"
+    ],
+    "crick_ba607b88": [
+      "RCB"
+    ],
+    "crick_76388dc8": [
+      "RCB"
+    ],
+    "crick_752f7486": [
+      "MI",
+      "SRH"
+    ],
+    "crick_fe93fd9d": [
+      "CSK",
+      "RR"
+    ],
+    "crick_7c7d63a2": [
+      "PBKS"
+    ],
+    "crick_24d94623": [
+      "RR"
+    ],
+    "crick_1abb78f8": [
+      "CSK",
+      "DC",
+      "KKR",
+      "LSG",
+      "MI"
+    ],
+    "crick_2f9d0389": [
+      "KKR",
+      "GT",
+      "RCB",
+      "PBKS"
+    ],
+    "crick_85ec8e33": [
+      "DC",
+      "PBKS",
+      "KKR"
+    ],
+    "crick_d2a6c0e6": [
+      "KKR",
+      "SRH",
+      "RCB"
+    ],
+    "crick_edb3d4f8": [
+      "PBKS"
+    ],
+    "crick_f0f628c7": [
+      "MI",
+      "RR"
+    ],
+    "crick_1e66c162": [
+      "RR",
+      "SRH",
+      "RCB",
+      "KKR",
+      "DC",
+      "MI"
+    ],
+    "crick_350bb1b1": [
+      "RCB"
+    ],
+    "crick_896d78ad": [
+      "KKR",
+      "DC"
+    ],
+    "crick_8cf9814c": [
+      "PBKS",
+      "GT",
+      "DC",
+      "LSG",
+      "SRH"
+    ],
+    "crick_56ab442f": [
+      "DC",
+      "MI",
+      "KKR"
+    ],
+    "crick_62af8546": [
+      "SRH",
+      "MI"
+    ],
+    "crick_d8b2f218": [
+      "SRH",
+      "PBKS"
+    ],
+    "crick_dcf81436": [
+      "SRH",
+      "DC"
+    ],
+    "crick_81049310": [
+      "DC",
+      "MI"
+    ],
+    "crick_d027ba9f": [
+      "SRH"
+    ],
+    "crick_2f49c897": [
+      "RCB",
+      "GT",
+      "SRH"
+    ],
+    "crick_508a1ea7": [
+      "PBKS"
+    ],
+    "crick_6eb146d2": [
+      "PBKS",
+      "RCB"
+    ],
+    "crick_808f425a": [
+      "RR"
+    ],
+    "crick_7dc35884": [
+      "KKR",
+      "SRH"
+    ],
+    "crick_e62dd25d": [
+      "DC",
+      "PBKS",
+      "GT"
+    ],
+    "crick_f5180fe6": [
+      "PBKS",
+      "MI",
+      "KKR"
+    ],
+    "crick_f19ccfad": [
+      "RCB",
+      "GT",
+      "SRH"
+    ],
+    "crick_f10e94c4": [
+      "RCB"
+    ],
+    "crick_119678fd": [
+      "SRH",
+      "RCB",
+      "MI",
+      "CSK"
+    ],
+    "crick_2be41edb": [
+      "PBKS"
+    ],
+    "crick_69be866a": [
+      "PBKS"
+    ],
+    "crick_5fa06777": [
+      "DC",
+      "PBKS",
+      "SRH"
+    ],
+    "crick_9fc0ef64": [
+      "DC"
+    ],
+    "crick_f846de6a": [
+      "DC"
+    ],
+    "crick_89f64c19": [
+      "MI"
+    ],
+    "crick_39a2dfa8": [
+      "GT",
+      "RR",
+      "DC"
+    ],
+    "crick_709b0bac": [
+      "RCB",
+      "MI",
+      "DC"
+    ],
+    "crick_41eb4a4f": [
+      "RCB",
+      "MI",
+      "KKR"
+    ],
+    "crick_f986ca1a": [
+      "RCB",
+      "SRH",
+      "PBKS",
+      "DC"
+    ],
+    "crick_eef2536f": [
+      "LSG",
+      "DC",
+      "RR"
+    ],
+    "crick_0ebfb1ad": [
+      "MI",
+      "LSG",
+      "RR"
+    ],
+    "crick_a9fd84fb": [
+      "MI",
+      "SRH"
+    ],
+    "crick_87e562a9": [
+      "CSK",
+      "MI"
+    ],
+    "crick_af2c687b": [
+      "DC"
+    ],
+    "crick_b17e2f24": [
+      "PBKS",
+      "LSG",
+      "DC",
+      "RCB",
+      "SRH"
+    ],
+    "crick_495d42a5": [
+      "CSK",
+      "RR",
+      "DC",
+      "PBKS"
+    ],
+    "crick_7d92277a": [
+      "PBKS"
+    ],
+    "crick_372455c4": [
+      "MI",
+      "LSG",
+      "DC",
+      "RCB",
+      "KKR"
+    ],
+    "crick_f088b960": [
+      "RCB",
+      "PBKS",
+      "DC",
+      "CSK"
+    ],
+    "crick_0a509d6b": [
+      "KKR"
+    ],
+    "crick_bbd41817": [
+      "KKR",
+      "DC"
+    ],
+    "crick_90de905a": [
+      "RR",
+      "LSG"
+    ],
+    "crick_7a8bd078": [
+      "RR",
+      "MI"
+    ],
+    "crick_e86754b2": [
+      "RR"
+    ],
+    "crick_b4b99816": [
+      "GT",
+      "KKR"
+    ],
+    "crick_c38d3503": [
+      "KKR"
+    ],
+    "crick_4b57e452": [
+      "CSK",
+      "PBKS",
+      "DC"
+    ],
+    "crick_ffe699c0": [
+      "PBKS",
+      "RCB",
+      "MI"
+    ],
+    "crick_235c2bb6": [
+      "SRH"
+    ],
+    "crick_5574750c": [
+      "RR",
+      "MI"
+    ],
+    "crick_8b3e9c7c": [
+      "DC"
+    ],
+    "crick_2e8994e7": [
+      "DC",
+      "MI"
+    ],
+    "crick_da934ee8": [
+      "RCB",
+      "RR"
+    ],
+    "crick_e2db2409": [
+      "PBKS",
+      "MI"
+    ],
+    "crick_f834dcfc": [
+      "CSK",
+      "DC"
+    ],
+    "crick_7f048519": [
+      "RCB"
+    ],
+    "crick_85e0cf10": [
+      "KKR",
+      "GT",
+      "RR"
+    ],
+    "crick_bb351c23": [
+      "CSK",
+      "RCB",
+      "KKR"
+    ],
+    "crick_541f85c9": [
+      "RR",
+      "SRH",
+      "RCB",
+      "KKR"
+    ],
+    "crick_f29185a1": [
+      "SRH"
+    ],
+    "crick_a2f46292": [
+      "DC",
+      "SRH",
+      "CSK"
+    ],
+    "crick_48a1d7b7": [
+      "RR",
+      "DC",
+      "RCB"
+    ],
+    "crick_a4e37e47": [
+      "CSK",
+      "RCB",
+      "RR"
+    ],
+    "crick_21d4e29b": [
+      "RCB"
+    ],
+    "crick_abb83e27": [
+      "SRH",
+      "PBKS"
+    ],
+    "crick_c995d726": [
+      "DC"
+    ],
+    "crick_b8527c3d": [
+      "RCB",
+      "DC"
+    ],
+    "crick_3241e3fd": [
+      "LSG",
+      "PBKS",
+      "SRH"
+    ],
+    "crick_e94915e6": [
+      "PBKS",
+      "CSK"
+    ],
+    "crick_5b7ab5a9": [
+      "KKR"
+    ],
+    "crick_94253925": [
+      "SRH"
+    ],
+    "crick_e4a0deae": [
+      "CSK",
+      "MI"
+    ],
+    "crick_4933f499": [
+      "MI"
+    ],
+    "crick_b0946605": [
+      "GT"
+    ],
+    "crick_04a418e8": [
+      "RR"
+    ],
+    "crick_50c6bc2b": [
+      "PBKS",
+      "RCB",
+      "RR"
+    ],
+    "crick_244048f6": [
+      "PBKS"
+    ],
+    "crick_8fd1a8f5": [
+      "SRH",
+      "RCB"
+    ],
+    "crick_c05edf8e": [
+      "PBKS"
+    ],
+    "crick_d014d5ac": [
+      "GT",
+      "DC",
+      "MI"
+    ],
+    "crick_e4cdf230": [
+      "KKR"
+    ],
+    "crick_cdc6bdba": [
+      "KKR",
+      "GT"
+    ],
+    "crick_9418198b": [
+      "PBKS"
+    ],
+    "crick_4125d931": [
+      "MI",
+      "SRH"
+    ],
+    "crick_f752db61": [
+      "MI"
+    ],
+    "crick_acdc62f5": [
+      "DC"
+    ],
+    "crick_df064e1a": [
+      "LSG",
+      "PBKS",
+      "RR"
+    ],
+    "crick_2c25d4f5": [
+      "RCB",
+      "RR",
+      "LSG"
+    ],
+    "crick_ac5ae4af": [
+      "RCB"
+    ],
+    "crick_bb965e9a": [
+      "SRH"
+    ],
+    "crick_0f721006": [
+      "SRH",
+      "LSG",
+      "GT",
+      "RR",
+      "CSK"
+    ],
+    "crick_8e514b4c": [
+      "SRH",
+      "LSG"
+    ],
+    "crick_6c19c6e5": [
+      "RR"
+    ],
+    "crick_45a43fe2": [
+      "CSK"
+    ],
+    "crick_b4f5c2d9": [
+      "KKR"
+    ],
+    "crick_46a9bea1": [
+      "CSK",
+      "RR",
+      "DC"
+    ],
+    "crick_5d2eea49": [
+      "RR",
+      "KKR",
+      "SRH"
+    ],
+    "crick_9219eff0": [
+      "PBKS"
+    ],
+    "crick_f9e6e7ef": [
+      "RCB",
+      "SRH",
+      "LSG"
+    ],
+    "crick_caf69bf7": [
+      "MI"
+    ],
+    "crick_bd54eef5": [
+      "CSK",
+      "KKR"
+    ],
+    "crick_03806cf8": [
+      "RCB",
+      "CSK"
+    ],
+    "crick_3d8feaf8": [
+      "LSG",
+      "DC"
+    ],
+    "crick_81c36ee9": [
+      "PBKS",
+      "SRH"
+    ],
+    "crick_c740ea83": [
+      "RCB"
+    ],
+    "crick_68c56d09": [
+      "RCB"
+    ],
+    "crick_7dcb9bc9": [
+      "PBKS",
+      "GT"
+    ],
+    "crick_64775749": [
+      "MI",
+      "PBKS"
+    ],
+    "crick_2cdce1be": [
+      "RR",
+      "DC"
+    ],
+    "crick_ad427b5c": [
+      "DC"
+    ],
+    "crick_dfc4d8b5": [
+      "RR",
+      "RCB"
+    ],
+    "crick_c8f5f961": [
+      "RCB"
+    ],
+    "crick_44a89551": [
+      "RCB"
+    ],
+    "crick_a97c8ec2": [
+      "RCB",
+      "RR"
+    ],
+    "crick_a24be938": [
+      "KKR",
+      "RCB"
+    ],
+    "crick_81c08fa3": [
+      "SRH"
+    ],
+    "crick_9a46c4e5": [
+      "GT",
+      "SRH"
+    ],
+    "crick_b483905d": [
+      "CSK",
+      "LSG"
+    ],
+    "crick_6a26221c": [
+      "SRH",
+      "LSG",
+      "PBKS"
+    ],
+    "crick_9eb1455b": [
+      "PBKS"
+    ],
+    "crick_f1f99156": [
+      "MI",
+      "RCB"
+    ],
+    "crick_df5a6881": [
+      "CSK"
+    ],
+    "crick_b0482a1d": [
+      "MI"
+    ],
+    "crick_650d5e49": [
+      "DC",
+      "KKR",
+      "RR"
+    ],
+    "crick_0a67aec0": [
+      "RCB",
+      "LSG"
+    ],
+    "crick_6c882e9a": [
+      "PBKS"
+    ],
+    "crick_872b03f7": [
+      "LSG"
+    ],
+    "crick_327b58d3": [
+      "LSG",
+      "DC"
+    ],
+    "crick_c33d8116": [
+      "LSG"
+    ],
+    "crick_afa7e784": [
+      "GT"
+    ],
+    "crick_0890552f": [
+      "GT",
+      "SRH"
+    ],
+    "crick_c5aef772": [
+      "RCB",
+      "MI"
+    ],
+    "crick_765a4731": [
+      "CSK"
+    ],
+    "crick_800d2d97": [
+      "PBKS",
+      "RCB"
+    ],
+    "crick_7c3b3b78": [
+      "KKR",
+      "PBKS"
+    ],
+    "crick_844e79d1": [
+      "CSK",
+      "MI"
+    ],
+    "crick_d5130a30": [
+      "GT"
+    ],
+    "crick_f24c6701": [
+      "CSK",
+      "RR"
+    ],
+    "crick_26989d80": [
+      "PBKS",
+      "SRH"
+    ],
+    "crick_be24ead0": [
+      "KKR",
+      "MI"
+    ],
+    "crick_2e78f685": [
+      "RR"
+    ],
+    "crick_9385de2e": [
+      "RCB"
+    ],
+    "crick_7210d461": [
+      "RCB",
+      "GT"
+    ],
+    "crick_378daa89": [
+      "DC"
+    ],
+    "crick_0c9652b0": [
+      "MI"
+    ],
+    "crick_26a85969": [
+      "PBKS",
+      "MI"
+    ],
+    "crick_eade4650": [
+      "CSK"
+    ],
+    "crick_77b1aa15": [
+      "KKR"
+    ],
+    "crick_f6d8a7ab": [
+      "MI"
+    ],
+    "crick_30df8c66": [
+      "CSK"
+    ],
+    "crick_e9c7f0d0": [
+      "SRH",
+      "RR"
+    ],
+    "crick_c7a995d3": [
+      "GT"
+    ],
+    "crick_85b3fab2": [
+      "DC"
+    ],
+    "crick_64839cb3": [
+      "CSK"
+    ],
+    "crick_9061a703": [
+      "GT"
+    ],
+    "crick_73c18486": [
+      "LSG"
+    ],
+    "crick_cad00a4d": [
+      "DC",
+      "PBKS",
+      "RCB"
+    ],
+    "crick_2cffab74": [
+      "DC"
+    ],
+    "crick_4ae1755b": [
+      "SRH"
+    ],
+    "crick_eaa76d3c": [
+      "MI",
+      "KKR",
+      "RCB"
+    ],
+    "crick_d1a60072": [
+      "PBKS",
+      "MI"
+    ],
+    "crick_12314277": [
+      "GT",
+      "MI"
+    ],
+    "crick_4b31f3a3": [
+      "LSG"
+    ],
+    "crick_ad3b6e95": [
+      "DC"
+    ],
+    "crick_bcf325d2": [
+      "RR"
+    ],
+    "crick_9440ef41": [
+      "RCB",
+      "KKR"
+    ],
+    "crick_0bacade8": [
+      "KKR"
+    ],
+    "crick_3a60e0b5": [
+      "DC",
+      "RCB"
+    ],
+    "crick_54e52590": [
+      "PBKS",
+      "RCB"
+    ],
+    "crick_1ac746c8": [
+      "PBKS"
+    ],
+    "crick_efc04be7": [
+      "CSK",
+      "GT"
+    ],
+    "crick_c0c411cb": [
+      "LSG"
+    ],
+    "crick_3d284ca3": [
+      "RCB",
+      "KKR",
+      "DC"
+    ],
+    "crick_aa8d28ae": [
+      "RCB"
+    ],
+    "crick_4bd09374": [
+      "MI"
+    ],
+    "crick_3ff033bb": [
+      "RR"
+    ],
+    "crick_aad0c365": [
+      "SRH"
+    ],
+    "crick_ba5e1069": [
+      "CSK"
+    ],
+    "crick_f89d3b11": [
+      "DC",
+      "CSK"
+    ],
+    "crick_3fb19989": [
+      "RCB",
+      "DC",
+      "KKR"
+    ],
+    "crick_465aa633": [
+      "RR"
+    ],
+    "crick_8f6dd463": [
+      "PBKS",
+      "GT"
+    ],
+    "crick_83c3e8e3": [
+      "GT"
+    ],
+    "crick_fffa744b": [
+      "MI"
+    ],
+    "crick_3204c99f": [
+      "MI"
+    ],
+    "crick_d7017798": [
+      "KKR"
+    ],
+    "crick_6b2ff18f": [
+      "RR"
+    ],
+    "crick_84d9c311": [
+      "DC",
+      "PBKS"
+    ],
+    "crick_9caf69a1": [
+      "MI",
+      "RCB"
+    ],
+    "crick_9b6e1b3f": [
+      "DC"
+    ],
+    "crick_fcc21ace": [
+      "CSK"
+    ],
+    "crick_f0af99a7": [
+      "RR"
+    ],
+    "crick_a3b0600d": [
+      "SRH"
+    ],
+    "crick_e66732f8": [
+      "MI"
+    ],
+    "crick_13fc5c6d": [
+      "LSG"
+    ],
+    "crick_80b2fb19": [
+      "LSG"
+    ],
+    "crick_5ffc0565": [
+      "DC"
+    ],
+    "crick_b5797845": [
+      "PBKS"
+    ],
+    "crick_970ddd24": [
+      "PBKS"
+    ],
+    "crick_36619795": [
+      "SRH"
+    ],
+    "crick_59559bc2": [
+      "CSK"
+    ],
+    "crick_5750bcb4": [
+      "SRH"
+    ],
+    "crick_989889ff": [
+      "PBKS",
+      "LSG"
+    ],
+    "crick_3b53243a": [
+      "PBKS"
+    ],
+    "crick_470f446b": [
+      "RR"
+    ],
+    "crick_b2b4f545": [
+      "CSK"
+    ],
+    "crick_cf59b3f0": [
+      "CSK"
+    ],
+    "crick_25228673": [
+      "SRH"
+    ],
+    "crick_d7423da1": [
+      "SRH"
+    ],
+    "crick_bf74b130": [
+      "KKR"
+    ],
+    "crick_9ca68676": [
+      "MI"
+    ],
+    "crick_7b679de5": [
+      "CSK"
+    ],
+    "crick_133bbd61": [
+      "RR"
+    ],
+    "crick_fe366f34": [
+      "PBKS"
+    ],
+    "crick_1c84109e": [
+      "LSG"
+    ],
+    "crick_8ee36b18": [
+      "DC"
+    ],
+    "crick_7b44eb3e": [
+      "SRH"
+    ],
+    "crick_280fff14": [
+      "SRH"
+    ],
+    "crick_725529bc": [
+      "KKR"
+    ],
+    "crick_7d415ea5": [
+      "MI"
+    ],
+    "crick_fd835ab3": [
+      "PBKS",
+      "KKR",
+      "CSK"
+    ],
+    "crick_b1451597": [
+      "KKR"
+    ],
+    "crick_fa463154": [
+      "KKR",
+      "DC"
+    ],
+    "crick_abfeb126": [
+      "KKR",
+      "RCB"
+    ],
+    "crick_0184dc35": [
+      "RR",
+      "RCB"
+    ],
+    "crick_86dc8f2e": [
+      "KKR",
+      "RCB"
+    ],
+    "crick_d0513f63": [
+      "RCB",
+      "SRH"
+    ],
+    "crick_f3cb53a1": [
+      "RCB"
+    ],
+    "crick_af7dadf7": [
+      "RCB"
+    ],
+    "crick_d8699ab7": [
+      "CSK"
+    ],
+    "crick_48fd7349": [
+      "CSK",
+      "MI"
+    ],
+    "crick_3eac9d95": [
+      "CSK"
+    ],
+    "crick_3576e47e": [
+      "CSK"
+    ],
+    "crick_9f961c14": [
+      "CSK"
+    ],
+    "crick_4ba44e19": [
+      "CSK",
+      "RCB"
+    ],
+    "crick_a1f1829d": [
+      "PBKS"
+    ],
+    "crick_2498e163": [
+      "PBKS",
+      "DC"
+    ],
+    "crick_6b71e6cf": [
+      "PBKS",
+      "SRH"
+    ],
+    "crick_fdedb37c": [
+      "PBKS"
+    ],
+    "crick_dd09ff8e": [
+      "KKR",
+      "PBKS"
+    ],
+    "crick_3dba85c2": [
+      "PBKS"
+    ],
+    "crick_6b8eb6e5": [
+      "PBKS",
+      "RR"
+    ],
+    "crick_d84378a4": [
+      "RR",
+      "RCB"
+    ],
+    "crick_de8d3876": [
+      "RR"
+    ],
+    "crick_bb18be76": [
+      "RR"
+    ],
+    "crick_3d7e087f": [
+      "RR"
+    ],
+    "crick_8ba8195d": [
+      "DC",
+      "PBKS"
+    ],
+    "crick_c42aaf71": [
+      "DC",
+      "CSK"
+    ],
+    "crick_d7c6af50": [
+      "RCB",
+      "DC"
+    ],
+    "crick_ab89348d": [
+      "DC"
+    ],
+    "crick_ee7d0c82": [
+      "DC"
+    ],
+    "crick_f233bbb4": [
+      "MI"
+    ],
+    "crick_0aadc906": [
+      "MI"
+    ],
+    "crick_a45a5e8d": [
+      "MI",
+      "PBKS",
+      "RR"
+    ],
+    "crick_88fccd6c": [
+      "MI"
+    ],
+    "crick_b61a3e1a": [
+      "RCB",
+      "DC",
+      "RR"
+    ],
+    "crick_2b6e6dec": [
+      "PBKS"
+    ],
+    "crick_fe763256": [
+      "DC",
+      "SRH"
+    ],
+    "crick_bd77eb62": [
+      "MI"
+    ],
+    "crick_c3d1402f": [
+      "MI",
+      "RCB"
+    ],
+    "crick_6c6591ab": [
+      "MI"
+    ],
+    "crick_d18f9182": [
+      "PBKS",
+      "DC"
+    ],
+    "crick_3fca55af": [
+      "PBKS"
+    ],
+    "crick_e32d22f6": [
+      "RR",
+      "RCB"
+    ],
+    "crick_93a17209": [
+      "DC"
+    ],
+    "crick_72861603": [
+      "RR"
+    ],
+    "crick_034b4b7d": [
+      "PBKS"
+    ],
+    "crick_64d43928": [
+      "RR"
+    ],
+    "crick_0c2730df": [
+      "RCB"
+    ],
+    "crick_facb9086": [
+      "PBKS"
+    ],
+    "crick_c3d35165": [
+      "CSK",
+      "RCB"
+    ],
+    "crick_7050a1e7": [
+      "KKR"
+    ],
+    "crick_b57f8a9a": [
+      "RR",
+      "KKR"
+    ],
+    "crick_ae091d39": [
+      "RR"
+    ],
+    "crick_4e04666c": [
+      "MI",
+      "RCB"
+    ],
+    "crick_5f4e9e8f": [
+      "MI"
+    ],
+    "crick_95a2ea61": [
+      "CSK"
+    ],
+    "crick_b2b50355": [
+      "KKR",
+      "CSK",
+      "PBKS"
+    ],
+    "crick_5bdcdb72": [
+      "DC",
+      "RCB"
+    ],
+    "crick_3edb58fc": [
+      "RR",
+      "PBKS"
+    ],
+    "crick_b63ab531": [
+      "PBKS"
+    ],
+    "crick_d2c2b2d5": [
+      "MI"
+    ],
+    "crick_5d096f3d": [
+      "PBKS"
+    ],
+    "crick_ea0cdc12": [
+      "KKR"
+    ],
+    "crick_91ffa6c6": [
+      "RCB"
+    ],
+    "crick_39f01cdb": [
+      "DC",
+      "RCB"
+    ],
+    "crick_2a72fd4f": [
+      "PBKS"
+    ],
+    "crick_c404f58a": [
+      "DC",
+      "CSK"
+    ],
+    "crick_25eeb281": [
+      "PBKS"
+    ],
+    "crick_c69a7b5c": [
+      "RR"
+    ],
+    "crick_7ca5e05d": [
+      "PBKS",
+      "SRH"
+    ],
+    "crick_d92e42f5": [
+      "RCB"
+    ],
+    "crick_05c2ca46": [
+      "RCB",
+      "DC"
+    ],
+    "crick_5f26df4f": [
+      "PBKS"
+    ],
+    "crick_aaa1b522": [
+      "MI"
+    ],
+    "crick_c24a2c5d": [
+      "CSK"
+    ],
+    "crick_12eddf28": [
+      "PBKS"
+    ],
+    "crick_5b040b81": [
+      "RR"
+    ],
+    "crick_5bb5a915": [
+      "DC",
+      "KKR"
+    ],
+    "crick_66cf56a5": [
+      "RCB"
+    ],
+    "crick_7c503806": [
+      "RR",
+      "DC"
+    ],
+    "crick_5056011d": [
+      "PBKS"
+    ],
+    "crick_16043342": [
+      "DC"
+    ],
+    "crick_662c47a6": [
+      "DC"
+    ],
+    "crick_d4f9dbd4": [
+      "RCB",
+      "KKR",
+      "PBKS"
+    ],
+    "crick_7bf96684": [
+      "RR",
+      "KKR"
+    ],
+    "crick_626c5379": [
+      "MI",
+      "PBKS"
+    ],
+    "crick_c654af19": [
+      "MI",
+      "PBKS"
+    ],
+    "crick_ef5da05c": [
+      "MI"
+    ],
+    "crick_2815fe50": [
+      "RR"
+    ],
+    "crick_2728e7e9": [
+      "RR"
+    ],
+    "crick_addfb70e": [
+      "RR"
+    ],
+    "crick_5afd4539": [
+      "KKR",
+      "PBKS"
+    ],
+    "crick_11df3dc8": [
+      "RR"
+    ],
+    "crick_2049f3a0": [
+      "PBKS"
+    ],
+    "crick_c15e2193": [
+      "RR"
+    ],
+    "crick_dec8e038": [
+      "PBKS"
+    ],
+    "crick_0f12f9df": [
+      "SRH"
+    ],
+    "crick_7daedf2f": [
+      "RCB"
+    ],
+    "crick_45c2196c": [
+      "CSK"
+    ],
+    "crick_2af1b6d2": [
+      "MI",
+      "RCB"
+    ],
+    "crick_8291f939": [
+      "RR"
+    ],
+    "crick_0c94f480": [
+      "DC",
+      "MI"
+    ],
+    "crick_cf73ad76": [
+      "MI"
+    ],
+    "crick_dc4686e6": [
+      "PBKS"
+    ],
+    "crick_4ec07775": [
+      "KKR"
+    ],
+    "crick_063b3673": [
+      "RR"
+    ],
+    "crick_c64c2443": [
+      "RCB"
+    ],
+    "crick_29d72eb2": [
+      "RR"
+    ],
+    "crick_90edaaa9": [
+      "RCB"
+    ],
+    "crick_557153ca": [
+      "RR"
+    ],
+    "crick_f708a0bc": [
+      "RR",
+      "KKR"
+    ],
+    "crick_1a0c3177": [
+      "PBKS"
+    ],
+    "crick_1c2a64cd": [
+      "SRH"
+    ],
+    "crick_addbde6c": [
+      "PBKS"
+    ],
+    "crick_9a158001": [
+      "PBKS"
+    ],
+    "crick_99b202b3": [
+      "RR"
+    ],
+    "crick_f3171936": [
+      "CSK"
+    ],
+    "crick_2461eef2": [
+      "SRH"
+    ],
+    "crick_d68e7f48": [
+      "RCB"
+    ],
+    "crick_e0407c01": [
+      "CSK"
+    ],
+    "crick_30a2649b": [
+      "MI"
+    ],
+    "crick_c03c6200": [
+      "SRH"
+    ],
+    "crick_6aed7e79": [
+      "RR"
+    ],
+    "crick_9170ff49": [
+      "SRH"
+    ]
   }
 } as const;
